@@ -243,3 +243,31 @@ Recrear API:
 docker compose --env-file .env.api -f api.compose.yml down
 docker compose --env-file .env.api -f api.compose.yml up -d --build
 ```
+### Ruta reports 404 en frontend
+
+Sintoma:
+
+```text
+http://10.10.10.240/reports muestra 404
+```
+
+Causas probables:
+
+- `frontend/src/app/(app)/reports/page.tsx` no existe en el servidor.
+- El archivo existe localmente como `ReparsePoint` de OneDrive y no entro correctamente al contexto Docker/Git.
+- El contenedor frontend fue construido antes de copiar la ruta.
+
+Validacion:
+
+```bash
+ls -la /opt/ambar/frontend/src/app/'(app)'/reports
+curl http://10.10.10.242:3000/reports | grep -i 'Reportes\|Ambar'
+```
+
+Correccion:
+
+```bash
+cd /opt/ambar/infra/staging
+docker compose -f web.compose.yml down
+docker compose -f web.compose.yml up -d --build --force-recreate
+```

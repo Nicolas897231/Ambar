@@ -64,3 +64,8 @@ Cambiar estas credenciales y todos los secretos antes de produccion.
 La guia operativa para desplegar en `10.10.10.241`, `10.10.10.240` y `10.10.10.242` esta en:
 
 - `docs/STAGING_DEPLOYMENT.md`
+## Manual QA
+
+El plan integral de pruebas funcionales y no funcionales esta en:
+
+- `docs/QA_TEST_PLAN.md`
