@@ -17,4 +17,4 @@ uploads/
 .DS_Store
 *.egg-info/
 backend/reports/
-reports/
+/reports/
