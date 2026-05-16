@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ambar-default-deny
+  namespace: ambar
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ambar-api-allow
+  namespace: ambar
+spec:
+  podSelector:
+    matchLabels:
+      app: ambar-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: ambar-web
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    - {}

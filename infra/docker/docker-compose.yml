@@ -1,0 +1,114 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ambar
+      MYSQL_USER: ambar
+      MYSQL_PASSWORD: change-me
+      MYSQL_ROOT_PASSWORD: change-root
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ambar
+      RABBITMQ_DEFAULT_PASS: change-me
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  opensearch:
+    image: opensearchproject/opensearch:2
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ambar
+      MINIO_ROOT_PASSWORD: change-me-minio-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  api:
+    build:
+      context: ../../backend
+    env_file:
+      - ../../.env
+    environment:
+      DATABASE_URL: mysql+pymysql://ambar:change-me@mysql:3306/ambar
+      READ_DATABASE_URL: mysql+pymysql://ambar:change-me@mysql:3306/ambar
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://ambar:change-me@rabbitmq:5672/
+      MINIO_ENDPOINT: minio:9000
+      OPENSEARCH_URL: http://opensearch:9200
+      CLUSTER_NODE_ID: ambar-api-local
+      FRONTEND_ORIGINS: http://localhost:3000,http://localhost
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+      minio:
+        condition: service_started
+      opensearch:
+        condition: service_started
+
+  web:
+    build:
+      context: ../../frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ../nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+      - web
+
+volumes:
+  mysql_data:
+  redis_data:
+  rabbitmq_data:
+  opensearch_data:
+  minio_data:

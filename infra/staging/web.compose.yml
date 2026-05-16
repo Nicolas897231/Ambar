@@ -1,0 +1,16 @@
+services:
+  web:
+    build:
+      context: ../../frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://10.10.10.240/api/v1
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://10.10.10.240/api/v1
+    ports:
+      - "10.10.10.242:3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/login"]
+      interval: 15s
+      timeout: 5s
+      retries: 10

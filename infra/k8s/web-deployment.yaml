@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ambar-web
+  namespace: ambar
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ambar-web
+  template:
+    metadata:
+      labels:
+        app: ambar-web
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/your-org/ambar-web:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: https://ambar.example.com/api/v1
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 150m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ambar-web
+  namespace: ambar
+spec:
+  selector:
+    app: ambar-web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000

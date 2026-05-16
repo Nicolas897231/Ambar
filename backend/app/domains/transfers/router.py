@@ -1,0 +1,125 @@
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from app.core.deps import require_permission
+from app.db.models import Document, DocumentTransfer, Location, Notification, TransferLog, User
+from app.db.session import get_db
+from app.services.audit import write_audit
+from app.services.events import publish_event
+
+router = APIRouter(prefix="/transfers", tags=["transfers"])
+
+VALID_TRANSITIONS = {
+    "pending": {"approved", "rejected"},
+    "approved": {"in_transit", "rejected"},
+    "in_transit": {"received", "rejected"},
+    "received": set(),
+    "rejected": set(),
+}
+
+
+class LocationCreate(BaseModel):
+    location_name: str = Field(min_length=3, max_length=160)
+    address: str | None = None
+
+
+class TransferCreate(BaseModel):
+    document_id: int
+    origin_location: int
+    destination_location: int
+    notes: str | None = None
+
+
+class TransferStatusUpdate(BaseModel):
+    status: str = Field(pattern="^(pending|approved|in_transit|received|rejected)$")
+    notes: str | None = None
+
+
+@router.get("/locations")
+def list_locations(db: Session = Depends(get_db), _: User = Depends(require_permission("document.read"))):
+    return db.query(Location).order_by(Location.location_name.asc()).all()
+
+
+@router.post("/locations", status_code=status.HTTP_201_CREATED)
+def create_location(
+    payload: LocationCreate,
+    request: Request,
+    user: User = Depends(require_permission("transfer.manage")),
+    db: Session = Depends(get_db),
+):
+    item = Location(location_name=payload.location_name, address=payload.address, company_id=user.company_id)
+    db.add(item)
+    db.flush()
+    write_audit(db, action="location_created", module="transfers", user_id=user.identification, entity="location", entity_id=item.idLocation, new_values=payload.model_dump(), request=request)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.get("")
+def list_transfers(db: Session = Depends(get_db), _: User = Depends(require_permission("document.read"))):
+    return db.query(DocumentTransfer).order_by(DocumentTransfer.transfer_date.desc()).all()
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+def create_transfer(
+    payload: TransferCreate,
+    request: Request,
+    user: User = Depends(require_permission("document.transfer")),
+    db: Session = Depends(get_db),
+):
+    document = db.get(Document, payload.document_id)
+    if not document or document.company_id != user.company_id:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not db.get(Location, payload.origin_location) or not db.get(Location, payload.destination_location):
+        raise HTTPException(status_code=422, detail="Invalid location")
+    transfer = DocumentTransfer(
+        ps520IdDocument=payload.document_id,
+        origin_location=payload.origin_location,
+        destination_location=payload.destination_location,
+        ps405Identification=user.identification,
+        status="pending",
+    )
+    db.add(transfer)
+    db.flush()
+    db.add(TransferLog(ps702IdTransfer=transfer.idTransfer, action="pending", ps405Identification=user.identification, notes=payload.notes))
+    db.add(Notification(ps405Identification=user.identification, message=f"Transferencia pendiente para {document.document_name}", type="in_app", action_url=f"/kardex?transfer={transfer.idTransfer}"))
+    write_audit(db, action="transfer_created", module="transfers", user_id=user.identification, entity="transfer", entity_id=transfer.idTransfer, new_values=payload.model_dump(), request=request)
+    db.commit()
+    publish_event("transfer.created", {"transfer_id": transfer.idTransfer, "document_id": document.idDocument})
+    db.refresh(transfer)
+    return transfer
+
+
+@router.patch("/{transfer_id}/status")
+def update_transfer_status(
+    transfer_id: int,
+    payload: TransferStatusUpdate,
+    request: Request,
+    user: User = Depends(require_permission("transfer.manage")),
+    db: Session = Depends(get_db),
+):
+    transfer = db.get(DocumentTransfer, transfer_id)
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+    if payload.status not in VALID_TRANSITIONS.get(transfer.status, set()):
+        raise HTTPException(status_code=409, detail="Invalid transfer transition")
+    old_status = transfer.status
+    transfer.status = payload.status
+    if payload.status == "received":
+        document = db.get(Document, transfer.ps520IdDocument)
+        if document:
+            document.location_id = transfer.destination_location
+            document.status = "custody"
+    db.add(TransferLog(ps702IdTransfer=transfer.idTransfer, action=payload.status, ps405Identification=user.identification, notes=payload.notes))
+    write_audit(db, action="transfer_status_updated", module="transfers", user_id=user.identification, entity="transfer", entity_id=transfer.idTransfer, old_values={"status": old_status}, new_values=payload.model_dump(), request=request)
+    db.commit()
+    publish_event("transfer.status_updated", {"transfer_id": transfer.idTransfer, "status": payload.status})
+    db.refresh(transfer)
+    return transfer
+
+
+@router.get("/{transfer_id}/log")
+def transfer_log(transfer_id: int, db: Session = Depends(get_db), _: User = Depends(require_permission("document.read"))):
+    return db.query(TransferLog).filter(TransferLog.ps702IdTransfer == transfer_id).order_by(TransferLog.action_date.asc()).all()
