@@ -1,8 +1,8 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 _DEFAULT_JWT_SECRET = "local-dev-secret-change-before-production"
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     environment: Literal["local", "development", "staging", "production"] = "local"
     project_name: str = "Ambar"
     api_base_url: str = "http://localhost:8000"
-    frontend_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    frontend_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     database_url: str = "sqlite:///./ambar.db"
     read_database_url: str | None = None
@@ -51,7 +51,13 @@ class Settings(BaseSettings):
     @classmethod
     def parse_origins(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
+            raw = value.strip()
+            if raw.startswith("[") and raw.endswith("]"):
+                import json
+
+                parsed = json.loads(raw)
+                return [str(item).strip() for item in parsed if str(item).strip()]
+            return [item.strip() for item in raw.split(",") if item.strip()]
         return value
 
     @model_validator(mode="after")

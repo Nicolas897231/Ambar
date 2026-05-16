@@ -59,3 +59,8 @@ Cambiar estas credenciales y todos los secretos antes de produccion.
 - Integraciones ERP/API mediante adapters desacoplados.
 - Webhooks HMAC de entrada/salida.
 - BI avanzado y snapshots de Data Warehouse.
+## Despliegue staging multi-servidor
+
+La guia operativa para desplegar en `10.10.10.241`, `10.10.10.240` y `10.10.10.242` esta en:
+
+- `docs/STAGING_DEPLOYMENT.md`

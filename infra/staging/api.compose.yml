@@ -5,6 +5,7 @@ services:
     env_file:
       - ./.env.api
     command: ["alembic", "upgrade", "head"]
+    network_mode: host
     restart: "no"
 
   api:
@@ -13,8 +14,7 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env.api
-    ports:
-      - "10.10.10.240:8000:8000"
+    network_mode: host
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/live"]
       interval: 15s
@@ -27,8 +27,7 @@ services:
   gateway:
     image: nginx:1.27-alpine
     restart: unless-stopped
-    ports:
-      - "10.10.10.240:80:80"
+    network_mode: host
     volumes:
       - ./gateway.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
