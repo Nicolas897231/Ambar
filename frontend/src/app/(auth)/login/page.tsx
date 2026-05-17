@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogIn } from "lucide-react";
 import api from "@/lib/api";
-import { saveSession } from "@/lib/auth";
+import { CurrentUser, saveCurrentUser, saveSession } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,6 +20,8 @@ export default function LoginPage() {
     try {
       const { data } = await api.post("/auth/login", { email, password });
       saveSession(data.access_token, data.refresh_token);
+      const me = await api.get<CurrentUser>("/auth/me");
+      saveCurrentUser(me.data);
       router.push("/dashboard");
     } catch {
       setError("Credenciales invalidas o servicio no disponible.");
