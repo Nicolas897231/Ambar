@@ -2,6 +2,10 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.db.models import (
+    Archive,
+    ArchiveUser,
+    Expedient,
+    Folder,
     Location,
     Permission,
     Role,
@@ -24,6 +28,7 @@ PERMISSIONS = [
     "document.read_all",
     "document.update",
     "document.transfer",
+        "archive.manage",
     "trd.manage",
     "transfer.manage",
     "audit.view",
@@ -55,6 +60,7 @@ ROLES = {
         "document.read_all",
         "document.update",
         "document.transfer",
+        "archive.manage",
         "trd.manage",
         "transfer.manage",
         "transfer.batch_manage",
@@ -152,6 +158,27 @@ def seed_database(db: Session) -> None:
     ).one_or_none():
         db.add(UserRole(ps405Identification=admin.identification, ps407IdRole=roles_by_name["super_admin"].idRole))
 
+    default_archive = db.query(Archive).filter(Archive.archive_code == "ARCH-BOG-CENTRAL").one_or_none()
+    if not default_archive:
+        default_archive = Archive(
+            archive_code="ARCH-BOG-CENTRAL",
+            archive_name="Archivo Central Bogota",
+            archive_type="central",
+            ps700IdLocation=1,
+            description="Archivo central inicial para operacion SGDEA",
+            responsible_identification=admin.identification,
+            custodian_identification=admin.identification,
+            capacity_units=100000,
+            physical_location="Sede Principal",
+            metadata_json={"seed": True},
+        )
+        db.add(default_archive)
+        db.flush()
+    if not db.query(ArchiveUser).filter(
+        ArchiveUser.ps930IdArchive == default_archive.idArchive,
+        ArchiveUser.ps405Identification == admin.identification,
+    ).one_or_none():
+        db.add(ArchiveUser(ps930IdArchive=default_archive.idArchive, ps405Identification=admin.identification, access_level="admin"))
     if not db.query(TrdSeries).first():
         series = TrdSeries(code="ADM-001", name="Gestion Administrativa", description="Serie documental inicial")
         db.add(series)
@@ -168,6 +195,29 @@ def seed_database(db: Session) -> None:
             )
         )
 
+    if default_archive and not db.query(Expedient).filter(Expedient.expedient_code == "EXP-GEN-0001").one_or_none():
+        expedient = Expedient(
+            expedient_code="EXP-GEN-0001",
+            expedient_name="Expediente General de Entrada",
+            expedient_type="administrativo",
+            ps930IdArchive=default_archive.idArchive,
+            responsible_identification=admin.identification,
+            status="active",
+            physical_location="Bandeja de clasificacion",
+            metadata_json={"seed": True},
+        )
+        db.add(expedient)
+        db.flush()
+        db.add(
+            Folder(
+                folder_code="CARP-GEN-0001",
+                folder_name="Carpeta General de Entrada",
+                ps950IdExpedient=expedient.idExpedient,
+                ps930IdArchive=default_archive.idArchive,
+                physical_location="Bandeja de clasificacion",
+                metadata_json={"seed": True},
+            )
+        )
     if not db.query(Workflow).first():
         workflow = Workflow(
             workflow_name="Contratacion RRHH",

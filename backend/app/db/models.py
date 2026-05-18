@@ -94,6 +94,13 @@ class Document(Base, TimestampMixin):
     location_id: Mapped[int | None] = mapped_column(ForeignKey("ps700_locations.idLocation"))
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
     ps612IdSubseries: Mapped[int | None] = mapped_column(ForeignKey("ps612_trd_subseries.idSubseries"))
+    ps930IdArchive: Mapped[int | None] = mapped_column(ForeignKey("ps930_archives.idArchive"), index=True)
+    ps950IdExpedient: Mapped[int | None] = mapped_column(ForeignKey("ps950_expedients.idExpedient"), index=True)
+    ps952IdFolder: Mapped[int | None] = mapped_column(ForeignKey("ps952_folders.idFolder"), index=True)
+    folio_start: Mapped[int | None] = mapped_column(Integer)
+    folio_end: Mapped[int | None] = mapped_column(Integer)
+    folio_total: Mapped[int | None] = mapped_column(Integer)
+    physical_location: Mapped[str | None] = mapped_column(String(255))
 
     files: Mapped[list["DocumentFile"]] = relationship(back_populates="document", cascade="all, delete-orphan")
 
@@ -489,3 +496,195 @@ class DataWarehouseFact(Base):
     source_id: Mapped[str] = mapped_column(String(80), nullable=False)
     measure_data: Mapped[dict] = mapped_column(JSON, default=dict)
     loaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+class Archive(Base, TimestampMixin):
+    __tablename__ = "ps930_archives"
+
+    idArchive: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    archive_code: Mapped[str] = mapped_column(String(60), unique=True, nullable=False)
+    archive_name: Mapped[str] = mapped_column(String(180), nullable=False)
+    archive_type: Mapped[str] = mapped_column(String(40), default="gestion", index=True)
+    ps700IdLocation: Mapped[int | None] = mapped_column(ForeignKey("ps700_locations.idLocation"))
+    description: Mapped[str | None] = mapped_column(Text)
+    responsible_identification: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
+    custodian_identification: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
+    capacity_units: Mapped[int] = mapped_column(Integer, default=0)
+    physical_location: Mapped[str | None] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+    box_count: Mapped[int] = mapped_column(Integer, default=0)
+    expedient_count: Mapped[int] = mapped_column(Integer, default=0)
+    document_count: Mapped[int] = mapped_column(Integer, default=0)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class ArchiveUser(Base):
+    __tablename__ = "ps932_archive_users"
+    __table_args__ = (UniqueConstraint("ps930IdArchive", "ps405Identification"),)
+
+    idArchiveUser: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ps930IdArchive: Mapped[int] = mapped_column(ForeignKey("ps930_archives.idArchive"), nullable=False)
+    ps405Identification: Mapped[str] = mapped_column(ForeignKey("ps405_users.identification"), nullable=False)
+    access_level: Mapped[str] = mapped_column(String(40), default="read")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    archive: Mapped[Archive] = relationship()
+    user: Mapped[User] = relationship()
+
+
+class Shelf(Base, TimestampMixin):
+    __tablename__ = "ps934_shelves"
+    __table_args__ = (UniqueConstraint("ps930IdArchive", "shelf_code"),)
+
+    idShelf: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ps930IdArchive: Mapped[int] = mapped_column(ForeignKey("ps930_archives.idArchive"), nullable=False)
+    shelf_code: Mapped[str] = mapped_column(String(60), nullable=False)
+    shelf_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    capacity_boxes: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+    physical_location: Mapped[str | None] = mapped_column(String(255))
+
+    archive: Mapped[Archive] = relationship()
+
+
+class PhysicalBox(Base, TimestampMixin):
+    __tablename__ = "ps936_physical_boxes"
+    __table_args__ = (UniqueConstraint("ps930IdArchive", "box_code"),)
+
+    idBox: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ps930IdArchive: Mapped[int] = mapped_column(ForeignKey("ps930_archives.idArchive"), nullable=False)
+    ps934IdShelf: Mapped[int | None] = mapped_column(ForeignKey("ps934_shelves.idShelf"))
+    box_code: Mapped[str] = mapped_column(String(60), nullable=False)
+    box_name: Mapped[str | None] = mapped_column(String(160))
+    capacity_folders: Mapped[int] = mapped_column(Integer, default=0)
+    current_folders: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+
+    archive: Mapped[Archive] = relationship()
+    shelf: Mapped[Shelf] = relationship()
+
+
+class Expedient(Base, TimestampMixin):
+    __tablename__ = "ps950_expedients"
+    __table_args__ = (UniqueConstraint("ps930IdArchive", "expedient_code"),)
+
+    idExpedient: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    expedient_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    expedient_name: Mapped[str] = mapped_column(String(220), nullable=False)
+    expedient_type: Mapped[str] = mapped_column(String(80), default="administrativo", index=True)
+    ps930IdArchive: Mapped[int] = mapped_column(ForeignKey("ps930_archives.idArchive"), nullable=False)
+    ps610IdSeries: Mapped[int | None] = mapped_column(ForeignKey("ps610_trd_series.idSeries"))
+    ps612IdSubseries: Mapped[int | None] = mapped_column(ForeignKey("ps612_trd_subseries.idSubseries"))
+    responsible_identification: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+    physical_location: Mapped[str | None] = mapped_column(String(255))
+    digital_location: Mapped[str | None] = mapped_column(String(500))
+    document_count: Mapped[int] = mapped_column(Integer, default=0)
+    folio_count: Mapped[int] = mapped_column(Integer, default=0)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    archive: Mapped[Archive] = relationship()
+    series: Mapped[TrdSeries] = relationship()
+    subseries: Mapped[TrdSubseries] = relationship()
+
+
+class Folder(Base, TimestampMixin):
+    __tablename__ = "ps952_folders"
+    __table_args__ = (UniqueConstraint("ps950IdExpedient", "folder_code"),)
+
+    idFolder: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    folder_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    folder_name: Mapped[str] = mapped_column(String(220), nullable=False)
+    ps950IdExpedient: Mapped[int] = mapped_column(ForeignKey("ps950_expedients.idExpedient"), nullable=False)
+    ps930IdArchive: Mapped[int] = mapped_column(ForeignKey("ps930_archives.idArchive"), nullable=False)
+    ps936IdBox: Mapped[int | None] = mapped_column(ForeignKey("ps936_physical_boxes.idBox"))
+    folio_count: Mapped[int] = mapped_column(Integer, default=0)
+    document_count: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+    physical_location: Mapped[str | None] = mapped_column(String(255))
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    archive: Mapped[Archive] = relationship()
+    expedient: Mapped[Expedient] = relationship()
+    box: Mapped[PhysicalBox] = relationship()
+
+
+class Foliation(Base, TimestampMixin):
+    __tablename__ = "ps954_foliation"
+    __table_args__ = (UniqueConstraint("ps520IdDocument", "folio_start", "folio_end"),)
+
+    idFoliation: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ps520IdDocument: Mapped[int] = mapped_column(ForeignKey("ps520_documents.idDocument"), nullable=False)
+    ps950IdExpedient: Mapped[int] = mapped_column(ForeignKey("ps950_expedients.idExpedient"), nullable=False)
+    ps952IdFolder: Mapped[int] = mapped_column(ForeignKey("ps952_folders.idFolder"), nullable=False)
+    folio_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    folio_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    folio_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    electronic_folios: Mapped[int] = mapped_column(Integer, default=0)
+    annexes: Mapped[str | None] = mapped_column(Text)
+    validation_status: Mapped[str] = mapped_column(String(40), default="valid", index=True)
+    validation_notes: Mapped[str | None] = mapped_column(Text)
+
+
+class InventoryFuid(Base, TimestampMixin):
+    __tablename__ = "ps956_inventory_fuid"
+
+    idFuid: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    fuid_code: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    ps930IdArchive: Mapped[int] = mapped_column(ForeignKey("ps930_archives.idArchive"), nullable=False)
+    ps950IdExpedient: Mapped[int | None] = mapped_column(ForeignKey("ps950_expedients.idExpedient"))
+    ps1070IdBatch: Mapped[int | None] = mapped_column(ForeignKey("ps1070_transfer_batches.idBatch"))
+    support_type: Mapped[str] = mapped_column(String(40), default="hybrid")
+    folio_total: Mapped[int] = mapped_column(Integer, default=0)
+    location_summary: Mapped[str | None] = mapped_column(String(255))
+    observations: Mapped[str | None] = mapped_column(Text)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class DocumentLoan(Base, TimestampMixin):
+    __tablename__ = "ps958_document_loans"
+
+    idLoan: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity_type: Mapped[str] = mapped_column(String(40), default="folder", index=True)
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    ps930IdArchive: Mapped[int] = mapped_column(ForeignKey("ps930_archives.idArchive"), nullable=False)
+    requested_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    returned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+    evidence: Mapped[dict | None] = mapped_column(JSON)
+    observations: Mapped[str | None] = mapped_column(Text)
+
+
+class KardexMovement(Base, TimestampMixin):
+    __tablename__ = "ps960_kardex_movements"
+
+    idMovement: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    movement_type: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    ps930OriginArchiveId: Mapped[int | None] = mapped_column(ForeignKey("ps930_archives.idArchive"))
+    ps930DestinationArchiveId: Mapped[int | None] = mapped_column(ForeignKey("ps930_archives.idArchive"))
+    ps405ActorIdentification: Mapped[str] = mapped_column(ForeignKey("ps405_users.identification"), nullable=False)
+    custodian_from: Mapped[str | None] = mapped_column(String(160))
+    custodian_to: Mapped[str | None] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(40), default="pending", index=True)
+    reason: Mapped[str | None] = mapped_column(Text)
+    observations: Mapped[str | None] = mapped_column(Text)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    origin_archive: Mapped[Archive] = relationship(foreign_keys=[ps930OriginArchiveId])
+    destination_archive: Mapped[Archive] = relationship(foreign_keys=[ps930DestinationArchiveId])
+
+
+class MovementTrace(Base):
+    __tablename__ = "ps962_movement_traces"
+
+    idTrace: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ps960IdMovement: Mapped[int] = mapped_column(ForeignKey("ps960_kardex_movements.idMovement"), nullable=False)
+    action: Mapped[str] = mapped_column(String(80), nullable=False)
+    ps405Identification: Mapped[str] = mapped_column(ForeignKey("ps405_users.identification"), nullable=False)
+    ip_address: Mapped[str | None] = mapped_column(String(80))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    movement: Mapped[KardexMovement] = relationship()

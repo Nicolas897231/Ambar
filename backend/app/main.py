@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -13,11 +13,31 @@ from app.services.cache import get_json, set_json
 from app.services.metrics import metrics_registry
 
 
+
+def ensure_archival_document_columns() -> None:
+    inspector = inspect(engine)
+    if "ps520_documents" not in inspector.get_table_names():
+        return
+    existing = {item["name"] for item in inspector.get_columns("ps520_documents")}
+    columns = {
+        "ps930IdArchive": "INTEGER",
+        "ps950IdExpedient": "INTEGER",
+        "ps952IdFolder": "INTEGER",
+        "folio_start": "INTEGER",
+        "folio_end": "INTEGER",
+        "folio_total": "INTEGER",
+        "physical_location": "VARCHAR(255)",
+    }
+    with engine.begin() as connection:
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE ps520_documents ADD COLUMN {name} {definition}"))
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     if settings.auto_create_schema:
         Base.metadata.create_all(bind=engine)
+        ensure_archival_document_columns()
     if settings.seed_default_data:
         db = SessionLocal()
         try:

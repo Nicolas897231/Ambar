@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.domains.advanced_transfers.router import router as advanced_transfers_router
 from app.domains.analytics.router import router as analytics_router
 from app.domains.audit.router import router as audit_router
+from app.domains.archives.router import router as archives_router
 from app.domains.auth.router import router as auth_router
 from app.domains.bi.router import router as bi_router
 from app.domains.documents.router import router as documents_router
@@ -25,6 +26,7 @@ api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
 api_router.include_router(documents_router)
+api_router.include_router(archives_router)
 api_router.include_router(trd_router)
 api_router.include_router(transfers_router)
 api_router.include_router(audit_router)

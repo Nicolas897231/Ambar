@@ -15,11 +15,18 @@ ALLOWED_MIME_TYPES = {
     "image/jpeg",
     "image/tiff",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "application/msword",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-powerpoint",
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/xml",
+    "text/xml",
+    "video/mp4",
     "text/plain",
 }
-
-
 def _client() -> Minio:
     settings = get_settings()
     return Minio(
@@ -69,7 +76,7 @@ def store_file(*, company_id: str, module: str, file: UploadFile, content: bytes
         path = str(local_path)
 
     return {
-        "path": path,
+        "file_path": path,
         "checksum": digest,
         "size_bytes": len(content),
         "content_type": file.content_type or "application/octet-stream",

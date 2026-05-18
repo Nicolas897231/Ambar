@@ -2,32 +2,108 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, Bot, BriefcaseBusiness, BarChart3, ClipboardCheck, ClipboardList, FilePenLine, FileText, Gauge, GitBranch, Link2, LogOut, PlugZap, Route, Search, ServerCog, ShieldCheck, TableProperties, Users, Warehouse } from "lucide-react";
+import { Archive, BarChart3, Bell, Bot, Boxes, BriefcaseBusiness, Building2, ChevronDown, ClipboardCheck, ClipboardList, Database, FileBox, FilePenLine, FileText, FolderKanban, Gauge, GitBranch, Layers3, Link2, ListChecks, LogOut, MapPin, PackageCheck, PlugZap, Route, Search, ServerCog, ShieldCheck, TableProperties, Users, Warehouse } from "lucide-react";
 import { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { clearSession, CurrentUser, getCurrentUser, getStoredPermissions, hasAnyPermission, saveCurrentUser } from "@/lib/auth";
 
-const nav = [
-  { href: "/dashboard", label: "Dashboard", icon: Gauge, permissions: ["analytics.view", "bi.view"] },
-  { href: "/documents", label: "Documentos", icon: FileText, permissions: ["document.read", "document.read_all", "document.create", "document.update"] },
-  { href: "/trd", label: "TRD", icon: TableProperties, permissions: ["trd.manage"] },
-  { href: "/kardex", label: "Kardex", icon: Route, permissions: ["document.transfer", "transfer.manage"] },
-  { href: "/workflows", label: "Workflows", icon: GitBranch, permissions: ["workflow.manage"] },
-  { href: "/tasks", label: "Tareas", icon: ClipboardCheck, permissions: ["task.manage"] },
-  { href: "/hr", label: "RRHH", icon: BriefcaseBusiness, permissions: ["hr.view", "hr.manage"] },
-  { href: "/transfer-batches", label: "Lotes", icon: Warehouse, permissions: ["transfer.batch_manage"] },
-  { href: "/reports", label: "Reportes", icon: ClipboardList, permissions: ["report.request"] },
-  { href: "/search", label: "Busqueda", icon: Search, permissions: ["search.query", "search.reindex"] },
-  { href: "/ocr", label: "OCR", icon: Bot, permissions: ["ocr.manage"] },
-  { href: "/signatures", label: "Firmas", icon: FilePenLine, permissions: ["signature.manage"] },
-  { href: "/integrations", label: "Integraciones", icon: PlugZap, permissions: ["integration.manage"] },
-  { href: "/webhooks", label: "Webhooks", icon: Link2, permissions: ["webhook.manage"] },
-  { href: "/bi", label: "BI", icon: BarChart3, permissions: ["bi.view", "bi.refresh"] },
-  { href: "/platform", label: "Plataforma", icon: ServerCog, permissions: ["platform.view"] },
-  { href: "/audit", label: "Auditoria", icon: ShieldCheck, permissions: ["audit.view"] },
-  { href: "/users", label: "Usuarios", icon: Users, permissions: ["users.manage"] },
-  { href: "/notifications", label: "Notificaciones", icon: Bell, permissions: ["notification.read"] }
+type NavItem = { href: string; label: string; icon: typeof Gauge; permissions: string[]; badge?: string };
+type NavGroup = { label: string; icon: typeof Gauge; items: NavItem[]; permissions: string[] };
+
+const groups: NavGroup[] = [
+  {
+    label: "Principal",
+    icon: Gauge,
+    permissions: ["analytics.view", "bi.view"],
+    items: [{ href: "/dashboard", label: "Dashboard", icon: Gauge, permissions: ["analytics.view", "bi.view"] }]
+  },
+  {
+    label: "Gestion Documental",
+    icon: FileText,
+    permissions: ["document.read", "document.read_all", "document.create", "document.update"],
+    items: [
+      { href: "/documents", label: "Documentos", icon: FileText, permissions: ["document.read", "document.read_all", "document.create", "document.update"] },
+      { href: "/expedients", label: "Expedientes", icon: FolderKanban, permissions: ["document.read", "document.create"] },
+      { href: "/folders", label: "Carpetas", icon: FileBox, permissions: ["document.read", "document.create"] },
+      { href: "/foliation", label: "Foliacion", icon: ListChecks, permissions: ["document.update"] },
+      { href: "/repository", label: "Repositorio", icon: Database, permissions: ["document.read"] }
+    ]
+  },
+  {
+    label: "TRD",
+    icon: TableProperties,
+    permissions: ["trd.manage"],
+    items: [
+      { href: "/trd", label: "Series", icon: TableProperties, permissions: ["trd.manage"] },
+      { href: "/trd", label: "Subseries", icon: Layers3, permissions: ["trd.manage"] },
+      { href: "/trd", label: "Retencion", icon: ClipboardList, permissions: ["trd.manage"] },
+      { href: "/trd", label: "Disposicion final", icon: PackageCheck, permissions: ["trd.manage"] }
+    ]
+  },
+  {
+    label: "Custodia Documental",
+    icon: Warehouse,
+    permissions: ["document.transfer", "transfer.manage", "transfer.batch_manage", "archive.manage"],
+    items: [
+      { href: "/custody", label: "Dashboard custodia", icon: BarChart3, permissions: ["document.read"] },
+      { href: "/archives", label: "Archivos", icon: Building2, permissions: ["document.read", "archive.manage"] },
+      { href: "/kardex", label: "Kardex", icon: Route, permissions: ["document.transfer", "transfer.manage"] },
+      { href: "/transfer-batches", label: "Transferencias", icon: Warehouse, permissions: ["transfer.batch_manage", "document.transfer"] },
+      { href: "/reception", label: "Recepcion", icon: PackageCheck, permissions: ["transfer.manage"] },
+      { href: "/inventory", label: "Inventarios", icon: ClipboardList, permissions: ["document.read"] },
+      { href: "/fuid", label: "FUID", icon: FileText, permissions: ["document.transfer", "transfer.manage"] },
+      { href: "/boxes", label: "Cajas", icon: Boxes, permissions: ["archive.manage"] },
+      { href: "/shelves", label: "Estanterias", icon: Archive, permissions: ["archive.manage"] },
+      { href: "/custodians", label: "Custodios", icon: Users, permissions: ["archive.manage"] },
+      { href: "/traceability", label: "Trazabilidad", icon: Route, permissions: ["document.read"] },
+      { href: "/loans", label: "Prestamos", icon: PackageCheck, permissions: ["document.transfer"] },
+      { href: "/locations", label: "Ubicaciones", icon: MapPin, permissions: ["archive.manage"] }
+    ]
+  },
+  {
+    label: "RRHH",
+    icon: BriefcaseBusiness,
+    permissions: ["hr.view", "hr.manage"],
+    items: [
+      { href: "/hr", label: "Empleados", icon: BriefcaseBusiness, permissions: ["hr.view", "hr.manage"] },
+      { href: "/hr", label: "Expedientes", icon: FolderKanban, permissions: ["hr.view", "hr.manage"] },
+      { href: "/hr", label: "Contratos", icon: FileText, permissions: ["hr.manage"] },
+      { href: "/hr", label: "Afiliaciones", icon: ClipboardCheck, permissions: ["hr.manage"] }
+    ]
+  },
+  {
+    label: "Busqueda",
+    icon: Search,
+    permissions: ["search.query", "search.reindex", "ocr.manage"],
+    items: [
+      { href: "/search", label: "Global", icon: Search, permissions: ["search.query"] },
+      { href: "/ocr", label: "OCR", icon: Bot, permissions: ["ocr.manage"] },
+      { href: "/search", label: "Avanzada", icon: Database, permissions: ["search.query"] }
+    ]
+  },
+  {
+    label: "Operacion Digital",
+    icon: PlugZap,
+    permissions: ["signature.manage", "integration.manage", "webhook.manage", "bi.view", "platform.view"],
+    items: [
+      { href: "/signatures", label: "Firmas", icon: FilePenLine, permissions: ["signature.manage"] },
+      { href: "/integrations", label: "Integraciones", icon: PlugZap, permissions: ["integration.manage"] },
+      { href: "/webhooks", label: "Webhooks", icon: Link2, permissions: ["webhook.manage"] },
+      { href: "/bi", label: "BI", icon: BarChart3, permissions: ["bi.view", "bi.refresh"] },
+      { href: "/platform", label: "Plataforma", icon: ServerCog, permissions: ["platform.view"] }
+    ]
+  },
+  {
+    label: "Seguridad",
+    icon: ShieldCheck,
+    permissions: ["users.manage", "audit.view", "notification.read"],
+    items: [
+      { href: "/users", label: "Usuarios y roles", icon: Users, permissions: ["users.manage"] },
+      { href: "/audit", label: "Auditoria", icon: ShieldCheck, permissions: ["audit.view"] },
+      { href: "/notifications", label: "Notificaciones", icon: Bell, permissions: ["notification.read"] }
+    ]
+  }
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -45,22 +121,36 @@ export function AppShell({ children }: { children: ReactNode }) {
     staleTime: 60000
   });
   const permissions = currentUser.data?.permissions ?? getStoredPermissions();
-  const visibleNav = nav.filter((item) => hasAnyPermission(permissions, item.permissions));
+  const visibleGroups = groups
+    .map((group) => ({ ...group, items: group.items.filter((item) => hasAnyPermission(permissions, item.permissions)) }))
+    .filter((group) => group.items.length > 0 || hasAnyPermission(permissions, group.permissions));
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div>
+        <div className="sidebar-brand-block">
           <div className="brand">Ambar</div>
-          <div className="muted">Control documental enterprise</div>
+          <div className="muted">SGDEA enterprise</div>
         </div>
-        <nav className="nav">
-          {visibleNav.map((item) => {
-            const Icon = item.icon;
+        <nav className="nav nav-enterprise">
+          {visibleGroups.map((group) => {
+            const GroupIcon = group.icon;
+            const open = group.items.some((item) => pathname === item.href);
             return (
-              <Link key={item.href} href={item.href} style={{ background: pathname === item.href ? "#263238" : undefined }}>
-                <Icon size={18} /> {item.label}
-              </Link>
+              <details className="nav-group" key={group.label} open={open || group.label === "Principal"}>
+                <summary className="nav-group-title"><GroupIcon size={17} /> <span>{group.label}</span><ChevronDown className="nav-chevron" size={15} /></summary>
+                <div className="nav-subitems">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const active = pathname === item.href;
+                    return (
+                      <Link key={`${group.label}-${item.label}-${item.href}`} className={active ? "active" : ""} href={item.href}>
+                        <Icon size={16} /> <span>{item.label}</span>{item.badge ? <small>{item.badge}</small> : null}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </details>
             );
           })}
           <button type="button" onClick={() => { clearSession(); router.push("/login"); }}>
@@ -70,7 +160,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
       <main className="main">
         <div className="topbar">
-          <span><ClipboardList size={18} /> Fase 4 Enterprise+</span>
+          <span><ClipboardList size={18} /> Operacion archivistica enterprise</span>
           <span className="status">{currentUser.data?.roles.join(", ") || "Sesion activa"}</span>
         </div>
         <div className="content">{children}</div>

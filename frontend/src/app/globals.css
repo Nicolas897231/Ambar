@@ -106,3 +106,30 @@ button.danger { color: var(--danger); border-color: #f0b7b1; }
 @media (max-width: 900px) {
   .users-layout, .role-grid, .form-row-2, .permission-grid { grid-template-columns: 1fr; }
 }
+
+.sidebar { background: #11181c; border-right: 1px solid #243238; }
+.sidebar-brand-block { display: grid; gap: 4px; }
+.nav-enterprise { align-content: start; overflow-y: auto; padding-right: 4px; }
+.nav-group { border-radius: 8px; }
+.nav-group-title { list-style: none; min-height: 38px; padding: 0 8px; display: grid; grid-template-columns: 18px 1fr 16px; align-items: center; gap: 8px; color: #b8c6ca; cursor: pointer; border-radius: 6px; font-size: 13px; font-weight: 700; }
+.nav-group-title::-webkit-details-marker { display: none; }
+.nav-group-title:hover { background: #1b252a; color: #eef5f6; }
+.nav-chevron { transition: transform .18s ease; }
+.nav-group[open] .nav-chevron { transform: rotate(180deg); }
+.nav-subitems { display: grid; gap: 3px; padding: 3px 0 8px 17px; animation: nav-open .16s ease; }
+.nav-subitems a { min-height: 34px; padding: 0 8px; font-size: 13px; border-left: 1px solid #2b3a40; }
+.nav-subitems a.active { background: #263238; color: #fff; border-left-color: var(--brand); }
+.nav-subitems small { margin-left: auto; min-width: 22px; text-align: center; border-radius: 999px; background: #2c3a40; color: #d8e4e7; padding: 2px 6px; }
+.breadcrumbs { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
+.breadcrumbs span:not(:last-child)::after { content: "/"; margin-left: 8px; color: #a7b3b8; }
+.timeline { display: grid; gap: 12px; }
+.timeline-item { display: grid; grid-template-columns: 120px 1fr; gap: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: #fbfcfd; }
+.timeline-state { display: grid; align-content: start; gap: 6px; }
+.timeline-body { display: grid; gap: 6px; }
+.kpi-band { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.kpi { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 14px; }
+.kpi strong { display: block; font-size: 24px; margin-top: 5px; }
+.skeleton { min-height: 16px; border-radius: 999px; background: linear-gradient(90deg, #edf2f4, #f8fafb, #edf2f4); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
+@keyframes nav-open { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (max-width: 1100px) { .kpi-band { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
