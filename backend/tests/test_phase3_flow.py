@@ -26,11 +26,14 @@ def test_phase3_health_search_platform_metrics_flow():
 
         search = client.post(
             "/api/v1/search/documents",
-            json={"q": "Contrato", "page": 1, "size": 10},
+            json={"q": "", "page": 1, "size": 10},
             headers=headers,
         )
         assert search.status_code == 200, search.text
         assert search.json()["engine"] in {"mysql_fallback", "opensearch"}
+        if search.json()["engine"] == "mysql_fallback":
+            assert search.json()["total"] > 0
+            assert {"entity_type", "title", "url"}.issubset(search.json()["items"][0])
 
         platform = client.get("/api/v1/platform/technical-dashboard", headers=headers)
         assert platform.status_code == 200, platform.text

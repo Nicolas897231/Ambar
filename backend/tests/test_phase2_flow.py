@@ -36,6 +36,29 @@ def test_phase2_workflow_hr_report_flow():
         tasks = client.get("/api/v1/workflows/tasks", headers=headers)
         assert tasks.status_code == 200
         assert tasks.json()
+        task_id = tasks.json()[0]["idTask"]
+
+        rejected_without_reason = client.patch(
+            f"/api/v1/workflows/tasks/{task_id}",
+            json={"status": "rejected", "evidence": {"source": "test"}},
+            headers=headers,
+        )
+        assert rejected_without_reason.status_code == 422
+
+        approved = client.patch(
+            f"/api/v1/workflows/tasks/{task_id}",
+            json={"status": "approved", "evidence": {"source": "test"}},
+            headers=headers,
+        )
+        assert approved.status_code == 200, approved.text
+
+        active_tasks = client.get("/api/v1/workflows/tasks", headers=headers)
+        assert active_tasks.status_code == 200
+        assert all(item["idTask"] != task_id for item in active_tasks.json())
+
+        approved_tasks = client.get("/api/v1/workflows/tasks?status=approved", headers=headers)
+        assert approved_tasks.status_code == 200
+        assert any(item["idTask"] == task_id for item in approved_tasks.json())
 
         employee = client.post(
             "/api/v1/hr/employees",
@@ -50,6 +73,20 @@ def test_phase2_workflow_hr_report_flow():
             headers=headers,
         )
         assert employee.status_code in {201, 409}
+
+        invalid_employee = client.post(
+            "/api/v1/hr/employees",
+            json={
+                "identification": "Empleado Sin Documento",
+                "employee_code": "EMP-BAD-NAME",
+                "full_name": "123456",
+                "position": "Analista documental",
+                "department": "Archivo",
+                "hire_date": datetime.now(UTC).isoformat(),
+            },
+            headers=headers,
+        )
+        assert invalid_employee.status_code == 422
 
         compliance = client.get("/api/v1/hr/employees/9001/compliance", headers=headers)
         assert compliance.status_code == 200

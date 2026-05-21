@@ -38,6 +38,8 @@ button {
 }
 button.secondary { background: #263238; }
 button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+.button-link { min-height: 38px; padding: 0 12px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.ghost-link { background: transparent; color: var(--text); border: 1px solid var(--line); }
 button:disabled { opacity: .6; cursor: not-allowed; }
 input, select, textarea {
   width: 100%;

@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -109,8 +109,17 @@ def start_workflow(workflow_id: int, payload: WorkflowStart, request: Request, u
 
 
 @router.get("/tasks")
-def list_tasks(user: User = Depends(require_permission("task.manage")), db: Session = Depends(get_db)):
-    return db.query(WorkflowTask).filter(WorkflowTask.ps405Identification == user.identification).order_by(WorkflowTask.due_date.asc()).all()
+def list_tasks(
+    status_filter: str = Query(default="active", alias="status"),
+    user: User = Depends(require_permission("task.manage")),
+    db: Session = Depends(get_db),
+):
+    query = db.query(WorkflowTask).filter(WorkflowTask.ps405Identification == user.identification)
+    if status_filter == "active":
+        query = query.filter(WorkflowTask.status.in_(["pending", "in_progress", "overdue"]))
+    elif status_filter != "all":
+        query = query.filter(WorkflowTask.status == status_filter)
+    return query.order_by(WorkflowTask.due_date.asc()).all()
 
 
 @router.patch("/tasks/{task_id}")
@@ -118,6 +127,10 @@ def update_task(task_id: int, payload: TaskAction, request: Request, user: User 
     task = db.get(WorkflowTask, task_id)
     if not task or task.ps405Identification != user.identification:
         raise HTTPException(status_code=404, detail="Task not found")
+    if task.status in {"approved", "rejected", "completed", "cancelled"}:
+        raise HTTPException(status_code=409, detail="Task is already closed")
+    if payload.status == "rejected" and not str(payload.evidence.get("reason", "")).strip():
+        raise HTTPException(status_code=422, detail="Rejection reason is required")
     old_status = task.status
     task.status = payload.status
     task.evidence = payload.evidence
@@ -130,6 +143,11 @@ def update_task(task_id: int, payload: TaskAction, request: Request, user: User 
         publish_event("workflow.completed", {"instance_id": instance.idInstance})
     elif instance and payload.status in {"rejected", "cancelled"}:
         instance.status = payload.status
+    db.query(AdvancedNotification).filter(
+        AdvancedNotification.ps405Identification == user.identification,
+        AdvancedNotification.action_url == f"/tasks?task={task.idTask}",
+        AdvancedNotification.status == "pending",
+    ).update({"status": "actioned"})
     write_audit(db, action="workflow_task_updated", module="workflows", user_id=user.identification, entity="workflow_task", entity_id=task.idTask, old_values={"status": old_status}, new_values=payload.model_dump(), request=request)
     db.commit()
     db.refresh(task)

@@ -1,7 +1,8 @@
+import re
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_permission
@@ -22,6 +23,27 @@ class EmployeeCreate(BaseModel):
     position: str = Field(min_length=2, max_length=120)
     department: str = Field(min_length=2, max_length=120)
     hire_date: datetime
+
+    @field_validator("identification")
+    @classmethod
+    def validate_identification(cls, value: str) -> str:
+        normalized = value.strip()
+        if not re.fullmatch(r"[A-Za-z0-9.-]+", normalized) or not re.search(r"\d", normalized):
+            raise ValueError("Identification must be a document value, not a full name")
+        return normalized
+
+    @field_validator("employee_code", "position", "department")
+    @classmethod
+    def strip_catalog_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if not re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", normalized) or re.fullmatch(r"[\d\s.-]+", normalized):
+            raise ValueError("Full name must contain a valid person name")
+        return normalized
 
 
 class EmployeeFileLink(BaseModel):
@@ -57,6 +79,8 @@ def list_employees(db: Session = Depends(get_db), _: User = Depends(require_perm
 def create_employee(payload: EmployeeCreate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
     if db.get(Employee, payload.identification):
         raise HTTPException(status_code=409, detail="Employee already exists")
+    if db.query(Employee).filter(Employee.employee_code == payload.employee_code).first():
+        raise HTTPException(status_code=409, detail="Employee code already exists")
     employee = Employee(**payload.model_dump(), company_id=user.company_id, status="active")
     db.add(employee)
     db.flush()
