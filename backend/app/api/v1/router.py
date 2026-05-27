@@ -9,6 +9,7 @@ from app.domains.bi.router import router as bi_router
 from app.domains.documents.router import router as documents_router
 from app.domains.hr.router import router as hr_router
 from app.domains.integrations.router import router as integrations_router
+from app.domains.kardex.router import router as kardex_router
 from app.domains.notifications.router import router as notifications_router
 from app.domains.ocr.router import router as ocr_router
 from app.domains.platform.router import router as platform_router
@@ -35,6 +36,7 @@ api_router.include_router(analytics_router)
 api_router.include_router(workflows_router)
 api_router.include_router(hr_router)
 api_router.include_router(advanced_transfers_router)
+api_router.include_router(kardex_router)
 api_router.include_router(reports_router)
 api_router.include_router(scheduler_router)
 api_router.include_router(search_router)

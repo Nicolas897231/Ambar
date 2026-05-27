@@ -1,6 +1,8 @@
 # Ambar
 
-Ambar es una plataforma enterprise para gestion documental, TRD, kardex, custodia, auditoria y dashboard ejecutivo.
+AMBAR es una plataforma SGDEA enterprise para expedientes vivos, custodia documental, TRD, FUID, transferencias, recepcion, prestamos, ubicacion fisica, Kardex documental, repositorio seguro y auditoria.
+
+La filosofia de producto es compacta: menos modulos decorativos, mas operacion archivistica real.
 
 ## Fase 1
 
@@ -69,3 +71,9 @@ La guia operativa para desplegar en `10.10.10.241`, `10.10.10.240` y `10.10.10.2
 El plan integral de pruebas funcionales y no funcionales esta en:
 
 - `docs/QA_TEST_PLAN.md`
+
+## Checklist de produccion
+
+La guia minima para dejar AMBAR listo para staging/produccion empresarial esta en:
+
+- `docs/PRODUCTION_READINESS.md`

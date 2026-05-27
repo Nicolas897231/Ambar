@@ -85,6 +85,8 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
             module="auth",
             user_id=user.identification if user else None,
             new_values={"email": payload.email},
+            result="failed",
+            severity="warning",
             request=request,
         )
         db.commit()

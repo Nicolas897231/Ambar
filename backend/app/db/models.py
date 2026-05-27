@@ -198,13 +198,19 @@ class AuditLog(Base):
 
     idAudit: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ps405Identification: Mapped[str | None] = mapped_column(String(40), index=True)
+    ps930IdArchive: Mapped[int | None] = mapped_column(ForeignKey("ps930_archives.idArchive"), index=True)
     action: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
     module: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
     entity: Mapped[str | None] = mapped_column(String(120))
     entity_id: Mapped[str | None] = mapped_column(String(80))
+    entity_label: Mapped[str | None] = mapped_column(String(255))
+    result: Mapped[str] = mapped_column(String(40), default="success", index=True)
+    severity: Mapped[str] = mapped_column(String(40), default="info", index=True)
     old_values: Mapped[dict | None] = mapped_column(JSON)
     new_values: Mapped[dict | None] = mapped_column(JSON)
     ip_address: Mapped[str | None] = mapped_column(String(80))
+    user_agent: Mapped[str | None] = mapped_column(String(255))
+    request_id: Mapped[str | None] = mapped_column(String(120), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -263,10 +269,19 @@ class WorkflowTask(Base):
     ps914IdInstance: Mapped[int] = mapped_column(ForeignKey("ps914_workflow_instances.idInstance"), nullable=False)
     task_name: Mapped[str] = mapped_column(String(160), nullable=False)
     ps405Identification: Mapped[str] = mapped_column(ForeignKey("ps405_users.identification"), nullable=False)
+    ps930IdArchive: Mapped[int | None] = mapped_column(ForeignKey("ps930_archives.idArchive"), index=True)
+    module: Mapped[str | None] = mapped_column(String(80), index=True)
+    related_entity_type: Mapped[str | None] = mapped_column(String(80), index=True)
+    related_entity_id: Mapped[str | None] = mapped_column(String(80), index=True)
+    priority: Mapped[str] = mapped_column(String(40), default="normal", index=True)
     status: Mapped[str] = mapped_column(String(40), default="pending", index=True)
     due_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_by: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
+    resolution_note: Mapped[str | None] = mapped_column(Text)
+    action_url: Mapped[str | None] = mapped_column(String(255))
     evidence: Mapped[dict | None] = mapped_column(JSON)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON)
     instance: Mapped[WorkflowInstance] = relationship()
 
 
@@ -323,11 +338,23 @@ class AdvancedNotification(Base):
 
     idNotification: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ps405Identification: Mapped[str] = mapped_column(ForeignKey("ps405_users.identification"), nullable=False)
+    ps930IdArchive: Mapped[int | None] = mapped_column(ForeignKey("ps930_archives.idArchive"), index=True)
     module: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    title: Mapped[str | None] = mapped_column(String(160))
     message: Mapped[str] = mapped_column(String(255), nullable=False)
+    priority: Mapped[str] = mapped_column(String(40), default="normal", index=True)
+    notification_type: Mapped[str | None] = mapped_column(String(80), index=True)
+    related_entity_type: Mapped[str | None] = mapped_column(String(80), index=True)
+    related_entity_id: Mapped[str | None] = mapped_column(String(80), index=True)
+    action_label: Mapped[str | None] = mapped_column(String(80))
     action_url: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(40), default="pending", index=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metadata_json: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
 
 class NotificationDeliveryLog(Base):
@@ -347,6 +374,8 @@ class TransferBatch(Base):
     batch_code: Mapped[str] = mapped_column(String(60), unique=True, nullable=False)
     origin_location: Mapped[int] = mapped_column(ForeignKey("ps700_locations.idLocation"), nullable=False)
     destination_location: Mapped[int] = mapped_column(ForeignKey("ps700_locations.idLocation"), nullable=False)
+    ps930OriginArchiveId: Mapped[int | None] = mapped_column(ForeignKey("ps930_archives.idArchive"), index=True)
+    ps930DestinationArchiveId: Mapped[int | None] = mapped_column(ForeignKey("ps930_archives.idArchive"), index=True)
     status: Mapped[str] = mapped_column(String(40), default="pending", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -359,6 +388,30 @@ class TransferBatchDocument(Base):
     ps1070IdBatch: Mapped[int] = mapped_column(ForeignKey("ps1070_transfer_batches.idBatch"), nullable=False)
     ps520IdDocument: Mapped[int] = mapped_column(ForeignKey("ps520_documents.idDocument"), nullable=False)
     status: Mapped[str] = mapped_column(String(40), default="pending", index=True)
+
+
+class TransferBatchItem(Base):
+    __tablename__ = "ps1073_transfer_batch_items"
+    __table_args__ = (UniqueConstraint("ps1070IdBatch", "entity_type", "entity_id"),)
+
+    idBatchItem: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ps1070IdBatch: Mapped[int] = mapped_column(ForeignKey("ps1070_transfer_batches.idBatch"), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), default="pending", index=True)
+    expected_quantity: Mapped[int | None] = mapped_column(Integer)
+    received_quantity: Mapped[int | None] = mapped_column(Integer)
+    expected_folios: Mapped[int | None] = mapped_column(Integer)
+    received_folios: Mapped[int | None] = mapped_column(Integer)
+    folio_total: Mapped[int] = mapped_column(Integer, default=0)
+    rejection_reason: Mapped[str | None] = mapped_column(String(80))
+    observation: Mapped[str | None] = mapped_column(Text)
+    evidence_url: Mapped[str | None] = mapped_column(String(500))
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ps930OriginArchiveId: Mapped[int | None] = mapped_column(ForeignKey("ps930_archives.idArchive"), index=True)
+    ps930DestinationArchiveId: Mapped[int | None] = mapped_column(ForeignKey("ps930_archives.idArchive"), index=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class TransferEvidence(Base):
@@ -659,15 +712,28 @@ class KardexMovement(Base, TimestampMixin):
     __tablename__ = "ps960_kardex_movements"
 
     idMovement: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    movement_code: Mapped[str | None] = mapped_column(String(80), unique=True)
     movement_type: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
     entity_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    related_document_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    related_folder_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    related_expedient_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    related_box_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    related_transfer_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    related_loan_id: Mapped[int | None] = mapped_column(Integer, index=True)
     ps930OriginArchiveId: Mapped[int | None] = mapped_column(ForeignKey("ps930_archives.idArchive"))
     ps930DestinationArchiveId: Mapped[int | None] = mapped_column(ForeignKey("ps930_archives.idArchive"))
+    origin_location_id: Mapped[int | None] = mapped_column(Integer)
+    destination_location_id: Mapped[int | None] = mapped_column(Integer)
     ps405ActorIdentification: Mapped[str] = mapped_column(ForeignKey("ps405_users.identification"), nullable=False)
     custodian_from: Mapped[str | None] = mapped_column(String(160))
     custodian_to: Mapped[str | None] = mapped_column(String(160))
+    previous_status: Mapped[str | None] = mapped_column(String(40))
     status: Mapped[str] = mapped_column(String(40), default="pending", index=True)
+    evidence_url: Mapped[str | None] = mapped_column(String(500))
+    ip_address: Mapped[str | None] = mapped_column(String(80))
+    user_agent: Mapped[str | None] = mapped_column(String(255))
     reason: Mapped[str | None] = mapped_column(Text)
     observations: Mapped[str | None] = mapped_column(Text)
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)

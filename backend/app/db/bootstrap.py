@@ -26,12 +26,14 @@ PERMISSIONS = [
     "document.create",
     "document.read",
     "document.read_all",
+    "document.download",
     "document.update",
     "document.transfer",
         "archive.manage",
     "trd.manage",
     "transfer.manage",
     "audit.view",
+    "audit.export",
     "notification.read",
     "analytics.view",
     "workflow.manage",
@@ -58,6 +60,7 @@ ROLES = {
         "document.create",
         "document.read",
         "document.read_all",
+        "document.download",
         "document.update",
         "document.transfer",
         "archive.manage",
@@ -67,6 +70,7 @@ ROLES = {
         "workflow.manage",
         "task.manage",
         "audit.view",
+        "audit.export",
         "notification.read",
         "analytics.view",
         "report.request",
@@ -80,8 +84,8 @@ ROLES = {
         "bi.view",
         "bi.refresh",
     ],
-    "archive_analyst": ["document.read", "document.update", "trd.manage", "analytics.view", "notification.read", "search.query", "ocr.manage", "bi.view"],
-    "archive_assistant": ["document.create", "document.read", "document.transfer", "task.manage", "notification.read", "search.query"],
+    "archive_analyst": ["document.read", "document.download", "document.update", "trd.manage", "analytics.view", "notification.read", "search.query", "ocr.manage", "bi.view"],
+    "archive_assistant": ["document.create", "document.read", "document.download", "document.transfer", "task.manage", "notification.read", "search.query"],
     "hr_manager": [
         "document.create",
         "document.read",
@@ -97,7 +101,7 @@ ROLES = {
         "signature.manage",
         "bi.view",
     ],
-    "auditor": ["document.read", "document.read_all", "audit.view", "analytics.view", "hr.view", "report.request", "search.query", "platform.view", "bi.view"],
+    "auditor": ["document.read", "document.read_all", "document.download", "audit.view", "audit.export", "analytics.view", "hr.view", "report.request", "search.query", "platform.view", "bi.view"],
     "viewer": ["document.read", "notification.read", "search.query"],
 }
 
@@ -194,6 +198,9 @@ def seed_database(db: Session) -> None:
                 final_action="conservacion_total",
             )
         )
+    else:
+        series = db.query(TrdSeries).order_by(TrdSeries.idSeries.asc()).first()
+        subseries = db.query(TrdSubseries).order_by(TrdSubseries.idSubseries.asc()).first()
 
     if default_archive and not db.query(Expedient).filter(Expedient.expedient_code == "EXP-GEN-0001").one_or_none():
         expedient = Expedient(
@@ -201,6 +208,8 @@ def seed_database(db: Session) -> None:
             expedient_name="Expediente General de Entrada",
             expedient_type="administrativo",
             ps930IdArchive=default_archive.idArchive,
+            ps610IdSeries=series.idSeries if series else None,
+            ps612IdSubseries=subseries.idSubseries if subseries else None,
             responsible_identification=admin.identification,
             status="active",
             physical_location="Bandeja de clasificacion",
@@ -218,6 +227,11 @@ def seed_database(db: Session) -> None:
                 metadata_json={"seed": True},
             )
         )
+    elif default_archive:
+        expedient = db.query(Expedient).filter(Expedient.expedient_code == "EXP-GEN-0001").one_or_none()
+        if expedient and (not expedient.ps610IdSeries or not expedient.ps612IdSubseries):
+            expedient.ps610IdSeries = series.idSeries if series else expedient.ps610IdSeries
+            expedient.ps612IdSubseries = subseries.idSubseries if subseries else expedient.ps612IdSubseries
     if not db.query(Workflow).first():
         workflow = Workflow(
             workflow_name="Contratacion RRHH",

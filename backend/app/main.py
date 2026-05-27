@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -32,12 +33,143 @@ def ensure_archival_document_columns() -> None:
         for name, definition in columns.items():
             if name not in existing:
                 connection.execute(text(f"ALTER TABLE ps520_documents ADD COLUMN {name} {definition}"))
+
+
+def ensure_transfer_batch_archive_columns() -> None:
+    inspector = inspect(engine)
+    if "ps1070_transfer_batches" not in inspector.get_table_names():
+        return
+    existing = {item["name"] for item in inspector.get_columns("ps1070_transfer_batches")}
+    columns = {
+        "ps930OriginArchiveId": "INTEGER",
+        "ps930DestinationArchiveId": "INTEGER",
+    }
+    with engine.begin() as connection:
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE ps1070_transfer_batches ADD COLUMN {name} {definition}"))
+
+
+def ensure_transfer_batch_item_reception_columns() -> None:
+    inspector = inspect(engine)
+    if "ps1073_transfer_batch_items" not in inspector.get_table_names():
+        return
+    existing = {item["name"] for item in inspector.get_columns("ps1073_transfer_batch_items")}
+    columns = {
+        "expected_quantity": "INTEGER",
+        "received_quantity": "INTEGER",
+        "expected_folios": "INTEGER",
+        "received_folios": "INTEGER",
+        "rejection_reason": "VARCHAR(80)",
+        "observation": "TEXT",
+        "evidence_url": "VARCHAR(500)",
+        "reviewed_by": "VARCHAR(40)",
+        "reviewed_at": "DATETIME",
+        "ps930OriginArchiveId": "INTEGER",
+        "ps930DestinationArchiveId": "INTEGER",
+    }
+    with engine.begin() as connection:
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE ps1073_transfer_batch_items ADD COLUMN {name} {definition}"))
+
+
+def ensure_deep_kardex_columns() -> None:
+    inspector = inspect(engine)
+    if "ps960_kardex_movements" not in inspector.get_table_names():
+        return
+    existing = {item["name"] for item in inspector.get_columns("ps960_kardex_movements")}
+    columns = {
+        "movement_code": "VARCHAR(80)",
+        "related_document_id": "INTEGER",
+        "related_folder_id": "INTEGER",
+        "related_expedient_id": "INTEGER",
+        "related_box_id": "INTEGER",
+        "related_transfer_id": "INTEGER",
+        "related_loan_id": "INTEGER",
+        "origin_location_id": "INTEGER",
+        "destination_location_id": "INTEGER",
+        "previous_status": "VARCHAR(40)",
+        "evidence_url": "VARCHAR(500)",
+        "ip_address": "VARCHAR(80)",
+        "user_agent": "VARCHAR(255)",
+    }
+    with engine.begin() as connection:
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE ps960_kardex_movements ADD COLUMN {name} {definition}"))
+
+
+def ensure_audit_security_columns() -> None:
+    inspector = inspect(engine)
+    if "ps820_audit_log" not in inspector.get_table_names():
+        return
+    existing = {item["name"] for item in inspector.get_columns("ps820_audit_log")}
+    columns = {
+        "ps930IdArchive": "INTEGER",
+        "entity_label": "VARCHAR(255)",
+        "result": "VARCHAR(40)",
+        "severity": "VARCHAR(40)",
+        "user_agent": "VARCHAR(255)",
+        "request_id": "VARCHAR(120)",
+    }
+    with engine.begin() as connection:
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE ps820_audit_log ADD COLUMN {name} {definition}"))
+
+
+def ensure_operational_notification_columns() -> None:
+    inspector = inspect(engine)
+    with engine.begin() as connection:
+        if "ps1040_notifications" in inspector.get_table_names():
+            existing = {item["name"] for item in inspector.get_columns("ps1040_notifications")}
+            columns = {
+                "ps930IdArchive": "INTEGER",
+                "title": "VARCHAR(160)",
+                "priority": "VARCHAR(40)",
+                "notification_type": "VARCHAR(80)",
+                "related_entity_type": "VARCHAR(80)",
+                "related_entity_id": "VARCHAR(80)",
+                "action_label": "VARCHAR(80)",
+                "read_at": "DATETIME",
+                "resolved_at": "DATETIME",
+                "dismissed_at": "DATETIME",
+                "metadata_json": "JSON",
+                "updated_at": "DATETIME",
+            }
+            for name, definition in columns.items():
+                if name not in existing:
+                    connection.execute(text(f"ALTER TABLE ps1040_notifications ADD COLUMN {name} {definition}"))
+        if "ps916_workflow_tasks" in inspector.get_table_names():
+            existing = {item["name"] for item in inspector.get_columns("ps916_workflow_tasks")}
+            columns = {
+                "ps930IdArchive": "INTEGER",
+                "module": "VARCHAR(80)",
+                "related_entity_type": "VARCHAR(80)",
+                "related_entity_id": "VARCHAR(80)",
+                "priority": "VARCHAR(40)",
+                "completed_by": "VARCHAR(40)",
+                "resolution_note": "TEXT",
+                "action_url": "VARCHAR(255)",
+                "metadata_json": "JSON",
+            }
+            for name, definition in columns.items():
+                if name not in existing:
+                    connection.execute(text(f"ALTER TABLE ps916_workflow_tasks ADD COLUMN {name} {definition}"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     if settings.auto_create_schema:
         Base.metadata.create_all(bind=engine)
         ensure_archival_document_columns()
+        ensure_transfer_batch_archive_columns()
+        ensure_transfer_batch_item_reception_columns()
+        ensure_deep_kardex_columns()
+        ensure_audit_security_columns()
+        ensure_operational_notification_columns()
     if settings.seed_default_data:
         db = SessionLocal()
         try:
@@ -54,7 +186,11 @@ def create_app() -> FastAPI:
         version="0.4.0",
         description="Core enterprise para gestion documental, operacion avanzada, escalabilidad y alta disponibilidad.",
         lifespan=lifespan,
+        docs_url=None if settings.is_production else "/docs",
+        redoc_url=None if settings.is_production else "/redoc",
+        openapi_url=None if settings.is_production else "/openapi.json",
     )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)

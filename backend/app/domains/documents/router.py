@@ -134,6 +134,8 @@ def _resolve_archival_context(db: Session, user: User, payload: DocumentCreate |
         expedient, folder = _default_expedient_folder(db, archive_id)
     if expedient.ps930IdArchive != archive_id or folder.ps930IdArchive != archive_id or folder.ps950IdExpedient != expedient.idExpedient:
         raise HTTPException(status_code=422, detail="Folder, expedient and archive do not match")
+    if not (payload.subseries_id or expedient.ps612IdSubseries):
+        raise HTTPException(status_code=422, detail="Document requires TRD subseries through payload or expedient")
     return archive_id, expedient, folder
 
 
@@ -212,9 +214,11 @@ def create_document(
         folder.folio_count += folio_total
     expedient.document_count += 1
     folder.document_count += 1
+    archive = _require_archive_access(db, user, archive_id)
+    archive.document_count += 1
     db.add(DocumentHistory(ps520IdDocument=document.idDocument, action="created", ps405Identification=user.identification, details=payload.model_dump()))
-    db.add(KardexMovement(movement_type="reception", entity_type="document", entity_id=document.idDocument, ps930DestinationArchiveId=archive_id, ps405ActorIdentification=user.identification, status="received", observations="Documento creado en expediente/carpeta"))
-    write_audit(db, action="document_created", module="documents", user_id=user.identification, entity="document", entity_id=document.idDocument, new_values=payload.model_dump(), request=request)
+    db.add(KardexMovement(movement_type="document_created", entity_type="document", entity_id=document.idDocument, ps930DestinationArchiveId=archive_id, ps405ActorIdentification=user.identification, status="accepted", observations="Documento creado en expediente/carpeta/TRD"))
+    write_audit(db, action="document_created", module="documents", user_id=user.identification, archive_id=archive_id, entity="document", entity_id=document.idDocument, entity_label=document.document_name, new_values=payload.model_dump(), request=request)
     db.commit()
     delete_pattern("analytics:*")
     index_document(_document_out(document).model_dump())
@@ -265,7 +269,7 @@ def update_document(document_id: int, payload: DocumentUpdate, request: Request,
         document.physical_location = payload.physical_location
     document.version += 1
     db.add(DocumentHistory(ps520IdDocument=document.idDocument, action="updated", ps405Identification=user.identification, details=payload.model_dump(exclude_unset=True)))
-    write_audit(db, action="document_updated", module="documents", user_id=user.identification, entity="document", entity_id=document.idDocument, old_values=old_values, new_values=payload.model_dump(exclude_unset=True), request=request)
+    write_audit(db, action="document_updated", module="documents", user_id=user.identification, archive_id=document.ps930IdArchive, entity="document", entity_id=document.idDocument, entity_label=document.document_name, old_values=old_values, new_values=payload.model_dump(exclude_unset=True), request=request)
     db.commit()
     delete_pattern("analytics:*")
     index_document(_document_out(document).model_dump())
@@ -281,17 +285,21 @@ async def upload_file(document_id: int, request: Request, file: UploadFile = Fil
         raise HTTPException(status_code=404, detail="Document not found")
     if document.status == "locked":
         raise HTTPException(status_code=409, detail="Document is locked")
+    if not document.ps930IdArchive or not document.ps950IdExpedient or not document.ps952IdFolder or not document.ps612IdSubseries:
+        raise HTTPException(status_code=400, detail="Document has no complete archive, expedient, folder and TRD context")
     content = await file.read()
     try:
         stored = store_file(company_id=user.company_id, module="documents", file=file, content=content)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Document repository is unavailable") from exc
     document_file = DocumentFile(ps520IdDocument=document.idDocument, **stored)
     document.version += 1
     db.add(document_file)
     db.add(DocumentHistory(ps520IdDocument=document.idDocument, action="file_uploaded", ps405Identification=user.identification, details={"original_name": stored["original_name"], "checksum": stored["checksum"]}))
-    db.add(KardexMovement(movement_type="digital_move", entity_type="document", entity_id=document.idDocument, ps930DestinationArchiveId=document.ps930IdArchive, ps405ActorIdentification=user.identification, status="stored", observations="Archivo digital cargado al repositorio"))
-    write_audit(db, action="document_file_uploaded", module="documents", user_id=user.identification, entity="document", entity_id=document.idDocument, new_values={"checksum": stored["checksum"], "content_type": stored["content_type"]}, request=request)
+    db.add(KardexMovement(movement_type="file_uploaded", entity_type="document", entity_id=document.idDocument, ps930DestinationArchiveId=document.ps930IdArchive, ps405ActorIdentification=user.identification, status="stored", observations="Archivo digital cargado al repositorio", metadata_json={"checksum": stored["checksum"], "content_type": stored["content_type"]}))
+    write_audit(db, action="document_file_uploaded", module="documents", user_id=user.identification, archive_id=document.ps930IdArchive, entity="document", entity_id=document.idDocument, entity_label=document.document_name, new_values={"checksum": stored["checksum"], "content_type": stored["content_type"]}, request=request)
     db.commit()
     delete_pattern("analytics:*")
     index_document(_document_out(document).model_dump())

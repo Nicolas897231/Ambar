@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.core.security import decode_token
 from app.db.models import Permission, RolePermission, User, UserRole
 from app.db.session import get_db
+from app.services.audit import write_audit
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -55,9 +56,22 @@ def user_permissions(db: Session, user: User) -> set[str]:
 
 
 def require_permission(permission: str) -> Callable:
-    def dependency(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+    def dependency(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
         permissions = user_permissions(db, user)
         if "*" not in permissions and permission not in permissions:
+            write_audit(
+                db,
+                action="permission_denied",
+                module="security",
+                user_id=user.identification,
+                entity="permission",
+                entity_id=permission,
+                result="denied",
+                severity="critical",
+                new_values={"required_permission": permission},
+                request=request,
+            )
+            db.commit()
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permission")
         return user
 

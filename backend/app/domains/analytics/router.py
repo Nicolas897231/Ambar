@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_permission
-from app.db.models import AuditLog, Document, DocumentTransfer, Notification, User
+from app.db.models import AdvancedNotification, AuditLog, Document, DocumentLoan, DocumentTransfer, Notification, TransferBatchItem, User, WorkflowTask
 from app.db.session import get_db
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -21,6 +21,7 @@ def dashboard(
     pending_transfers = db.query(DocumentTransfer).filter(DocumentTransfer.status.in_(["pending", "approved", "in_transit"])).count()
     incomplete_documents = documents_query.filter(~Document.files.any()).count()
     unread_notifications = db.query(Notification).filter(Notification.ps405Identification == user.identification, Notification.read_status.is_(False)).count()
+    unread_notifications += db.query(AdvancedNotification).filter(AdvancedNotification.ps405Identification == user.identification, AdvancedNotification.status.in_(["pending", "unread", "action_required"])).count()
     since = datetime.now(UTC) - timedelta(days=1)
     activity_daily = db.query(AuditLog).filter(AuditLog.created_at >= since).count()
     classified = documents_query.filter(Document.ps612IdSubseries.isnot(None)).count()
@@ -37,6 +38,7 @@ def dashboard(
         "activity_daily": activity_daily,
         "trd_compliance": trd_compliance,
         "unread_notifications": unread_notifications,
+        "action_required": db.query(AdvancedNotification).filter(AdvancedNotification.ps405Identification == user.identification, AdvancedNotification.status == "action_required").count(),
         "risk_level": risk_level,
         "documents_by_status": by_status,
     }
@@ -47,12 +49,15 @@ def advanced_dashboard(
     user: User = Depends(require_permission("analytics.view")),
     db: Session = Depends(get_db),
 ):
-    from app.db.models import Employee, EmployeeContract, TransferBatch, WorkflowInstance, WorkflowTask
+    from app.db.models import Employee, EmployeeContract, TransferBatch, WorkflowInstance
 
     active_workflows = db.query(WorkflowInstance).filter(WorkflowInstance.status == "in_progress").count()
-    pending_tasks = db.query(WorkflowTask).filter(WorkflowTask.status.in_(["pending", "in_progress"])).count()
-    overdue_tasks = db.query(WorkflowTask).filter(WorkflowTask.status.in_(["pending", "in_progress"]), WorkflowTask.due_date < datetime.now(UTC)).count()
+    pending_tasks = db.query(WorkflowTask).filter(WorkflowTask.ps405Identification == user.identification, WorkflowTask.status.in_(["pending", "in_progress", "in_review"])).count()
+    overdue_tasks = db.query(WorkflowTask).filter(WorkflowTask.ps405Identification == user.identification, WorkflowTask.status == "overdue").count()
+    overdue_tasks += db.query(WorkflowTask).filter(WorkflowTask.ps405Identification == user.identification, WorkflowTask.status.in_(["pending", "in_progress", "in_review"]), WorkflowTask.due_date < datetime.now(UTC)).count()
     active_batches = db.query(TransferBatch).filter(TransferBatch.status.notin_(["closed", "rejected"])).count()
+    pending_receptions = db.query(TransferBatchItem).filter(TransferBatchItem.status.in_(["pending", "pending_review", "with_inconsistency"])).count()
+    overdue_loans = db.query(DocumentLoan).filter(DocumentLoan.status == "overdue").count()
     employees = db.query(Employee).filter(Employee.company_id == user.company_id).count()
     active_contracts = db.query(EmployeeContract).filter(EmployeeContract.status == "active").count()
     operational_load = pending_tasks + active_batches
@@ -61,6 +66,9 @@ def advanced_dashboard(
         "active_workflows": active_workflows,
         "pending_tasks": pending_tasks,
         "overdue_tasks": overdue_tasks,
+        "action_required": db.query(AdvancedNotification).filter(AdvancedNotification.ps405Identification == user.identification, AdvancedNotification.status == "action_required").count(),
+        "pending_receptions": pending_receptions,
+        "overdue_loans": overdue_loans,
         "active_transfer_batches": active_batches,
         "employees": employees,
         "active_contracts": active_contracts,

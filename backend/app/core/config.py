@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     project_name: str = "Ambar"
     api_base_url: str = "http://localhost:8000"
     frontend_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000"])
+    allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["*"])
 
     database_url: str = "sqlite:///./ambar.db"
     read_database_url: str | None = None
@@ -47,9 +48,9 @@ class Settings(BaseSettings):
     opensearch_index: str = "ambar-documents"
     cache_default_ttl_seconds: int = 300
 
-    @field_validator("frontend_origins", mode="before")
+    @field_validator("frontend_origins", "allowed_hosts", mode="before")
     @classmethod
-    def parse_origins(cls, value: str | list[str]) -> list[str]:
+    def parse_csv_list(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
             raw = value.strip()
             if raw.startswith("[") and raw.endswith("]"):
@@ -79,6 +80,8 @@ class Settings(BaseSettings):
             unsafe.append("SEED_DEFAULT_DATA=false")
         if "*" in self.frontend_origins:
             unsafe.append("FRONTEND_ORIGINS without wildcard")
+        if "*" in self.allowed_hosts:
+            unsafe.append("ALLOWED_HOSTS without wildcard")
         if unsafe:
             raise ValueError("Unsafe production configuration: " + ", ".join(unsafe))
         return self
