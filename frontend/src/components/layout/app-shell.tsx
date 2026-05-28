@@ -1,9 +1,9 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Bot, BriefcaseBusiness, Building2, ChevronDown, ClipboardList, Database, FileBox, FilePenLine, FileText, FolderKanban, Gauge, Layers3, Link2, ListChecks, LogOut, MapPin, Menu, Moon, PackageCheck, PlugZap, Route, Search, ServerCog, ShieldCheck, Sun, TableProperties, Users, Warehouse, Zap } from "lucide-react";
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { clearSession, CurrentUser, getCurrentUser, getStoredPermissions, hasAnyPermission, saveCurrentUser } from "@/lib/auth";
@@ -32,11 +32,10 @@ const groups: NavGroup[] = [
     icon: TableProperties,
     permissions: ["trd.manage"],
     items: [
-      { href: "/trd", label: "Series", icon: TableProperties, permissions: ["trd.manage"] },
-      { href: "/trd", label: "Subseries", icon: Layers3, permissions: ["trd.manage"] },
-      { href: "/trd", label: "Retencion", icon: ClipboardList, permissions: ["trd.manage"] },
-      { href: "/trd", label: "Disposicion final", icon: PackageCheck, permissions: ["trd.manage"] },
-      { href: "/trd", label: "Tipos documentales", icon: FileText, permissions: ["trd.manage"] }
+      { href: "/trd?view=series", label: "Series", icon: TableProperties, permissions: ["trd.manage"] },
+      { href: "/trd?view=subseries", label: "Subseries", icon: Layers3, permissions: ["trd.manage"] },
+      { href: "/trd?view=retention", label: "Retencion", icon: ClipboardList, permissions: ["trd.manage"] },
+      { href: "/trd?view=disposition", label: "Disposicion final", icon: PackageCheck, permissions: ["trd.manage"] }
     ]
   },
   {
@@ -59,19 +58,20 @@ const groups: NavGroup[] = [
     icon: BriefcaseBusiness,
     permissions: ["hr.view", "hr.manage"],
     items: [
-      { href: "/hr", label: "Empleados", icon: BriefcaseBusiness, permissions: ["hr.view", "hr.manage"] },
-      { href: "/hr", label: "Expedientes laborales", icon: FolderKanban, permissions: ["hr.view", "hr.manage"] },
-      { href: "/hr", label: "Contratos", icon: FileText, permissions: ["hr.manage"] },
-      { href: "/hr", label: "Cargos", icon: Users, permissions: ["hr.manage"] }
+      { href: "/hr?view=employees", label: "Empleados", icon: BriefcaseBusiness, permissions: ["hr.view", "hr.manage"] },
+      { href: "/hr?view=expedients", label: "Expedientes laborales", icon: FolderKanban, permissions: ["hr.view", "hr.manage"] },
+      { href: "/hr?view=contracts", label: "Contratos", icon: FileText, permissions: ["hr.manage"] },
+      { href: "/hr?view=positions", label: "Cargos", icon: Users, permissions: ["hr.manage"] }
     ]
   },
-  { label: "Busqueda", icon: Search, permissions: ["search.query", "search.reindex", "ocr.manage"], items: [{ href: "/search", label: "Global", icon: Search, permissions: ["search.query"] }, { href: "/search", label: "Avanzada", icon: Database, permissions: ["search.query"] }, { href: "/ocr", label: "OCR futuro", icon: Bot, permissions: ["ocr.manage"] }] },
+  { label: "Busqueda", icon: Search, permissions: ["search.query", "search.reindex", "ocr.manage"], items: [{ href: "/search?view=global", label: "Global", icon: Search, permissions: ["search.query"] }, { href: "/search?view=advanced", label: "Avanzada", icon: Database, permissions: ["search.query"] }, { href: "/ocr", label: "OCR futuro", icon: Bot, permissions: ["ocr.manage"] }] },
   { label: "Auditoria", icon: ShieldCheck, permissions: ["audit.view"], items: [{ href: "/audit", label: "Eventos y seguridad", icon: ShieldCheck, permissions: ["audit.view"] }] },
   { label: "Plataforma", icon: ServerCog, permissions: ["signature.manage", "integration.manage", "webhook.manage", "platform.view", "users.manage", "archive.manage", "workflow.manage"], items: [{ href: "/users", label: "Seguridad", icon: ShieldCheck, permissions: ["users.manage"] }, { href: "/integrations", label: "Integraciones", icon: PlugZap, permissions: ["integration.manage"] }, { href: "/webhooks", label: "Webhooks", icon: Link2, permissions: ["webhook.manage"] }, { href: "/signatures", label: "Firmas", icon: FilePenLine, permissions: ["signature.manage"] }, { href: "/platform", label: "Configuracion", icon: ServerCog, permissions: ["platform.view"] }, { href: "/workflows", label: "Automatizacion", icon: Zap, permissions: ["workflow.manage"] }] }
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
@@ -97,11 +97,22 @@ export function AppShell({ children }: { children: ReactNode }) {
     queryFn: async () => (await api.get<NotificationItem[]>("/notifications")).data,
     enabled: hasAnyPermission(permissions, ["notification.read"])
   });
+  const queryString = searchParams.toString();
+  const currentHref = queryString ? `${pathname}?${queryString}` : pathname;
+  const pathOf = useCallback((href: string) => href.split("?")[0], []);
+  const isActive = useCallback((href: string) => {
+    if (href === currentHref) return true;
+    if (!href.includes("?")) return pathname === href;
+    const [hrefPath, hrefQuery] = href.split("?");
+    const hrefView = new URLSearchParams(hrefQuery).get("view");
+    const currentView = searchParams.get("view");
+    return pathname === hrefPath && currentView === hrefView;
+  }, [currentHref, pathname, searchParams]);
   const breadcrumbItems = useMemo(() => {
-    const activeGroup = visibleGroups.find((group) => group.items.some((item) => item.href === pathname));
-    const activeItem = activeGroup?.items.find((item) => item.href === pathname);
+    const activeGroup = visibleGroups.find((group) => group.items.some((item) => isActive(item.href) || pathname === pathOf(item.href)));
+    const activeItem = activeGroup?.items.find((item) => isActive(item.href)) ?? activeGroup?.items.find((item) => pathname === pathOf(item.href));
     return [activeGroup?.label ?? "AMBAR", activeItem?.label ?? "Operacion"];
-  }, [pathname, visibleGroups]);
+  }, [isActive, pathOf, pathname, visibleGroups]);
 
   return (
     <div className={`app-shell ${collapsed ? "sidebar-collapsed" : ""}`} data-theme={darkMode ? "dark" : "light"}>
@@ -114,14 +125,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav className="nav nav-enterprise">
           {visibleGroups.map((group) => {
             const GroupIcon = group.icon;
-            const open = group.items.some((item) => pathname === item.href);
+            const open = group.items.some((item) => pathname === pathOf(item.href));
             return (
               <details className="nav-group" key={group.label} open={open || group.label === "Dashboard"}>
                 <summary className="nav-group-title" title={group.label}><GroupIcon size={17} /> <span>{group.label}</span><ChevronDown className="nav-chevron" size={15} /></summary>
                 <div className="nav-subitems">
                   {group.items.map((item) => {
                     const Icon = item.icon;
-                    const active = pathname === item.href;
+                    const active = isActive(item.href);
                     return <Link key={`${group.label}-${item.label}-${item.href}`} className={active ? "active" : ""} href={item.href} title={item.label}><Icon size={16} /> <span>{item.label}</span>{item.badge ? <small>{item.badge}</small> : null}</Link>;
                   })}
                 </div>

@@ -23,8 +23,6 @@ type RoleItem = {
   permissions: string[];
 };
 
-const DEFAULT_PASSWORD = "ChangeMe123!";
-
 function roleLabel(value: string) {
   return value.replaceAll("_", " ");
 }
@@ -35,7 +33,7 @@ export default function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("viewer");
-  const [password, setPassword] = useState(DEFAULT_PASSWORD);
+  const [password, setPassword] = useState("");
   const [includeInactive, setIncludeInactive] = useState(false);
   const [userRoleDrafts, setUserRoleDrafts] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
@@ -52,7 +50,7 @@ export default function UsersPage() {
       setIdentification("");
       setName("");
       setEmail("");
-      setPassword(DEFAULT_PASSWORD);
+      setPassword("");
       setMessage("Usuario creado correctamente.");
       client.invalidateQueries({ queryKey: ["users"] });
     },

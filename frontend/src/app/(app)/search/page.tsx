@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { RefreshCcw, Search } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import api from "@/lib/api";
@@ -29,6 +30,8 @@ type SearchResult = {
 };
 
 export default function SearchPage() {
+  const searchParams = useSearchParams();
+  const view = searchParams.get("view") ?? "global";
   const [q, setQ] = useState("");
   const [entityType, setEntityType] = useState("");
   const [status, setStatus] = useState("");
@@ -42,29 +45,38 @@ export default function SearchPage() {
   }
   return (
     <>
-      <PageTitle title="Busqueda enterprise" description="Documentos, expedientes, carpetas, cajas, archivos, empleados, FUID y kardex respetando permisos." action={<button className="ghost" onClick={() => reindex.mutate()}><RefreshCcw size={17} /> Reindexar</button>} />
+      <PageTitle title={view === "advanced" ? "Busqueda avanzada" : "Busqueda global"} description={view === "advanced" ? "Filtra resultados por entidad, estado y permisos de archivo." : "Encuentra expedientes, documentos, cajas, archivos, empleados, FUID y Kardex."} action={<button className="ghost" onClick={() => reindex.mutate()}><RefreshCcw size={17} /> Reindexar</button>} />
+      <nav className="tabbar view-tabs">
+        <Link className={view === "global" ? "active" : ""} href="/search?view=global">Global</Link>
+        <Link className={view === "advanced" ? "active" : ""} href="/search?view=advanced">Avanzada</Link>
+        <Link href="/ocr">OCR futuro</Link>
+      </nav>
       <section className="card">
-        <form className="toolbar" onSubmit={submit}>
+        <form className={`toolbar search-form ${view === "advanced" ? "advanced" : "simple"}`} onSubmit={submit}>
           <input placeholder="contrato 2024 Cali, caja CX-001, Juan Perez" value={q} onChange={(event) => setQ(event.target.value)} />
-          <select value={entityType} onChange={(event) => setEntityType(event.target.value)}>
-            <option value="">Todas las entidades</option>
-            <option value="document">Documentos</option>
-            <option value="expedient">Expedientes</option>
-            <option value="folder">Carpetas</option>
-            <option value="box">Cajas</option>
-            <option value="archive">Archivos</option>
-            <option value="employee">Empleados</option>
-            <option value="fuid">FUID</option>
-            <option value="kardex">Kardex</option>
-          </select>
-          <select value={status} onChange={(event) => setStatus(event.target.value)}>
-            <option value="">Todos los estados</option>
-            <option value="active">active</option>
-            <option value="pending">pending</option>
-            <option value="received">received</option>
-            <option value="rejected">rejected</option>
-            <option value="archived">archived</option>
-          </select>
+          {view === "advanced" ? (
+            <>
+              <select value={entityType} onChange={(event) => setEntityType(event.target.value)}>
+                <option value="">Todas las entidades</option>
+                <option value="document">Documentos</option>
+                <option value="expedient">Expedientes</option>
+                <option value="folder">Carpetas</option>
+                <option value="box">Cajas</option>
+                <option value="archive">Archivos</option>
+                <option value="employee">Empleados</option>
+                <option value="fuid">FUID</option>
+                <option value="kardex">Kardex</option>
+              </select>
+              <select value={status} onChange={(event) => setStatus(event.target.value)}>
+                <option value="">Todos los estados</option>
+                <option value="active">active</option>
+                <option value="pending">pending</option>
+                <option value="received">received</option>
+                <option value="rejected">rejected</option>
+                <option value="archived">archived</option>
+              </select>
+            </>
+          ) : null}
           <button><Search size={17} /> Buscar</button>
         </form>
       </section>

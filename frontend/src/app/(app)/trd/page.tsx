@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Plus } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
@@ -11,6 +13,8 @@ type Subseries = { idSubseries: number; ps610IdSeries: number; name: string; ret
 
 export default function TrdPage() {
   const client = useQueryClient();
+  const searchParams = useSearchParams();
+  const view = searchParams.get("view") ?? "series";
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [seriesId, setSeriesId] = useState("");
@@ -22,11 +26,23 @@ export default function TrdPage() {
   const createSubseries = useMutation({ mutationFn: async () => api.post("/trd/subseries", { series_id: Number(seriesId), name: subName, retention_years: years }), onSuccess: () => { setSubName(""); client.invalidateQueries({ queryKey: ["trd-subseries"] }); } });
   function submitSeries(event: FormEvent) { event.preventDefault(); createSeries.mutate(); }
   function submitSubseries(event: FormEvent) { event.preventDefault(); createSubseries.mutate(); }
+  const viewCopy: Record<string, { title: string; description: string }> = {
+    series: { title: "Series TRD", description: "Gestiona las series documentales que estructuran la clasificacion archivistica." },
+    subseries: { title: "Subseries TRD", description: "Administra subseries, tiempos de retencion y relacion con la serie." },
+    retention: { title: "Retencion documental", description: "Consulta tiempos de retencion por subserie para control de cierre y transferencia." },
+    disposition: { title: "Disposicion final", description: "Vista operativa para revisar disposicion final y reglas de conservacion." }
+  };
   return (
     <>
-      <PageTitle title="TRD" description="Series, subseries, retencion y disposicion documental." />
+      <PageTitle title={viewCopy[view]?.title ?? "TRD"} description={viewCopy[view]?.description ?? "Series, subseries, retencion y disposicion documental."} />
+      <nav className="tabbar view-tabs">
+        <Link className={view === "series" ? "active" : ""} href="/trd?view=series">Series</Link>
+        <Link className={view === "subseries" ? "active" : ""} href="/trd?view=subseries">Subseries</Link>
+        <Link className={view === "retention" ? "active" : ""} href="/trd?view=retention">Retencion</Link>
+        <Link className={view === "disposition" ? "active" : ""} href="/trd?view=disposition">Disposicion final</Link>
+      </nav>
       <div className="split">
-        <section className="card">
+        <section className="card form-panel">
           <h2>Serie</h2>
           <form className="form-grid" onSubmit={submitSeries}>
             <label>Codigo<input value={code} onChange={(event) => setCode(event.target.value)} required /></label>
@@ -41,11 +57,18 @@ export default function TrdPage() {
             <button><Plus size={17} /> Crear subserie</button>
           </form>
         </section>
-        <section className="card">
-          <table>
-            <thead><tr><th>Subserie</th><th>Serie</th><th>Retencion</th></tr></thead>
-            <tbody>{subseries.data?.map((item) => <tr key={item.idSubseries}><td>{item.name}</td><td>{item.ps610IdSeries}</td><td>{item.retention_years} anos</td></tr>)}</tbody>
-          </table>
+        <section className="card table-card">
+          {view === "series" ? (
+            <table>
+              <thead><tr><th>Codigo</th><th>Serie</th></tr></thead>
+              <tbody>{series.data?.map((item) => <tr key={item.idSeries}><td>{item.code}</td><td>{item.name}</td></tr>)}</tbody>
+            </table>
+          ) : (
+            <table>
+              <thead><tr><th>Subserie</th><th>Serie</th><th>Retencion</th><th>Vista</th></tr></thead>
+              <tbody>{subseries.data?.map((item) => <tr key={item.idSubseries}><td>{item.name}</td><td>{item.ps610IdSeries}</td><td>{item.retention_years} anos</td><td><span className="status">{viewCopy[view]?.title ?? "TRD"}</span></td></tr>)}</tbody>
+            </table>
+          )}
         </section>
       </div>
     </>

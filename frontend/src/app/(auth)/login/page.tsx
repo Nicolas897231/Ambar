@@ -8,8 +8,8 @@ import { CurrentUser, saveCurrentUser, saveSession } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@ambar.co");
-  const [password, setPassword] = useState("ChangeMe123!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
