@@ -298,6 +298,21 @@ class Employee(Base):
     company_id: Mapped[str] = mapped_column(String(40), default="default", index=True)
 
 
+class HRPosition(Base):
+    __tablename__ = "ps1008_hr_positions"
+
+    idPosition: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    position_code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    level: Mapped[str] = mapped_column(String(80), default="operativo")
+    department: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    suggested_permissions: Mapped[dict] = mapped_column(JSON, default=dict)
+    required_documents: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class EmployeeFile(Base):
     __tablename__ = "ps1012_employee_files"
     __table_args__ = (UniqueConstraint("ps1010Identification", "file_type"),)

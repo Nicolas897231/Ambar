@@ -92,3 +92,68 @@ def test_users_roles_permissions_and_soft_deactivation_flow():
 
         blocked_login = client.post("/api/v1/auth/login", json={"email": email, "password": "RoleUser123!"})
         assert blocked_login.status_code == 401
+
+
+def test_enterprise_admin_trd_hr_and_password_feedback():
+    suffix = uuid4().hex[:8]
+    with TestClient(app) as client:
+        headers = _headers(client)
+
+        weak_user = client.post(
+            "/api/v1/users",
+            json={
+                "identification": f"weak{suffix}",
+                "name": "Usuario Password Debil",
+                "email": f"weak-{suffix}@ambar.co",
+                "password": "as400181*",
+                "role_names": ["archive_analyst"],
+                "company_id": "default",
+                "location_id": 1,
+            },
+            headers=headers,
+        )
+        assert weak_user.status_code == 422
+        assert "at least 12" in weak_user.json()["detail"]
+
+        series = client.post(
+            "/api/v1/trd/series",
+            json={"code": f"QA-{suffix}", "name": "Serie QA Produccion"},
+            headers=headers,
+        )
+        assert series.status_code == 201, series.text
+        subseries = client.post(
+            "/api/v1/trd/subseries",
+            json={"series_id": series.json()["idSeries"], "name": "Subserie QA Produccion", "retention_years": 5},
+            headers=headers,
+        )
+        assert subseries.status_code == 201, subseries.text
+        retention = client.patch(
+            f"/api/v1/trd/subseries/{subseries.json()['idSubseries']}/retention",
+            json={"retention_years": 8},
+            headers=headers,
+        )
+        assert retention.status_code == 200, retention.text
+        assert retention.json()["retention_years"] == 8
+        disposition = client.post(
+            "/api/v1/trd/dispositions",
+            json={"subseries_id": subseries.json()["idSubseries"], "archive_management": 2, "archive_central": 6, "final_action": "Conservacion total"},
+            headers=headers,
+        )
+        assert disposition.status_code == 201, disposition.text
+
+        position = client.post(
+            "/api/v1/hr/positions",
+            json={
+                "position_code": f"POS-{suffix}",
+                "name": "Coordinador documental QA",
+                "level": "coordinacion",
+                "department": "Archivo",
+                "required_documents": ["hoja_vida", "contrato_firmado"],
+                "suggested_permissions": ["document.read"],
+            },
+            headers=headers,
+        )
+        assert position.status_code == 201, position.text
+        positions = client.get("/api/v1/hr/positions", headers=headers)
+        assert positions.status_code == 200, positions.text
+        assert any(item["position_code"] == f"POS-{suffix}" for item in positions.json())

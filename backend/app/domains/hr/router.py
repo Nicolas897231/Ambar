@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_permission
-from app.db.models import AdvancedNotification, Document, Employee, EmployeeContract, EmployeeFile, EmployeeIncident, NotificationDeliveryLog, User
+from app.db.models import AdvancedNotification, Document, Employee, EmployeeContract, EmployeeFile, EmployeeIncident, HRPosition, NotificationDeliveryLog, User
 from app.db.session import get_db
 from app.services.audit import write_audit
 from app.services.events import publish_event
@@ -63,11 +63,48 @@ class IncidentCreate(BaseModel):
     description: str = Field(min_length=3)
 
 
+class PositionCreate(BaseModel):
+    position_code: str = Field(min_length=2, max_length=40)
+    name: str = Field(min_length=2, max_length=120)
+    level: str = Field(default="operativo", min_length=2, max_length=80)
+    department: str = Field(min_length=2, max_length=120)
+    description: str | None = None
+    suggested_permissions: list[str] = Field(default_factory=list)
+    required_documents: list[str] = Field(default_factory=lambda: ["hoja_vida", "contrato_firmado"])
+
+
 def _notify_hr(db: Session, user_id: str, message: str, action_url: str) -> None:
     notification = AdvancedNotification(ps405Identification=user_id, module="hr", message=message, action_url=action_url, status="pending")
     db.add(notification)
     db.flush()
     db.add(NotificationDeliveryLog(ps1040IdNotification=notification.idNotification, delivery_channel="in_app", delivery_status="stored"))
+
+
+@router.get("/positions")
+def list_positions(db: Session = Depends(get_db), _: User = Depends(require_permission("hr.view"))):
+    return db.query(HRPosition).order_by(HRPosition.name.asc()).all()
+
+
+@router.post("/positions", status_code=status.HTTP_201_CREATED)
+def create_position(payload: PositionCreate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
+    if db.query(HRPosition).filter(HRPosition.position_code == payload.position_code).first():
+        raise HTTPException(status_code=409, detail="Position code already exists")
+    item = HRPosition(
+        position_code=payload.position_code.strip(),
+        name=payload.name.strip(),
+        level=payload.level.strip(),
+        department=payload.department.strip(),
+        description=payload.description,
+        suggested_permissions={"items": payload.suggested_permissions},
+        required_documents={"items": payload.required_documents},
+        status="active",
+    )
+    db.add(item)
+    db.flush()
+    write_audit(db, action="hr_position_created", module="hr", user_id=user.identification, entity="hr_position", entity_id=item.idPosition, new_values=payload.model_dump(), request=request)
+    db.commit()
+    db.refresh(item)
+    return item
 
 
 @router.get("/employees")

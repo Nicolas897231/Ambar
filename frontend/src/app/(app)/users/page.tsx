@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { Plus, RefreshCcw, Save, ShieldCheck, Trash2, UserRoundCog } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AxiosError } from "axios";
 import api from "@/lib/api";
 import { PageTitle } from "@/components/ui/page-title";
 
@@ -25,6 +26,15 @@ type RoleItem = {
 
 function roleLabel(value: string) {
   return value.replaceAll("_", " ");
+}
+
+function apiErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof AxiosError) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) return detail.map((item) => item?.msg ?? String(item)).join(". ");
+  }
+  return fallback;
 }
 
 export default function UsersPage() {
@@ -54,7 +64,7 @@ export default function UsersPage() {
       setMessage("Usuario creado correctamente.");
       client.invalidateQueries({ queryKey: ["users"] });
     },
-    onError: () => setMessage("No fue posible crear el usuario. Revisa identificacion, email, password y rol.")
+    onError: (error) => setMessage(apiErrorMessage(error, "No fue posible crear el usuario. Revisa identificacion, email, password y rol."))
   });
 
   const updateUserRole = useMutation({
@@ -100,7 +110,7 @@ export default function UsersPage() {
             <label>Identificacion<input value={identification} onChange={(event) => setIdentification(event.target.value)} required /></label>
             <label>Nombre<input value={name} onChange={(event) => setName(event.target.value)} required /></label>
             <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-            <label>Password inicial<input value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+            <label>Password inicial<input value={password} onChange={(event) => setPassword(event.target.value)} required minLength={12} placeholder="Minimo 12, mayuscula, minuscula, numero y simbolo" /></label>
             <label>Rol
               <select value={role} onChange={(event) => setRole(event.target.value)}>
                 {(roles.data ?? []).map((item) => <option key={item.idRole} value={item.role_name}>{roleLabel(item.role_name)}</option>)}

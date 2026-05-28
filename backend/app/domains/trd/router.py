@@ -29,6 +29,10 @@ class DispositionCreate(BaseModel):
     final_action: str = Field(min_length=3, max_length=120)
 
 
+class RetentionUpdate(BaseModel):
+    retention_years: int = Field(ge=1, le=100)
+
+
 @router.get("/series")
 def list_series(db: Session = Depends(get_db), _: User = Depends(require_permission("document.read"))):
     return db.query(TrdSeries).order_by(TrdSeries.code.asc()).all()
@@ -70,6 +74,25 @@ def create_subseries(
     db.add(item)
     db.flush()
     write_audit(db, action="trd_subseries_created", module="trd", user_id=user.identification, entity="subseries", entity_id=item.idSubseries, new_values=payload.model_dump(), request=request)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.patch("/subseries/{subseries_id}/retention")
+def update_retention(
+    subseries_id: int,
+    payload: RetentionUpdate,
+    request: Request,
+    user: User = Depends(require_permission("trd.manage")),
+    db: Session = Depends(get_db),
+):
+    item = db.get(TrdSubseries, subseries_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Subseries not found")
+    old_values = {"retention_years": item.retention_years}
+    item.retention_years = payload.retention_years
+    write_audit(db, action="trd_retention_updated", module="trd", user_id=user.identification, entity="subseries", entity_id=item.idSubseries, old_values=old_values, new_values=payload.model_dump(), request=request)
     db.commit()
     db.refresh(item)
     return item

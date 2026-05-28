@@ -48,6 +48,21 @@ def _create_index_if_missing(table: str, index_name: str, columns: list[str]) ->
 
 
 def upgrade() -> None:
+    if not _has_table("ps1008_hr_positions"):
+        op.create_table(
+            "ps1008_hr_positions",
+            sa.Column("idPosition", sa.Integer(), primary_key=True, autoincrement=True),
+            sa.Column("position_code", sa.String(length=40), nullable=False, unique=True),
+            sa.Column("name", sa.String(length=120), nullable=False),
+            sa.Column("level", sa.String(length=80), nullable=False),
+            sa.Column("department", sa.String(length=120), nullable=False),
+            sa.Column("description", sa.Text(), nullable=True),
+            sa.Column("suggested_permissions", sa.JSON(), nullable=True),
+            sa.Column("required_documents", sa.JSON(), nullable=True),
+            sa.Column("status", sa.String(length=40), nullable=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=True),
+        )
+
     document_columns = [
         sa.Column("ps930IdArchive", sa.Integer(), nullable=True),
         sa.Column("ps950IdExpedient", sa.Integer(), nullable=True),
@@ -149,10 +164,12 @@ def upgrade() -> None:
     _create_index_if_missing("ps960_kardex_movements", "ix_kardex_transfer", ["related_transfer_id"])
     _create_index_if_missing("ps1040_notifications", "ix_notifications_user_status", ["ps405Identification", "status"])
     _create_index_if_missing("ps916_workflow_tasks", "ix_tasks_assignee_status", ["ps405Identification", "status"])
+    _create_index_if_missing("ps1008_hr_positions", "ix_hr_positions_status", ["status"])
 
 
 def downgrade() -> None:
     for table, index_name in [
+        ("ps1008_hr_positions", "ix_hr_positions_status"),
         ("ps916_workflow_tasks", "ix_tasks_assignee_status"),
         ("ps1040_notifications", "ix_notifications_user_status"),
         ("ps960_kardex_movements", "ix_kardex_transfer"),
@@ -163,3 +180,5 @@ def downgrade() -> None:
     ]:
         if _has_index(table, index_name):
             op.drop_index(index_name, table_name=table)
+    if _has_table("ps1008_hr_positions"):
+        op.drop_table("ps1008_hr_positions")

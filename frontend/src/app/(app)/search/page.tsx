@@ -82,25 +82,36 @@ export default function SearchPage() {
       </section>
       <section className="card">
         <div className="toolbar"><span className="status">{search.data?.engine ?? "sin busqueda"}</span><span className="muted">{search.data?.total ?? 0} resultados</span></div>
-        <table>
-          <thead><tr><th>Resultado</th><th>Entidad</th><th>Estado</th><th>Archivo</th><th>Accion</th></tr></thead>
-          <tbody>
+        {view === "global" ? (
+          <div className="module-grid search-results-grid">
             {search.data?.items?.map((item) => {
               const title = item.title ?? item.document_name ?? `Resultado ${item.id ?? item.idDocument}`;
               const entity = item.entity_type ?? "document";
               const url = item.url ?? (item.idDocument ? `/documents?document=${item.idDocument}` : "#");
-              return (
-                <tr key={`${entity}-${item.id ?? item.idDocument}`}>
-                  <td><strong>{title}</strong><br /><span className="muted">{item.subtitle ?? item.document_type ?? ""}</span></td>
-                  <td><span className="status">{entity}</span></td>
-                  <td>{item.status ? <span className="status">{item.status}</span> : <span className="muted">N/A</span>}</td>
-                  <td>{item.archive_id ?? "N/A"}</td>
-                  <td>{url !== "#" ? <Link className="button-link ghost-link" href={url}>Abrir</Link> : <span className="muted">Sin ruta</span>}</td>
-                </tr>
-              );
+              return <article className="module-card" key={`${entity}-${item.id ?? item.idDocument}`}><div className="toolbar space-between"><span className="status">{entity}</span>{item.status ? <span className="status">{item.status}</span> : null}</div><strong>{title}</strong><p className="muted">{item.subtitle ?? item.document_type ?? "Resultado autorizado por archivo"}</p>{url !== "#" ? <Link className="button-link ghost-link" href={url}>Abrir resultado</Link> : null}</article>;
             })}
-          </tbody>
-        </table>
+          </div>
+        ) : (
+          <table>
+            <thead><tr><th>Resultado</th><th>Entidad</th><th>Estado</th><th>Archivo</th><th>Accion</th></tr></thead>
+            <tbody>
+              {search.data?.items?.map((item) => {
+                const title = item.title ?? item.document_name ?? `Resultado ${item.id ?? item.idDocument}`;
+                const entity = item.entity_type ?? "document";
+                const url = item.url ?? (item.idDocument ? `/documents?document=${item.idDocument}` : "#");
+                return (
+                  <tr key={`${entity}-${item.id ?? item.idDocument}`}>
+                    <td><strong>{title}</strong><br /><span className="muted">{item.subtitle ?? item.document_type ?? ""}</span></td>
+                    <td><span className="status">{entity}</span></td>
+                    <td>{item.status ? <span className="status">{item.status}</span> : <span className="muted">N/A</span>}</td>
+                    <td>{item.archive_id ?? "N/A"}</td>
+                    <td>{url !== "#" ? <Link className="button-link ghost-link" href={url}>Abrir</Link> : <span className="muted">Sin ruta</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
         {search.data && !search.data.items?.length ? <p className="muted">No encontramos resultados. Prueba cambiar filtros o revisar permisos de archivo.</p> : null}
       </section>
     </>
