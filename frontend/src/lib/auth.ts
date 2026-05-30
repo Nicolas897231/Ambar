@@ -21,6 +21,10 @@ export function saveCurrentUser(user: CurrentUser) {
   window.localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
 }
 
+export function getRefreshToken() {
+  return typeof window !== "undefined" ? window.localStorage.getItem(REFRESH_TOKEN_KEY) : null;
+}
+
 export function getCurrentUser(): CurrentUser | null {
   if (typeof window === "undefined") return null;
   const value = window.localStorage.getItem(CURRENT_USER_KEY);

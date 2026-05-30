@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
-import { Eye, EyeOff, RefreshCcw, Save, ShieldCheck, UserCog } from "lucide-react";
+import { Eye, EyeOff, Plus, Save, ShieldCheck, UserCog, Users } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { PageTitle } from "@/components/ui/page-title";
@@ -53,11 +54,11 @@ function moduleLabel(value: string) {
 }
 
 const actionColumns = [
-  { key: "ver", label: "Ver", match: (key: string) => [".read", ".view", ".query"].some((suffix) => key.endsWith(suffix)) },
-  { key: "crear", label: "Crear", match: (key: string) => key.endsWith(".create") || key.endsWith(".request") },
-  { key: "editar", label: "Editar", match: (key: string) => [".update", ".manage", ".run", ".refresh"].some((suffix) => key.endsWith(suffix)) },
-  { key: "aprobar", label: "Aprobar", match: (key: string) => key.includes("transfer") || key.includes("workflow") || key.includes("task") },
-  { key: "auditar", label: "Auditar", match: (key: string) => key.includes("audit") || key.endsWith(".export") || key.endsWith(".download") }
+  { key: "view", label: "Ver" },
+  { key: "create", label: "Crear" },
+  { key: "update", label: "Editar" },
+  { key: "approve", label: "Aprobar" },
+  { key: "audit", label: "Auditar" }
 ];
 
 export default function RolesPage() {
@@ -120,18 +121,29 @@ export default function RolesPage() {
     setSelectedPermissions((current) => current.includes(permission) ? current.filter((item) => item !== permission) : [...current, permission].sort());
   }
 
-  function permissionsForAction(items: PermissionItem[], action: (typeof actionColumns)[number]) {
-    return items.filter((permission) => action.match(permission.permission_key)).map((permission) => permission.permission_key);
+  function permissionsForAction(module: string, items: PermissionItem[], action: (typeof actionColumns)[number]) {
+    const exact = `${module}.${action.key}`;
+    const compatibility: Record<string, string[]> = {
+      view: [".read", ".view", ".query"],
+      create: [".create", ".request"],
+      update: [".update", ".manage", ".run", ".refresh"],
+      approve: [".approve"],
+      audit: [".audit", ".export", ".download"]
+    };
+    const keys = items
+      .filter((permission) => compatibility[action.key].some((suffix) => permission.permission_key.endsWith(suffix)))
+      .map((permission) => permission.permission_key);
+    if (items.some((permission) => permission.permission_key === exact)) keys.push(exact);
+    return Array.from(new Set(keys)).sort();
   }
 
-  function actionChecked(items: PermissionItem[], action: (typeof actionColumns)[number]) {
-    const keys = permissionsForAction(items, action);
+  function actionChecked(module: string, items: PermissionItem[], action: (typeof actionColumns)[number]) {
+    const keys = permissionsForAction(module, items, action);
     return keys.length > 0 && keys.every((key) => selectedPermissions.includes(key));
   }
 
-  function toggleAction(items: PermissionItem[], action: (typeof actionColumns)[number]) {
-    const keys = permissionsForAction(items, action);
-    if (!keys.length) return;
+  function toggleAction(module: string, items: PermissionItem[], action: (typeof actionColumns)[number]) {
+    const keys = permissionsForAction(module, items, action);
     setSelectedPermissions((current) => {
       const allSelected = keys.every((key) => current.includes(key));
       if (allSelected) return current.filter((key) => !keys.includes(key));
@@ -144,7 +156,12 @@ export default function RolesPage() {
       <PageTitle
         title="Perfiles"
         description="Matriz operacional por modulo, accion y permisos especiales. El backend valida la API."
-        action={<button className="ghost" type="button" onClick={startNewRole}><UserCog size={16} /> Nuevo rol</button>}
+        action={
+          <div className="toolbar">
+            <button className="ghost" type="button" onClick={startNewRole}><UserCog size={16} /> Crear perfil</button>
+            <Link className="button-link ghost-link" href="/users?action=create"><Users size={16} /> Crear usuario</Link>
+          </div>
+        }
       />
       {message ? <div className="card compact"><span className="status">{message}</span></div> : null}
       <section className="card role-admin">
@@ -167,10 +184,10 @@ export default function RolesPage() {
                 <div className="role-matrix-row" key={module}>
                   <strong>{moduleLabel(module)}</strong>
                   {actionColumns.map((action) => {
-                    const keys = permissionsForAction(items, action);
+                    const keys = permissionsForAction(module, items, action);
                     return (
-                      <button className={actionChecked(items, action) ? "secondary" : "ghost"} disabled={!keys.length} type="button" key={`${module}-${action.key}`} onClick={() => toggleAction(items, action)} title={keys.join(", ") || "Sin permiso para esta accion"}>
-                        <ShieldCheck size={15} /> {keys.length || "-"}
+                      <button className={actionChecked(module, items, action) ? "secondary" : "ghost"} type="button" key={`${module}-${action.key}`} onClick={() => toggleAction(module, items, action)} title={keys.join(", ")}>
+                        <ShieldCheck size={15} /> {keys.length}
                       </button>
                     );
                   })}
@@ -180,7 +197,7 @@ export default function RolesPage() {
             <details className="card compact">
               <summary>Permisos especiales</summary>
               <div className="permission-grid">
-                {(permissions.data ?? []).filter((permission) => !actionColumns.some((action) => action.match(permission.permission_key))).map((permission) => (
+                {(permissions.data ?? []).filter((permission) => !actionColumns.some((action) => permission.permission_key === `${permission.module}.${action.key}`)).map((permission) => (
                   <label className="inline-check" key={permission.idPermission} title={permission.description}>
                     <input type="checkbox" checked={selectedPermissions.includes(permission.permission_key)} onChange={() => togglePermission(permission.permission_key)} />
                     <span>{permission.permission_key}</span>
@@ -189,8 +206,8 @@ export default function RolesPage() {
               </div>
             </details>
             <div className="toolbar">
-              <button disabled={saveRole.isPending}><Save size={17} /> Guardar rol</button>
-              <button className="ghost" type="button" onClick={() => { roles.refetch(); permissions.refetch(); }}><RefreshCcw size={17} /> Actualizar</button>
+              <button disabled={saveRole.isPending}><Save size={17} /> Guardar perfil</button>
+              <button className="ghost" type="button" onClick={startNewRole}><Plus size={17} /> Limpiar</button>
             </div>
           </form>
         </div>

@@ -1,7 +1,9 @@
 from uuid import uuid4
+from time import time
 
 from fastapi.testclient import TestClient
 
+from app.core.security import _totp_code
 from app.main import app
 
 
@@ -17,7 +19,7 @@ def _headers(client: TestClient) -> dict:
 def test_users_roles_permissions_and_soft_deactivation_flow():
     suffix = uuid4().hex[:8]
     role_name = f"kardex_tester_{suffix}"
-    identification = f"qa{suffix}"
+    identification = str(uuid4().int)[:10]
     email = f"qa-{suffix}@ambar.co"
 
     with TestClient(app) as client:
@@ -56,7 +58,6 @@ def test_users_roles_permissions_and_soft_deactivation_flow():
                 "identification": identification,
                 "name": "Usuario QA RBAC",
                 "email": email,
-                "password": "RoleUser123!",
                 "role_names": [role_name],
                 "company_id": "default",
                 "location_id": 1,
@@ -70,13 +71,29 @@ def test_users_roles_permissions_and_soft_deactivation_flow():
         assert "task.manage" in user["permissions"]
         assert "users.manage" not in user["permissions"]
 
-        user_login = client.post("/api/v1/auth/login", json={"email": email, "password": "RoleUser123!"})
+        user_login = client.post("/api/v1/auth/login", json={"email": email, "password": identification})
         assert user_login.status_code == 200, user_login.text
         user_headers = {"Authorization": f"Bearer {user_login.json()['access_token']}"}
         me = client.get("/api/v1/auth/me", headers=user_headers)
         assert me.status_code == 200, me.text
         assert me.json()["roles"] == [role_name]
         assert set(me.json()["permissions"]) == {"document.read", "document.transfer", "notification.read", "task.manage"}
+
+        mfa_setup = client.post(f"/api/v1/users/{identification}/mfa/setup", headers=headers)
+        assert mfa_setup.status_code == 200, mfa_setup.text
+        secret = mfa_setup.json()["secret"]
+        assert mfa_setup.json()["otpauth_uri"].startswith("otpauth://totp/")
+
+        mfa_required = client.post("/api/v1/auth/login", json={"email": email, "password": identification})
+        assert mfa_required.status_code == 401
+        assert mfa_required.json()["detail"] == "MFA code required"
+
+        mfa_login = client.post("/api/v1/auth/login", json={"email": email, "password": identification, "mfa_code": _totp_code(secret, int(time() // 30))})
+        assert mfa_login.status_code == 200, mfa_login.text
+
+        mfa_disabled = client.post(f"/api/v1/users/{identification}/mfa/disable", headers=headers)
+        assert mfa_disabled.status_code == 200, mfa_disabled.text
+        assert mfa_disabled.json()["mfa_enabled"] is False
 
         deactivated = client.delete(f"/api/v1/users/{identification}", headers=headers)
         assert deactivated.status_code == 200, deactivated.text
@@ -90,7 +107,7 @@ def test_users_roles_permissions_and_soft_deactivation_flow():
         assert all_users.status_code == 200, all_users.text
         assert any(item["identification"] == identification and item["status"] == "inactive" for item in all_users.json())
 
-        blocked_login = client.post("/api/v1/auth/login", json={"email": email, "password": "RoleUser123!"})
+        blocked_login = client.post("/api/v1/auth/login", json={"email": email, "password": identification})
         assert blocked_login.status_code == 401
 
 
@@ -103,7 +120,7 @@ def test_enterprise_admin_trd_hr_and_password_feedback():
         weak_user = client.post(
             "/api/v1/users",
             json={
-                "identification": f"weak{suffix}",
+                "identification": str(uuid4().int)[:10],
                 "name": "Usuario Password Debil",
                 "email": f"weak-{suffix}@ambar.co",
                 "password": "as400181*",

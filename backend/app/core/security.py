@@ -1,6 +1,12 @@
 from datetime import UTC, datetime, timedelta
+import base64
+import hashlib
+import hmac
+import secrets
+import struct
 from typing import Any
 from uuid import uuid4
+from urllib.parse import quote
 
 import bcrypt
 from jose import JWTError, jwt
@@ -55,3 +61,27 @@ def enforce_password_policy(password: str) -> None:
     ]
     if not all(checks):
         raise ValueError("Password must include upper, lower, number and symbol")
+
+
+def generate_totp_secret() -> str:
+    return base64.b32encode(secrets.token_bytes(20)).decode("utf-8").rstrip("=")
+
+
+def _totp_code(secret: str, counter: int, digits: int = 6) -> str:
+    padding = "=" * ((8 - len(secret) % 8) % 8)
+    key = base64.b32decode((secret + padding).upper())
+    digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    number = struct.unpack(">I", digest[offset : offset + 4])[0] & 0x7FFFFFFF
+    return str(number % (10**digits)).zfill(digits)
+
+
+def verify_totp(secret: str, code: str, window: int = 1) -> bool:
+    if not code or not code.isdigit():
+        return False
+    counter = int(datetime.now(UTC).timestamp() // 30)
+    return any(hmac.compare_digest(_totp_code(secret, counter + drift), code.zfill(6)) for drift in range(-window, window + 1))
+
+
+def totp_uri(secret: str, email: str, issuer: str = "AMBAR") -> str:
+    return f"otpauth://totp/{quote(issuer)}:{quote(email)}?secret={secret}&issuer={quote(issuer)}&digits=6&period=30"

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.deps import get_current_user, user_permissions
-from app.core.security import create_token, decode_token, verify_password
+from app.core.security import create_token, decode_token, verify_password, verify_totp
 from app.db.models import RefreshSession, User
 from app.db.session import get_db
 from app.services.audit import write_audit
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    mfa_code: str | None = None
 
 
 class RefreshRequest(BaseModel):
@@ -91,6 +92,17 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
         )
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    if user.mfa_enabled:
+        if not user.mfa_secret:
+            write_audit(db, action="login_failed_mfa_not_configured", module="auth", user_id=user.identification, result="failed", severity="warning", request=request)
+            db.commit()
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MFA is enabled but not configured")
+        if not payload.mfa_code:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MFA code required")
+        if not verify_totp(user.mfa_secret, payload.mfa_code):
+            write_audit(db, action="login_failed_mfa", module="auth", user_id=user.identification, result="failed", severity="warning", request=request)
+            db.commit()
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid MFA code")
 
     permissions = sorted(user_permissions(db, user))
     roles = _role_names(user)

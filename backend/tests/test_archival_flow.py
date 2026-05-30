@@ -247,7 +247,7 @@ def test_phase2_document_core_types_metadata_versions_and_trd_workspace():
 
 def test_archive_access_denied_for_unassigned_user():
     suffix = uuid4().hex[:8]
-    identification = f"viewer{suffix}"
+    identification = str(uuid4().int)[:10]
     email = f"viewer-{suffix}@ambar.co"
 
     with TestClient(app) as client:
@@ -524,7 +524,7 @@ def test_actionable_notifications_and_clean_task_lifecycle():
 
 def test_audit_security_filters_export_and_denied_access():
     suffix = uuid4().hex[:8]
-    identification = f"secviewer{suffix}"
+    identification = str(uuid4().int)[:10]
     email = f"secviewer-{suffix}@ambar.co"
     with TestClient(app) as client:
         headers = _headers(client)
@@ -782,7 +782,7 @@ def test_live_expedient_blocks_close_with_critical_issues_and_active_loan():
 
 def test_live_expedient_missing_documents_and_access_denied():
     suffix = uuid4().hex[:8]
-    identification = f"expviewer{suffix}"
+    identification = str(uuid4().int)[:10]
     email = f"expviewer-{suffix}@ambar.co"
     with TestClient(app) as client:
         headers = _headers(client)

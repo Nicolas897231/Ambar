@@ -259,9 +259,10 @@ select { cursor: pointer; }
 .timeline-warning .timeline-dot { background: var(--warn); }
 .timeline-danger .timeline-dot { background: var(--danger); }
 .timeline-info .timeline-dot { background: var(--info); }
-.drawer-layer { position: fixed; inset: 0; z-index: 80; display: grid; grid-template-columns: 1fr min(520px, 94vw); }
+.drawer-layer { position: fixed; inset: 0; z-index: 80; display: grid; grid-template-columns: 1fr min(900px, 94vw); }
 .drawer-scrim { all: unset; background: rgba(15, 23, 42, .32); cursor: pointer; }
 .detail-drawer { background: var(--panel); border-left: 1px solid var(--line); padding: 18px; display: grid; gap: 16px; overflow: auto; box-shadow: var(--shadow-md); animation: drawer-in .18s ease; }
+.detail-drawer.wide-drawer { width: min(900px, 94vw); padding: clamp(18px, 1.6vw, 28px); }
 .drawer-header { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
 .drawer-header h2 { margin: 0; }
 .drawer-header p { margin: 4px 0 0; color: var(--muted); }
@@ -359,6 +360,11 @@ th, td { font-size: .98rem; padding: 13px 14px; }
 .wizard-toggle { min-height: 42px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
 .wizard-note { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; color: var(--muted); }
 .wizard-actions { display: flex; justify-content: space-between; gap: 12px; padding-top: 6px; border-top: 1px solid var(--line); }
+.validation-panel { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--danger) 26%, var(--line)); border-radius: var(--radius-md); background: color-mix(in srgb, var(--danger) 7%, var(--panel)); color: var(--danger); }
+.validation-panel strong { display: inline-flex; align-items: center; gap: 7px; color: var(--text); }
+.field-error { color: var(--danger); font-size: .82rem; line-height: 1.25; }
+.profile-summary { display: grid; gap: 8px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-hover); }
+.profile-summary p { margin: 0; color: var(--muted); }
 .permission-matrix { display: grid; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
 .permission-row { display: grid; grid-template-columns: minmax(160px, 1fr) repeat(5, minmax(76px, auto)); align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--panel); }
 .permission-row:first-child { border-top: 0; }

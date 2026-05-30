@@ -6,6 +6,8 @@ from app.db.models import (
     ArchiveUser,
     Expedient,
     Folder,
+    HRDepartment,
+    HRPosition,
     Location,
     Permission,
     Role,
@@ -53,6 +55,12 @@ PERMISSIONS = [
     "bi.view",
     "bi.refresh",
 ]
+
+for _module in ["archive", "audit", "auth", "bi", "document", "hr", "notification", "platform", "search", "transfer", "trd", "users"]:
+    for _action in ["view", "create", "update", "approve", "audit"]:
+        _permission = f"{_module}.{_action}"
+        if _permission not in PERMISSIONS:
+            PERMISSIONS.append(_permission)
 
 ROLES = {
     "super_admin": ["*"],
@@ -183,6 +191,22 @@ def seed_database(db: Session) -> None:
         ArchiveUser.ps405Identification == admin.identification,
     ).one_or_none():
         db.add(ArchiveUser(ps930IdArchive=default_archive.idArchive, ps405Identification=admin.identification, access_level="admin"))
+
+    if not db.query(HRDepartment).filter(HRDepartment.department_code == "DEP-ARCH").one_or_none():
+        db.add(HRDepartment(department_code="DEP-ARCH", name="Archivo", responsible_identification=admin.identification, status="active"))
+    if not db.query(HRPosition).filter(HRPosition.position_code == "CAR-ADMIN").one_or_none():
+        db.add(
+            HRPosition(
+                position_code="CAR-ADMIN",
+                name="Administrador",
+                level="direccion",
+                department="Archivo",
+                description="Cargo inicial para administracion de AMBAR",
+                suggested_permissions={"items": ["users.manage", "archive.manage"]},
+                required_documents={"items": []},
+                status="active",
+            )
+        )
     if not db.query(TrdSeries).first():
         series = TrdSeries(code="ADM-001", name="Gestion Administrativa", description="Serie documental inicial")
         db.add(series)

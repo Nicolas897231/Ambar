@@ -21,6 +21,15 @@ class User(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(30), default="active", index=True)
     company_id: Mapped[str] = mapped_column(String(40), default="default", index=True)
     location_id: Mapped[int | None] = mapped_column(ForeignKey("ps700_locations.idLocation"))
+    phone: Mapped[str | None] = mapped_column(String(20))
+    position_name: Mapped[str | None] = mapped_column(String(120))
+    department_name: Mapped[str | None] = mapped_column(String(120))
+    auth_method: Mapped[str] = mapped_column(String(40), default="temporary_password")
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    mfa_secret: Mapped[str | None] = mapped_column(String(64))
+    mechanical_signature_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    digital_signature_ready: Mapped[bool] = mapped_column(Boolean, default=False)
+    access_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     roles: Mapped[list["UserRole"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
