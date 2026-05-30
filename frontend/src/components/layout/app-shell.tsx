@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Bot, BriefcaseBusiness, Building2, ChevronDown, ClipboardList, Database, FileBox, FilePenLine, FileText, FolderKanban, Gauge, Layers3, Link2, ListChecks, LogOut, MapPin, Menu, Moon, PackageCheck, PlugZap, Route, Search, ServerCog, ShieldCheck, Sun, TableProperties, Users, Warehouse, Zap } from "lucide-react";
+import { Bot, BriefcaseBusiness, Building2, ChevronDown, ClipboardList, Clock3, Database, FileBox, FilePenLine, FileText, FolderKanban, Gauge, Layers3, Link2, ListChecks, LogOut, MapPin, Menu, Moon, PackageCheck, PlugZap, Plus, Route, Search, ServerCog, ShieldCheck, Star, Sun, TableProperties, Users, Warehouse, Zap } from "lucide-react";
 import { ReactNode, useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
@@ -59,9 +59,11 @@ const groups: NavGroup[] = [
     permissions: ["hr.view", "hr.manage"],
     items: [
       { href: "/hr?view=employees", label: "Empleados", icon: BriefcaseBusiness, permissions: ["hr.view", "hr.manage"] },
+      { href: "/hr?view=candidates", label: "Candidatos", icon: Users, permissions: ["hr.view", "hr.manage"] },
       { href: "/hr?view=expedients", label: "Expedientes laborales", icon: FolderKanban, permissions: ["hr.view", "hr.manage"] },
       { href: "/hr?view=contracts", label: "Contratos", icon: FileText, permissions: ["hr.manage"] },
-      { href: "/hr?view=positions", label: "Cargos", icon: Users, permissions: ["hr.manage"] }
+      { href: "/hr?view=positions", label: "Cargos", icon: Users, permissions: ["hr.manage"] },
+      { href: "/hr?view=departments", label: "Dependencias", icon: Building2, permissions: ["hr.manage"] }
     ]
   },
   { label: "Busqueda", icon: Search, permissions: ["search.query", "search.reindex", "ocr.manage"], items: [{ href: "/search?view=global", label: "Global", icon: Search, permissions: ["search.query"] }, { href: "/search?view=advanced", label: "Avanzada", icon: Database, permissions: ["search.query"] }, { href: "/ocr", label: "OCR futuro", icon: Bot, permissions: ["ocr.manage"] }] },
@@ -76,6 +78,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [selectedArchive, setSelectedArchive] = useState("");
+  const [sidebarQuery, setSidebarQuery] = useState("");
   const cachedUser = getCurrentUser();
   const currentUser = useQuery({
     queryKey: ["auth", "me"],
@@ -88,9 +91,15 @@ export function AppShell({ children }: { children: ReactNode }) {
     staleTime: 60000
   });
   const permissions = currentUser.data?.permissions ?? getStoredPermissions();
-  const visibleGroups = groups
+  const visibleGroups = useMemo(() => groups
     .map((group) => ({ ...group, items: group.items.filter((item) => hasAnyPermission(permissions, item.permissions)) }))
-    .filter((group) => group.items.length > 0 || hasAnyPermission(permissions, group.permissions));
+    .filter((group) => group.items.length > 0 || hasAnyPermission(permissions, group.permissions)), [permissions]);
+  const filteredGroups = useMemo(() => visibleGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !sidebarQuery.trim() || `${group.label} ${item.label}`.toLowerCase().includes(sidebarQuery.trim().toLowerCase()))
+    }))
+    .filter((group) => group.items.length > 0), [sidebarQuery, visibleGroups]);
   const archives = useQuery({ queryKey: ["shell", "archives"], queryFn: async () => (await api.get<ArchiveOption[]>("/archives")).data, enabled: hasAnyPermission(permissions, ["document.read", "archive.manage"]) });
   const notifications = useQuery({
     queryKey: ["shell", "notifications"],
@@ -113,6 +122,20 @@ export function AppShell({ children }: { children: ReactNode }) {
     const activeItem = activeGroup?.items.find((item) => isActive(item.href)) ?? activeGroup?.items.find((item) => pathname === pathOf(item.href));
     return [activeGroup?.label ?? "AMBAR", activeItem?.label ?? "Operacion"];
   }, [isActive, pathOf, pathname, visibleGroups]);
+  const flatItems = useMemo(() => visibleGroups.flatMap((group) => group.items.map((item) => ({ ...item, group: group.label }))), [visibleGroups]);
+  const favoriteItems = useMemo(() => flatItems.filter((item) => ["/dashboard", "/users", "/hr?view=candidates", "/search?view=global"].includes(item.href)).slice(0, 4), [flatItems]);
+  const recentItems = useMemo(() => flatItems.filter((item) => pathname === pathOf(item.href) || ["/tasks", "/notifications", "/audit"].includes(pathOf(item.href))).slice(0, 3), [flatItems, pathOf, pathname]);
+  const contextualAction = useMemo(() => {
+    const view = searchParams.get("view");
+    if (pathname === "/users") return { href: "/users?action=create", label: "Crear usuario" };
+    if (pathname === "/roles") return { href: "/roles?action=create", label: "Crear perfil" };
+    if (pathname === "/hr" && view === "candidates") return { href: "/hr?view=candidates&action=create", label: "Crear candidato" };
+    if (pathname === "/hr" && view === "positions") return { href: "/hr?view=positions&action=create", label: "Crear cargo" };
+    if (pathname === "/hr" && view === "departments") return { href: "/hr?view=departments&action=create", label: "Crear dependencia" };
+    if (pathname === "/hr") return { href: "/hr?view=employees&action=create", label: "Crear empleado" };
+    if (pathname === "/platform") return { href: "/platform#security", label: "Crear politica" };
+    return { href: "/search?view=global", label: "Buscar" };
+  }, [pathname, searchParams]);
 
   return (
     <div className={`app-shell ${collapsed ? "sidebar-collapsed" : ""}`} data-theme={darkMode ? "dark" : "light"}>
@@ -121,9 +144,25 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button className="sidebar-toggle" type="button" onClick={() => setCollapsed((value) => !value)} title={collapsed ? "Expandir menu" : "Contraer menu"}><Menu size={17} /></button>
           <div><div className="brand">AMBAR</div><div className="muted">SGDEA enterprise</div></div>
         </div>
-        <Link className="quick-action" href="/documents"><Zap size={15} /> <span>Nuevo documento</span></Link>
+        <label className="sidebar-search" title="Buscar en menu">
+          <Search size={15} />
+          <input value={sidebarQuery} onChange={(event) => setSidebarQuery(event.target.value)} placeholder="Buscar modulo..." />
+        </label>
+        <Link className="quick-action" href={contextualAction.href}><Zap size={15} /> <span>{contextualAction.label}</span></Link>
+        {!collapsed && favoriteItems.length ? (
+          <div className="nav-smart-section">
+            <span><Star size={14} /> Favoritos</span>
+            {favoriteItems.map((item) => <Link key={`fav-${item.href}`} href={item.href}>{item.label}</Link>)}
+          </div>
+        ) : null}
+        {!collapsed && recentItems.length ? (
+          <div className="nav-smart-section subtle">
+            <span><Clock3 size={14} /> Recientes</span>
+            {recentItems.map((item) => <Link key={`recent-${item.href}`} href={item.href}>{item.label}</Link>)}
+          </div>
+        ) : null}
         <nav className="nav nav-enterprise">
-          {visibleGroups.map((group) => {
+          {filteredGroups.map((group) => {
             const GroupIcon = group.icon;
             const open = group.items.some((item) => pathname === pathOf(item.href));
             return (
@@ -153,6 +192,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
         <div className="content">{children}</div>
+        <Link className="context-fab" href={contextualAction.href}><Plus size={19} /> <span>{contextualAction.label}</span></Link>
       </main>
     </div>
   );

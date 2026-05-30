@@ -4,7 +4,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_permission, user_permissions
-from app.db.models import Archive, Document, Employee, Expedient, Folder, InventoryFuid, KardexMovement, PhysicalBox, User
+from app.db.models import Archive, Document, Employee, Expedient, Folder, HRCandidate, HRDepartment, HRPosition, InventoryFuid, KardexMovement, PhysicalBox, TrdSeries, TrdSubseries, User
 from app.db.session import get_db
 from app.domains.archives.router import allowed_archive_ids
 from app.services.audit import write_audit
@@ -126,6 +126,24 @@ def document_search(
             for item in archive_query.order_by(Archive.archive_name.asc()).limit(100).all()
         )
 
+    if entity_filter in {None, "", "series"}:
+        series_query = db.query(TrdSeries)
+        if term:
+            series_query = series_query.filter(or_(_matches_text(TrdSeries.code, term), _matches_text(TrdSeries.name, term)))
+        results.extend(
+            _result("series", item.idSeries, item.name, item.code, "active", None, f"/trd?view=series&series={item.idSeries}")
+            for item in series_query.order_by(TrdSeries.code.asc()).limit(100).all()
+        )
+
+    if entity_filter in {None, "", "subseries"}:
+        subseries_query = db.query(TrdSubseries)
+        if term:
+            subseries_query = subseries_query.filter(_matches_text(TrdSubseries.name, term))
+        results.extend(
+            _result("subseries", item.idSubseries, item.name, f"Serie {item.ps610IdSeries}", "active", None, f"/trd?view=subseries&subseries={item.idSubseries}")
+            for item in subseries_query.order_by(TrdSubseries.name.asc()).limit(100).all()
+        )
+
     if entity_filter in {None, "", "expedient"}:
         expedient_query = db.query(Expedient).filter(Expedient.ps930IdArchive.in_(requested_archive_ids))
         if term:
@@ -184,6 +202,17 @@ def document_search(
             for item in movement_query.order_by(KardexMovement.created_at.desc()).limit(100).all()
         )
 
+    if entity_filter in {None, "", "user"}:
+        user_query = db.query(User).filter(User.company_id == user.company_id)
+        if term:
+            user_query = user_query.filter(or_(_matches_text(User.identification, term), _matches_text(User.name, term), _matches_text(User.email, term)))
+        if payload.status:
+            user_query = user_query.filter(User.status == payload.status)
+        results.extend(
+            _result("user", item.identification, item.name, item.email, item.status, None, f"/users?user={item.identification}")
+            for item in user_query.order_by(User.name.asc()).limit(100).all()
+        )
+
     if entity_filter in {None, "", "employee"}:
         employee_query = db.query(Employee).filter(Employee.company_id == user.company_id)
         if term:
@@ -193,6 +222,39 @@ def document_search(
         results.extend(
             _result("employee", item.identification, item.full_name, item.employee_code, item.status, None, f"/hr?employee={item.identification}")
             for item in employee_query.order_by(Employee.full_name.asc()).limit(100).all()
+        )
+
+    if entity_filter in {None, "", "position"}:
+        position_query = db.query(HRPosition)
+        if term:
+            position_query = position_query.filter(or_(_matches_text(HRPosition.position_code, term), _matches_text(HRPosition.name, term), _matches_text(HRPosition.level, term), _matches_text(HRPosition.department, term)))
+        if payload.status:
+            position_query = position_query.filter(HRPosition.status == payload.status)
+        results.extend(
+            _result("position", item.idPosition, item.name, f"{item.position_code} / {item.department}", item.status, None, f"/hr?view=positions&position={item.idPosition}")
+            for item in position_query.order_by(HRPosition.name.asc()).limit(100).all()
+        )
+
+    if entity_filter in {None, "", "department"}:
+        department_query = db.query(HRDepartment)
+        if term:
+            department_query = department_query.filter(or_(_matches_text(HRDepartment.department_code, term), _matches_text(HRDepartment.name, term)))
+        if payload.status:
+            department_query = department_query.filter(HRDepartment.status == payload.status)
+        results.extend(
+            _result("department", item.idDepartment, item.name, item.department_code, item.status, None, f"/hr?view=departments&department={item.idDepartment}")
+            for item in department_query.order_by(HRDepartment.name.asc()).limit(100).all()
+        )
+
+    if entity_filter in {None, "", "candidate"}:
+        candidate_query = db.query(HRCandidate)
+        if term:
+            candidate_query = candidate_query.filter(or_(_matches_text(HRCandidate.candidate_code, term), _matches_text(HRCandidate.full_name, term), _matches_text(HRCandidate.email, term), _matches_text(HRCandidate.position_applied, term), _matches_text(HRCandidate.department, term)))
+        if payload.status:
+            candidate_query = candidate_query.filter(HRCandidate.status == payload.status)
+        results.extend(
+            _result("candidate", item.idCandidate, item.full_name, f"{item.candidate_code} / {item.position_applied}", item.status, None, f"/hr?view=candidates&candidate={item.idCandidate}")
+            for item in candidate_query.order_by(HRCandidate.created_at.desc()).limit(100).all()
         )
 
     total = len(results)

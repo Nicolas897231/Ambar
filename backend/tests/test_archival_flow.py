@@ -160,6 +160,91 @@ def test_archival_document_upload_repository_and_kardex_flow():
         assert rejected.json()["reason"] == "faltan_folios"
 
 
+def test_phase2_document_core_types_metadata_versions_and_trd_workspace():
+    suffix = uuid4().hex[:8]
+    with TestClient(app) as client:
+        headers = _headers(client)
+        archive_id, expedient_id, folder_id = _create_expedient_and_folder(client, headers, f"CORE-{suffix}")
+
+        doc_type = client.post(
+            "/api/v1/documents/types",
+            json={
+                "type_code": f"core_{suffix}",
+                "name": "Tipologia Core QA",
+                "required_metadata": ["radicado"],
+                "optional_metadata": ["asunto"],
+            },
+            headers=headers,
+        )
+        assert doc_type.status_code == 201, doc_type.text
+
+        missing_metadata = client.post(
+            "/api/v1/documents",
+            json={
+                "document_name": "Documento sin metadata obligatoria",
+                "document_type": f"core_{suffix}",
+                "archive_id": archive_id,
+                "expedient_id": expedient_id,
+                "folder_id": folder_id,
+                "metadata": {},
+            },
+            headers=headers,
+        )
+        assert missing_metadata.status_code == 422
+
+        subseries = client.get("/api/v1/trd/subseries", headers=headers)
+        created = client.post(
+            "/api/v1/documents",
+            json={
+                "document_name": f"Documento core SGDEA {suffix}",
+                "document_type": f"core_{suffix}",
+                "archive_id": archive_id,
+                "expedient_id": expedient_id,
+                "folder_id": folder_id,
+                "subseries_id": subseries.json()[0]["idSubseries"],
+                "folio_start": 1,
+                "folio_end": 2,
+                "metadata": {"radicado": f"RAD-{suffix}", "asunto": "Nucleo documental"},
+            },
+            headers=headers,
+        )
+        assert created.status_code == 201, created.text
+        document_id = created.json()["idDocument"]
+        assert created.json()["metadata"]["radicado"] == f"RAD-{suffix}"
+
+        metadata = client.get(f"/api/v1/documents/{document_id}/metadata", headers=headers)
+        assert metadata.status_code == 200, metadata.text
+        assert "radicado" in metadata.json()["required_metadata"]
+
+        updated_metadata = client.put(
+            f"/api/v1/documents/{document_id}/metadata",
+            json={"metadata": {"radicado": f"RAD2-{suffix}", "asunto": "Actualizado"}},
+            headers=headers,
+        )
+        assert updated_metadata.status_code == 200, updated_metadata.text
+        assert updated_metadata.json()["version"] == 2
+
+        versions = client.get(f"/api/v1/documents/{document_id}/versions", headers=headers)
+        assert versions.status_code == 200, versions.text
+        assert versions.json()["current_version"] == 2
+        assert any(item["action"] == "metadata_updated" for item in versions.json()["history"])
+
+        series = client.get("/api/v1/trd/series/tree", headers=headers)
+        assert series.status_code == 200, series.text
+        assert series.json()
+        workspace = client.get(f"/api/v1/trd/series/{series.json()[0]['idSeries']}/workspace", headers=headers)
+        assert workspace.status_code == 200, workspace.text
+        assert "kpis" in workspace.json()
+
+        search = client.post(
+            "/api/v1/search/documents",
+            json={"q": f"Documento core SGDEA {suffix}", "entity_type": "document"},
+            headers=headers,
+        )
+        assert search.status_code == 200, search.text
+        assert any(item["id"] == document_id for item in search.json()["items"])
+
+
 def test_archive_access_denied_for_unassigned_user():
     suffix = uuid4().hex[:8]
     identification = f"viewer{suffix}"
@@ -758,7 +843,7 @@ def test_physical_locations_shelves_boxes_moves_and_paths():
         assert shelf_one.status_code == 201, shelf_one.text
         shelf_two = client.post(
             "/api/v1/archives/shelves",
-            json={"archive_id": archive_id, "shelf_code": f"EST-2-{suffix}", "shelf_name": "Estanteria destino", "capacity_boxes": 2, "physical_location": "Modulo B"},
+            json={"archive_id": archive_id, "shelf_code": f"EST-2-{suffix}", "shelf_name": "Estanteria destino", "floor": "Piso 2", "module": "Modulo B", "bay": "Entrepano 4", "capacity_boxes": 2, "physical_location": "Modulo B"},
             headers=headers,
         )
         assert shelf_two.status_code == 201, shelf_two.text
@@ -794,8 +879,22 @@ def test_physical_locations_shelves_boxes_moves_and_paths():
 
         document_path = client.get(f"/api/v1/archives/entities/document/{document_id}/physical-location", headers=headers)
         assert document_path.status_code == 200, document_path.text
+        assert "Piso 2" in document_path.json()["location_path"]
         assert f"EST-2-{suffix}" in document_path.json()["location_path"]
         assert f"BX-LOC-{suffix}" in document_path.json()["location_path"]
+
+        custody = client.get(f"/api/v1/archives/entities/folder/{folder_id}/custody", headers=headers)
+        assert custody.status_code == 200, custody.text
+        assert custody.json()[0]["archive_id"] == archive_id
+        assert f"BX-LOC-{suffix}" in custody.json()[0]["current_location_path"]
+
+        custody_summary = client.get("/api/v1/archives/custody/summary", headers=headers)
+        assert custody_summary.status_code == 200, custody_summary.text
+        assert custody_summary.json()["current"] >= 1
+
+        current_custody = client.get("/api/v1/archives/custody/current", params={"archive_id": archive_id, "entity_type": "folder"}, headers=headers)
+        assert current_custody.status_code == 200, current_custody.text
+        assert any(item["entity_id"] == folder_id and item["status"] == "active" for item in current_custody.json())
 
         summary = client.get("/api/v1/archives/locations/summary", params={"archive_id": archive_id}, headers=headers)
         assert summary.status_code == 200, summary.text

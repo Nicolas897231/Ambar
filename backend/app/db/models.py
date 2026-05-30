@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -115,9 +115,35 @@ class DocumentFile(Base):
     content_type: Mapped[str] = mapped_column(String(120), nullable=False)
     checksum: Mapped[str] = mapped_column(String(128), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    uploaded_by: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
+    trace_id: Mapped[str | None] = mapped_column(String(120))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     document: Mapped[Document] = relationship(back_populates="files")
+
+
+class DocumentType(Base, TimestampMixin):
+    __tablename__ = "ps526_document_types"
+
+    idDocumentType: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    type_code: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(140), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    required_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
+    optional_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+
+
+class DocumentMetadata(Base, TimestampMixin):
+    __tablename__ = "ps528_document_metadata"
+    __table_args__ = (UniqueConstraint("ps520IdDocument", "metadata_key"),)
+
+    idMetadata: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ps520IdDocument: Mapped[int] = mapped_column(ForeignKey("ps520_documents.idDocument"), nullable=False)
+    metadata_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    metadata_value: Mapped[str | None] = mapped_column(Text)
+    required: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class DocumentHistory(Base):
@@ -311,6 +337,34 @@ class HRPosition(Base):
     required_documents: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(40), default="active", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class HRDepartment(Base, TimestampMixin):
+    __tablename__ = "ps1006_hr_departments"
+
+    idDepartment: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    department_code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("ps1006_hr_departments.idDepartment"))
+    responsible_identification: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+
+
+class HRCandidate(Base, TimestampMixin):
+    __tablename__ = "ps1004_hr_candidates"
+
+    idCandidate: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    candidate_code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    full_name: Mapped[str] = mapped_column(String(180), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255), index=True)
+    phone: Mapped[str | None] = mapped_column(String(80))
+    position_applied: Mapped[str] = mapped_column(String(120), nullable=False)
+    department: Mapped[str] = mapped_column(String(120), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), default="postulado", index=True)
+    resume_document_id: Mapped[int | None] = mapped_column(ForeignKey("ps520_documents.idDocument"))
+    observations: Mapped[dict | None] = mapped_column(JSON)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
+    hired_employee_id: Mapped[str | None] = mapped_column(ForeignKey("ps1010_employees.identification"))
 
 
 class EmployeeFile(Base):
@@ -606,6 +660,9 @@ class Shelf(Base, TimestampMixin):
     ps930IdArchive: Mapped[int] = mapped_column(ForeignKey("ps930_archives.idArchive"), nullable=False)
     shelf_code: Mapped[str] = mapped_column(String(60), nullable=False)
     shelf_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    floor: Mapped[str | None] = mapped_column(String(80))
+    module: Mapped[str | None] = mapped_column(String(80))
+    bay: Mapped[str | None] = mapped_column(String(80))
     capacity_boxes: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(40), default="active", index=True)
     physical_location: Mapped[str | None] = mapped_column(String(255))
@@ -769,3 +826,27 @@ class MovementTrace(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     movement: Mapped[KardexMovement] = relationship()
+
+
+class Custodianship(Base, TimestampMixin):
+    __tablename__ = "ps964_custodianships"
+    __table_args__ = (
+        Index("ix_custodianships_entity_current", "entity_type", "entity_id", "is_current"),
+        Index("ix_custodianships_archive_status", "ps930IdArchive", "status"),
+    )
+
+    idCustodianship: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    ps930IdArchive: Mapped[int] = mapped_column(ForeignKey("ps930_archives.idArchive"), nullable=False, index=True)
+    custodian_identification: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
+    current_location_path: Mapped[str | None] = mapped_column(String(500))
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+    source_module: Mapped[str | None] = mapped_column(String(80))
+    related_movement_id: Mapped[int | None] = mapped_column(ForeignKey("ps960_kardex_movements.idMovement"))
+    related_transfer_id: Mapped[int | None] = mapped_column(ForeignKey("ps1070_transfer_batches.idBatch"))
+    related_loan_id: Mapped[int | None] = mapped_column(ForeignKey("ps958_document_loans.idLoan"))
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    archive: Mapped[Archive] = relationship()

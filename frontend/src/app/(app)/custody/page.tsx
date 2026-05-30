@@ -19,9 +19,18 @@ type Dashboard = {
   archives: number;
   documents: number;
   expedients: number;
+  current_custodies: number;
   pending_movements: number;
   overdue_loans: number;
   by_archive: { idArchive: number; archive_name: string; documents: number; expedients: number; boxes: number }[];
+};
+
+type CustodySummary = {
+  current: number;
+  loaned: number;
+  transferred: number;
+  by_entity_type: Record<string, number>;
+  by_archive: { archive_id: number; archive_name: string; custodian?: string | null; current: number; loaned: number; active: number }[];
 };
 
 type Movement = {
@@ -45,6 +54,7 @@ function tone(status: string) {
 
 export default function CustodyPage() {
   const dashboard = useQuery({ queryKey: ["custody-dashboard"], queryFn: async () => (await api.get<Dashboard>("/archives/dashboard")).data });
+  const custody = useQuery({ queryKey: ["custody-summary"], queryFn: async () => (await api.get<CustodySummary>("/archives/custody/summary")).data });
   const movements = useQuery({ queryKey: ["custody-dashboard", "movements"], queryFn: async () => (await api.get<Movement[]>("/archives/kardex")).data });
   const recent = (movements.data ?? []).slice(0, 5);
 
@@ -62,6 +72,7 @@ export default function CustodyPage() {
         <MetricCard label="Archivos activos" value={dashboard.data?.archives ?? 0} tone="info" cta="Gestionar archivos" href="/archives" />
         <MetricCard label="Documentos custodiados" value={dashboard.data?.documents ?? 0} tone="success" cta="Ver repositorio" href="/repository" />
         <MetricCard label="Expedientes activos" value={dashboard.data?.expedients ?? 0} cta="Expedientes vivos" href="/expedients" />
+        <MetricCard label="Custodias actuales" value={dashboard.data?.current_custodies ?? custody.data?.current ?? 0} tone="info" cta="Ver trazabilidad" href="/kardex" />
         <MetricCard label="Recepciones pendientes" value={dashboard.data?.pending_movements ?? 0} tone={(dashboard.data?.pending_movements ?? 0) ? "warning" : "success"} cta="Revisar recepcion" href="/reception" />
         <MetricCard label="Prestamos vencidos" value={dashboard.data?.overdue_loans ?? 0} tone={(dashboard.data?.overdue_loans ?? 0) ? "danger" : "success"} cta="Resolver prestamos" href="/loans" />
       </section>
@@ -115,6 +126,26 @@ export default function CustodyPage() {
           </DataTable>
         </section>
       </div>
+
+      <section className="card">
+        <div className="toolbar space-between"><h2>Responsabilidad documental actual</h2><StatusBadge value={`${custody.data?.loaned ?? 0} prestadas`} tone={(custody.data?.loaned ?? 0) ? "warning" : "success"} /></div>
+        <DataTable>
+          <table>
+            <thead><tr><th>Archivo</th><th>Custodio</th><th>Unidades bajo custodia</th><th>Activas</th><th>Prestadas</th></tr></thead>
+            <tbody>
+              {custody.data?.by_archive.map((item) => (
+                <tr key={item.archive_id}>
+                  <td>{item.archive_name}</td>
+                  <td>{item.custodian ?? "Sin custodio asignado"}</td>
+                  <td>{item.current}</td>
+                  <td>{item.active}</td>
+                  <td><StatusBadge value={item.loaned} tone={item.loaned ? "warning" : "success"} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </DataTable>
+      </section>
     </>
   );
 }

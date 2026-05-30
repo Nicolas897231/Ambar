@@ -96,6 +96,7 @@ def test_users_roles_permissions_and_soft_deactivation_flow():
 
 def test_enterprise_admin_trd_hr_and_password_feedback():
     suffix = uuid4().hex[:8]
+    employee_identification = str(uuid4().int)[:10]
     with TestClient(app) as client:
         headers = _headers(client)
 
@@ -157,3 +158,51 @@ def test_enterprise_admin_trd_hr_and_password_feedback():
         positions = client.get("/api/v1/hr/positions", headers=headers)
         assert positions.status_code == 200, positions.text
         assert any(item["position_code"] == f"POS-{suffix}" for item in positions.json())
+
+        department = client.post(
+            "/api/v1/hr/departments",
+            json={"department_code": f"DEP-{suffix}", "name": "Gestion Humana QA"},
+            headers=headers,
+        )
+        assert department.status_code == 201, department.text
+        department_tree = client.get("/api/v1/hr/departments/tree", headers=headers)
+        assert department_tree.status_code == 200, department_tree.text
+        assert any(item["department_code"] == f"DEP-{suffix}" for item in department_tree.json())
+
+        candidate = client.post(
+            "/api/v1/hr/candidates",
+            json={
+                "candidate_code": f"CAN-{suffix}",
+                "full_name": "Candidato QA Operacional",
+                "email": f"candidate-{suffix}@ambar.co",
+                "position_applied": "Coordinador documental QA",
+                "department": "Gestion Humana QA",
+                "observations": "Hoja de vida recibida",
+            },
+            headers=headers,
+        )
+        assert candidate.status_code == 201, candidate.text
+        candidate_id = candidate.json()["idCandidate"]
+        approved = client.patch(
+            f"/api/v1/hr/candidates/{candidate_id}/status",
+            json={"status": "aprobado", "observation": "Aprobado para contratacion"},
+            headers=headers,
+        )
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["status"] == "aprobado"
+        hired = client.post(
+            f"/api/v1/hr/candidates/{candidate_id}/hire",
+            json={"identification": employee_identification},
+            headers=headers,
+        )
+        assert hired.status_code == 201, hired.text
+        assert hired.json()["candidate"]["status"] == "contratado"
+        assert "onboarding_checklist" in hired.json()
+
+        search = client.post(
+            "/api/v1/search/documents",
+            json={"q": "Candidato QA", "entity_type": "candidate", "page": 1, "size": 10},
+            headers=headers,
+        )
+        assert search.status_code == 200, search.text
+        assert any(item["entity_type"] == "candidate" for item in search.json()["items"])

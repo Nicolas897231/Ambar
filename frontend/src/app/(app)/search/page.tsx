@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { RefreshCcw, Search } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
@@ -39,6 +39,16 @@ export default function SearchPage() {
     mutationFn: async () => (await api.post<SearchResult>("/search/documents", { q, entity_type: entityType || null, status: status || null, page: 1, size: 25 })).data
   });
   const reindex = useMutation({ mutationFn: async () => api.post("/search/documents/reindex") });
+  const groupedItems = useMemo(() => {
+    const groups = new Map<string, SearchItem[]>();
+    for (const item of search.data?.items ?? []) {
+      const entity = item.entity_type ?? "document";
+      const list = groups.get(entity) ?? [];
+      list.push(item);
+      groups.set(entity, list);
+    }
+    return Array.from(groups.entries());
+  }, [search.data?.items]);
   function submit(event: FormEvent) {
     event.preventDefault();
     search.mutate();
@@ -58,14 +68,17 @@ export default function SearchPage() {
             <>
               <select value={entityType} onChange={(event) => setEntityType(event.target.value)}>
                 <option value="">Todas las entidades</option>
+                <option value="user">Usuarios</option>
+                <option value="employee">Empleados</option>
+                <option value="candidate">Candidatos</option>
+                <option value="position">Cargos</option>
+                <option value="department">Dependencias</option>
+                <option value="archive">Archivos</option>
+                <option value="series">Series</option>
+                <option value="subseries">Subseries</option>
                 <option value="document">Documentos</option>
                 <option value="expedient">Expedientes</option>
                 <option value="folder">Carpetas</option>
-                <option value="box">Cajas</option>
-                <option value="archive">Archivos</option>
-                <option value="employee">Empleados</option>
-                <option value="fuid">FUID</option>
-                <option value="kardex">Kardex</option>
               </select>
               <select value={status} onChange={(event) => setStatus(event.target.value)}>
                 <option value="">Todos los estados</option>
@@ -83,13 +96,17 @@ export default function SearchPage() {
       <section className="card">
         <div className="toolbar"><span className="status">{search.data?.engine ?? "sin busqueda"}</span><span className="muted">{search.data?.total ?? 0} resultados</span></div>
         {view === "global" ? (
-          <div className="module-grid search-results-grid">
-            {search.data?.items?.map((item) => {
-              const title = item.title ?? item.document_name ?? `Resultado ${item.id ?? item.idDocument}`;
-              const entity = item.entity_type ?? "document";
-              const url = item.url ?? (item.idDocument ? `/documents?document=${item.idDocument}` : "#");
-              return <article className="module-card" key={`${entity}-${item.id ?? item.idDocument}`}><div className="toolbar space-between"><span className="status">{entity}</span>{item.status ? <span className="status">{item.status}</span> : null}</div><strong>{title}</strong><p className="muted">{item.subtitle ?? item.document_type ?? "Resultado autorizado por archivo"}</p>{url !== "#" ? <Link className="button-link ghost-link" href={url}>Abrir resultado</Link> : null}</article>;
-            })}
+          <div className="spotlight-results">
+            {groupedItems.map(([entity, items]) => (
+              <section className="spotlight-group" key={entity}>
+                <div className="toolbar space-between"><h3>{entity}</h3><span className="status">{items.length}</span></div>
+                {items.map((item) => {
+                  const title = item.title ?? item.document_name ?? `Resultado ${item.id ?? item.idDocument}`;
+                  const url = item.url ?? (item.idDocument ? `/documents?document=${item.idDocument}` : "#");
+                  return <Link className="spotlight-row" key={`${entity}-${item.id ?? item.idDocument}`} href={url}><strong>{title}</strong><span className="muted">{item.subtitle ?? item.document_type ?? "Resultado autorizado"}</span>{item.status ? <span className="status">{item.status}</span> : null}</Link>;
+                })}
+              </section>
+            ))}
           </div>
         ) : (
           <table>

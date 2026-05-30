@@ -159,6 +159,37 @@ def ensure_operational_notification_columns() -> None:
                     connection.execute(text(f"ALTER TABLE ps916_workflow_tasks ADD COLUMN {name} {definition}"))
 
 
+def ensure_document_core_columns() -> None:
+    inspector = inspect(engine)
+    if "ps522_document_files" not in inspector.get_table_names():
+        return
+    existing = {item["name"] for item in inspector.get_columns("ps522_document_files")}
+    columns = {
+        "version": "INTEGER",
+        "uploaded_by": "VARCHAR(40)",
+        "trace_id": "VARCHAR(120)",
+    }
+    with engine.begin() as connection:
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE ps522_document_files ADD COLUMN {name} {definition}"))
+
+
+def ensure_phase3_custody_columns() -> None:
+    inspector = inspect(engine)
+    with engine.begin() as connection:
+        if "ps934_shelves" in inspector.get_table_names():
+            existing = {item["name"] for item in inspector.get_columns("ps934_shelves")}
+            columns = {
+                "floor": "VARCHAR(80)",
+                "module": "VARCHAR(80)",
+                "bay": "VARCHAR(80)",
+            }
+            for name, definition in columns.items():
+                if name not in existing:
+                    connection.execute(text(f"ALTER TABLE ps934_shelves ADD COLUMN {name} {definition}"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -170,6 +201,8 @@ async def lifespan(app: FastAPI):
         ensure_deep_kardex_columns()
         ensure_audit_security_columns()
         ensure_operational_notification_columns()
+        ensure_document_core_columns()
+        ensure_phase3_custody_columns()
     if settings.seed_default_data:
         db = SessionLocal()
         try:

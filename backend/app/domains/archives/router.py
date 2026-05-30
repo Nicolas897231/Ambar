@@ -15,6 +15,7 @@ from app.db.models import (
     Archive,
     ArchiveUser,
     AuditLog,
+    Custodianship,
     Document,
     DocumentFile,
     DocumentLoan,
@@ -102,6 +103,9 @@ class ShelfCreate(BaseModel):
     archive_id: int
     shelf_code: str = Field(min_length=1, max_length=60)
     shelf_name: str = Field(min_length=2, max_length=160)
+    floor: str | None = None
+    module: str | None = None
+    bay: str | None = None
     capacity_boxes: int = 0
     physical_location: str | None = None
 
@@ -116,6 +120,9 @@ class BoxCreate(BaseModel):
 
 class ShelfUpdate(BaseModel):
     shelf_name: str | None = Field(default=None, min_length=2, max_length=160)
+    floor: str | None = None
+    module: str | None = None
+    bay: str | None = None
     capacity_boxes: int | None = Field(default=None, ge=0)
     status: str | None = Field(default=None, pattern="^(active|full|available|reserved|inactive|moved|archived|damaged)$")
     physical_location: str | None = None
@@ -417,10 +424,71 @@ def custody_dashboard(user: User = Depends(require_permission("document.read")),
         "archives": len(ids),
         "documents": db.query(Document).filter(Document.ps930IdArchive.in_(ids)).count(),
         "expedients": db.query(Expedient).filter(Expedient.ps930IdArchive.in_(ids)).count(),
+        "current_custodies": db.query(Custodianship).filter(Custodianship.ps930IdArchive.in_(ids), Custodianship.is_current.is_(True)).count(),
         "pending_movements": db.query(KardexMovement).filter(or_(KardexMovement.ps930OriginArchiveId.in_(ids), KardexMovement.ps930DestinationArchiveId.in_(ids)), KardexMovement.status.in_(["pending", "in_transit"])).count(),
         "overdue_loans": db.query(DocumentLoan).filter(DocumentLoan.ps930IdArchive.in_(ids), DocumentLoan.status == "active", DocumentLoan.due_at < now).count(),
         "by_archive": by_archive,
     }
+
+
+@router.get("/custody/summary")
+def custody_summary(user: User = Depends(require_permission("document.read")), db: Session = Depends(get_db)) -> dict:
+    ids = allowed_archive_ids(db, user)
+    if not ids:
+        return {"current": 0, "loaned": 0, "transferred": 0, "by_archive": [], "by_entity_type": {}}
+    current = db.query(Custodianship).filter(Custodianship.ps930IdArchive.in_(ids), Custodianship.is_current.is_(True)).all()
+    by_entity_type: dict[str, int] = {}
+    for item in current:
+        by_entity_type[item.entity_type] = by_entity_type.get(item.entity_type, 0) + 1
+    by_archive = []
+    for archive in db.query(Archive).filter(Archive.idArchive.in_(ids)).order_by(Archive.archive_name.asc()).all():
+        archive_rows = [item for item in current if item.ps930IdArchive == archive.idArchive]
+        by_archive.append(
+            {
+                "archive_id": archive.idArchive,
+                "archive_name": archive.archive_name,
+                "custodian": archive.custodian_identification,
+                "current": len(archive_rows),
+                "loaned": sum(1 for item in archive_rows if item.status == "loaned"),
+                "active": sum(1 for item in archive_rows if item.status == "active"),
+            }
+        )
+    return {
+        "current": len(current),
+        "loaned": sum(1 for item in current if item.status == "loaned"),
+        "transferred": sum(1 for item in current if item.source_module == "transfers"),
+        "by_archive": by_archive,
+        "by_entity_type": by_entity_type,
+    }
+
+
+@router.get("/custody/current")
+def current_custody(
+    archive_id: int | None = None,
+    entity_type: str | None = None,
+    status_filter: str | None = None,
+    user: User = Depends(require_permission("document.read")),
+    db: Session = Depends(get_db),
+):
+    ids = allowed_archive_ids(db, user)
+    query = db.query(Custodianship).filter(Custodianship.ps930IdArchive.in_(ids), Custodianship.is_current.is_(True))
+    if archive_id:
+        _require_archive_access(db, user, archive_id)
+        query = query.filter(Custodianship.ps930IdArchive == archive_id)
+    if entity_type:
+        query = query.filter(Custodianship.entity_type == entity_type)
+    if status_filter:
+        query = query.filter(Custodianship.status == status_filter)
+    return [_custody_to_dict(item, db) for item in query.order_by(Custodianship.updated_at.desc().nullslast(), Custodianship.created_at.desc()).limit(250).all()]
+
+
+@router.get("/entities/{entity_type}/{entity_id}/custody")
+def entity_custody(entity_type: str, entity_id: int, user: User = Depends(require_permission("document.read")), db: Session = Depends(get_db)):
+    archive_id = _movement_archive_for_entity(db, entity_type, entity_id)
+    if archive_id:
+        _require_archive_access(db, user, archive_id)
+    rows = db.query(Custodianship).filter(Custodianship.entity_type == entity_type, Custodianship.entity_id == entity_id).order_by(Custodianship.created_at.desc()).all()
+    return [_custody_to_dict(item, db) for item in rows]
 
 
 @router.get("/expedients")
@@ -472,6 +540,17 @@ def create_expedient(payload: ExpedientCreate, request: Request, user: User = De
     )
     db.add(movement)
     db.flush()
+    _record_custody(
+        db,
+        entity_type="expedient",
+        entity_id=item.idExpedient,
+        archive_id=archive.idArchive,
+        custodian=archive.custodian_identification or item.responsible_identification,
+        status_value="active",
+        source_module="expedients",
+        related_movement_id=movement.idMovement,
+        metadata={"event": "expedient.created"},
+    )
     _trace(db, movement.idMovement, "expedient_created", user, request, item.expedient_code)
     write_audit(db, action="expedient_created", module="archives", user_id=user.identification, entity="expedient", entity_id=item.idExpedient, new_values=payload.model_dump(), request=request)
     db.commit()
@@ -684,6 +763,9 @@ def _shelf_out(db: Session, shelf: Shelf) -> dict:
         "archive_id": shelf.ps930IdArchive,
         "shelf_code": shelf.shelf_code,
         "shelf_name": shelf.shelf_name,
+        "floor": shelf.floor,
+        "module": shelf.module,
+        "bay": shelf.bay,
         "capacity_boxes": shelf.capacity_boxes,
         "current_boxes": boxes_count,
         "occupancy_percent": occupancy,
@@ -755,8 +837,74 @@ def _physical_location_path(db: Session, entity_type: str, entity_id: int) -> st
         folders = _expedient_folders(db, expedient.idExpedient)
         paths = [_physical_location_path(db, "folder", item.idFolder) for item in folders if item.ps936IdBox]
         return " | ".join(path for path in paths if path) or f"{archive.archive_name if archive else 'Archivo'} / {expedient.physical_location or 'ubicacion pendiente'}"
-    parts = [archive.archive_name if archive else None, shelf.shelf_code if shelf else None, box.box_code if box else None, folder.folder_code if folder else None, document.document_name if document else None]
+    shelf_parts = []
+    if shelf:
+        shelf_parts.extend([shelf.floor, shelf.shelf_code, shelf.module, shelf.bay])
+    parts = [archive.archive_name if archive else None, *shelf_parts, box.box_code if box else None, folder.folder_code if folder else None, document.document_name if document else None]
     return " / ".join(part for part in parts if part)
+
+
+def _record_custody(
+    db: Session,
+    *,
+    entity_type: str,
+    entity_id: int,
+    archive_id: int,
+    custodian: str | None,
+    status_value: str = "active",
+    source_module: str = "archives",
+    related_movement_id: int | None = None,
+    related_transfer_id: int | None = None,
+    related_loan_id: int | None = None,
+    metadata: dict | None = None,
+) -> Custodianship:
+    current_path = _physical_location_path(db, entity_type, entity_id)
+    existing = db.query(Custodianship).filter(
+        Custodianship.entity_type == entity_type,
+        Custodianship.entity_id == entity_id,
+        Custodianship.is_current.is_(True),
+    ).all()
+    for row in existing:
+        row.is_current = False
+    item = Custodianship(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        ps930IdArchive=archive_id,
+        custodian_identification=custodian,
+        current_location_path=current_path,
+        status=status_value,
+        source_module=source_module,
+        related_movement_id=related_movement_id,
+        related_transfer_id=related_transfer_id,
+        related_loan_id=related_loan_id,
+        is_current=True,
+        metadata_json=metadata or {},
+    )
+    db.add(item)
+    db.flush()
+    return item
+
+
+def _custody_to_dict(item: Custodianship, db: Session) -> dict:
+    archive = db.get(Archive, item.ps930IdArchive)
+    return {
+        "idCustodianship": item.idCustodianship,
+        "entity_type": item.entity_type,
+        "entity_id": item.entity_id,
+        "archive_id": item.ps930IdArchive,
+        "archive_name": archive.archive_name if archive else None,
+        "custodian": item.custodian_identification,
+        "current_location_path": item.current_location_path,
+        "status": item.status,
+        "source_module": item.source_module,
+        "related_movement_id": item.related_movement_id,
+        "related_transfer_id": item.related_transfer_id,
+        "related_loan_id": item.related_loan_id,
+        "is_current": item.is_current,
+        "metadata": item.metadata_json or {},
+        "created_at": item.created_at,
+        "updated_at": item.updated_at,
+    }
 
 
 def _location_movement(db: Session, request: Request, user: User, *, movement_type: str, entity_type: str, entity_id: int, archive_id: int, previous: str | None, current: str | None, observation: str | None = None) -> KardexMovement:
@@ -1569,6 +1717,18 @@ def create_folder(payload: FolderCreate, request: Request, user: User = Depends(
     )
     db.add(movement)
     db.flush()
+    archive = db.get(Archive, expedient.ps930IdArchive)
+    _record_custody(
+        db,
+        entity_type="folder",
+        entity_id=item.idFolder,
+        archive_id=expedient.ps930IdArchive,
+        custodian=archive.custodian_identification if archive else expedient.responsible_identification,
+        status_value="active",
+        source_module="folders",
+        related_movement_id=movement.idMovement,
+        metadata={"event": "folder.created", "expedient_id": expedient.idExpedient},
+    )
     _trace(db, movement.idMovement, "folder_created", user, request, item.folder_code)
     write_audit(db, action="folder_created", module="archives", user_id=user.identification, entity="folder", entity_id=item.idFolder, new_values=payload.model_dump(), request=request)
     db.commit()
@@ -1579,7 +1739,7 @@ def create_folder(payload: FolderCreate, request: Request, user: User = Depends(
 @router.post("/shelves", status_code=status.HTTP_201_CREATED)
 def create_shelf(payload: ShelfCreate, request: Request, user: User = Depends(require_permission("archive.manage")), db: Session = Depends(get_db)):
     _require_archive_access(db, user, payload.archive_id, {"admin"})
-    item = Shelf(ps930IdArchive=payload.archive_id, shelf_code=payload.shelf_code, shelf_name=payload.shelf_name, capacity_boxes=payload.capacity_boxes, physical_location=payload.physical_location)
+    item = Shelf(ps930IdArchive=payload.archive_id, shelf_code=payload.shelf_code, shelf_name=payload.shelf_name, floor=payload.floor, module=payload.module, bay=payload.bay, capacity_boxes=payload.capacity_boxes, physical_location=payload.physical_location)
     db.add(item)
     db.flush()
     _location_movement(db, request, user, movement_type="shelf.created", entity_type="box", entity_id=0, archive_id=payload.archive_id, previous=None, current=payload.shelf_code, observation=f"Estanteria creada: {payload.shelf_code}")
@@ -1617,6 +1777,12 @@ def update_shelf(shelf_id: int, payload: ShelfUpdate, request: Request, user: Us
     old_values = _shelf_out(db, item)
     if payload.shelf_name is not None:
         item.shelf_name = payload.shelf_name
+    if payload.floor is not None:
+        item.floor = payload.floor
+    if payload.module is not None:
+        item.module = payload.module
+    if payload.bay is not None:
+        item.bay = payload.bay
     if payload.capacity_boxes is not None:
         item.capacity_boxes = payload.capacity_boxes
     if payload.status is not None:
@@ -1644,7 +1810,18 @@ def create_box(payload: BoxCreate, request: Request, user: User = Depends(requir
     db.add(item)
     archive.box_count += 1
     db.flush()
-    _location_movement(db, request, user, movement_type="box.created", entity_type="box", entity_id=item.idBox, archive_id=payload.archive_id, previous=None, current=_physical_location_path(db, "box", item.idBox), observation=f"Caja creada: {item.box_code}")
+    movement = _location_movement(db, request, user, movement_type="box.created", entity_type="box", entity_id=item.idBox, archive_id=payload.archive_id, previous=None, current=_physical_location_path(db, "box", item.idBox), observation=f"Caja creada: {item.box_code}")
+    _record_custody(
+        db,
+        entity_type="box",
+        entity_id=item.idBox,
+        archive_id=payload.archive_id,
+        custodian=archive.custodian_identification,
+        status_value="active",
+        source_module="locations",
+        related_movement_id=movement.idMovement,
+        metadata={"event": "box.created"},
+    )
     write_audit(db, action="box_created", module="archives", user_id=user.identification, entity="box", new_values=payload.model_dump(), request=request)
     db.commit()
     db.refresh(item)
@@ -1716,9 +1893,32 @@ def move_box(box_id: int, payload: BoxMove, request: Request, user: User = Depen
     item.ps934IdShelf = shelf.idShelf
     db.flush()
     current_path = _physical_location_path(db, "box", item.idBox)
-    _location_movement(db, request, user, movement_type="box.moved", entity_type="box", entity_id=item.idBox, archive_id=item.ps930IdArchive, previous=previous_path, current=current_path, observation=payload.observation)
+    movement = _location_movement(db, request, user, movement_type="box.moved", entity_type="box", entity_id=item.idBox, archive_id=item.ps930IdArchive, previous=previous_path, current=current_path, observation=payload.observation)
+    archive = db.get(Archive, item.ps930IdArchive)
+    _record_custody(
+        db,
+        entity_type="box",
+        entity_id=item.idBox,
+        archive_id=item.ps930IdArchive,
+        custodian=archive.custodian_identification if archive else None,
+        status_value="active",
+        source_module="locations",
+        related_movement_id=movement.idMovement,
+        metadata={"event": "box.moved", "previous_location": previous_path, "current_location": current_path},
+    )
     for folder in db.query(Folder).filter(Folder.ps936IdBox == item.idBox).all():
         folder.physical_location = _physical_location_path(db, "folder", folder.idFolder)
+        _record_custody(
+            db,
+            entity_type="folder",
+            entity_id=folder.idFolder,
+            archive_id=folder.ps930IdArchive,
+            custodian=archive.custodian_identification if archive else None,
+            status_value="active",
+            source_module="locations",
+            related_movement_id=movement.idMovement,
+            metadata={"event": "box.moved.cascade", "box_id": item.idBox, "current_location": folder.physical_location},
+        )
     write_audit(db, action="box_moved", module="archives", user_id=user.identification, entity="box", entity_id=item.idBox, old_values={"location_path": previous_path}, new_values={"location_path": current_path, "shelf_id": shelf.idShelf}, request=request)
     db.commit()
     db.refresh(item)
@@ -1791,7 +1991,19 @@ def move_folder_location(folder_id: int, payload: FolderLocationPayload, request
         box.current_folders += 1
     db.flush()
     current_path = _physical_location_path(db, "folder", folder.idFolder)
-    _location_movement(db, request, user, movement_type="folder.moved" if previous_box else "location.assigned", entity_type="folder", entity_id=folder.idFolder, archive_id=folder.ps930IdArchive, previous=previous_path, current=current_path, observation=payload.observation)
+    movement = _location_movement(db, request, user, movement_type="folder.moved" if previous_box else "location.assigned", entity_type="folder", entity_id=folder.idFolder, archive_id=folder.ps930IdArchive, previous=previous_path, current=current_path, observation=payload.observation)
+    archive = db.get(Archive, folder.ps930IdArchive)
+    _record_custody(
+        db,
+        entity_type="folder",
+        entity_id=folder.idFolder,
+        archive_id=folder.ps930IdArchive,
+        custodian=archive.custodian_identification if archive else None,
+        status_value="active",
+        source_module="locations",
+        related_movement_id=movement.idMovement,
+        metadata={"event": movement.movement_type, "previous_location": previous_path, "current_location": current_path},
+    )
     write_audit(db, action="folder_location_changed", module="archives", user_id=user.identification, entity="folder", entity_id=folder.idFolder, old_values={"box_id": previous_box, "location_path": previous_path}, new_values={"box_id": box.idBox, "location_path": current_path}, request=request)
     db.commit()
     db.refresh(folder)
@@ -2062,6 +2274,20 @@ def decide_movement(movement_id: int, payload: MovementDecision, request: Reques
     item.observations = payload.observations or item.observations
     if payload.status in {"accepted", "received", "partially_received"}:
         _apply_custody_change(db, item)
+        destination_archive = db.get(Archive, item.ps930DestinationArchiveId) if item.ps930DestinationArchiveId else None
+        archive_id = item.ps930DestinationArchiveId or item.ps930OriginArchiveId
+        if archive_id:
+            _record_custody(
+                db,
+                entity_type=item.entity_type,
+                entity_id=item.entity_id,
+                archive_id=archive_id,
+                custodian=destination_archive.custodian_identification if destination_archive else item.custodian_to,
+                status_value="active" if payload.status in {"accepted", "received"} else "partially_received",
+                source_module="kardex",
+                related_movement_id=item.idMovement,
+                metadata={"decision": payload.status, "reason": payload.reason},
+            )
         if item.entity_type == "document":
             document = db.get(Document, item.entity_id)
             if document:
@@ -2124,7 +2350,19 @@ def create_loan(payload: LoanCreate, request: Request, user: User = Depends(requ
     item.evidence = {**_loan_evidence(item), "loan_code": _loan_code(item)}
     flag_modified(item, "evidence")
     _loan_kardex(db, request, user, item, "loan.created", None, payload.observations or "Prestamo documental creado.")
-    _loan_kardex(db, request, user, item, "loan.borrowed", None, f"Unidad documental prestada a {payload.requested_by}.")
+    loan_movement = _loan_kardex(db, request, user, item, "loan.borrowed", None, f"Unidad documental prestada a {payload.requested_by}.")
+    _record_custody(
+        db,
+        entity_type=payload.entity_type,
+        entity_id=payload.entity_id,
+        archive_id=payload.archive_id,
+        custodian=payload.requested_by,
+        status_value="loaned",
+        source_module="loans",
+        related_movement_id=loan_movement.idMovement,
+        related_loan_id=item.idLoan,
+        metadata={"loan_code": _loan_code(item), "approved_by": user.identification},
+    )
     _notify(db, user.identification, "custody", f"Prestamo {_loan_code(item)} registrado", f"/loans?loan={item.idLoan}")
     write_audit(db, action="loan_created", module="archives", user_id=user.identification, entity="loan", entity_id=item.idLoan, new_values=_loan_to_dict(db, item), request=request)
     db.commit()
@@ -2256,7 +2494,20 @@ def return_loan(loan_id: int, payload: LoanReturn, request: Request, user: User 
     loan.observations = payload.observations or loan.observations
     flag_modified(loan, "evidence")
     _set_entity_loan_status(db, loan.entity_type, loan.entity_id, "active")
-    _loan_kardex(db, request, user, loan, "loan.returned", old_status, payload.observations or "Devolucion documental registrada.")
+    movement = _loan_kardex(db, request, user, loan, "loan.returned", old_status, payload.observations or "Devolucion documental registrada.")
+    archive = db.get(Archive, loan.ps930IdArchive)
+    _record_custody(
+        db,
+        entity_type=loan.entity_type,
+        entity_id=loan.entity_id,
+        archive_id=loan.ps930IdArchive,
+        custodian=archive.custodian_identification if archive else loan.approved_by,
+        status_value="active",
+        source_module="loans",
+        related_movement_id=movement.idMovement,
+        related_loan_id=loan.idLoan,
+        metadata={"loan_code": _loan_code(loan), "returned_by": user.identification},
+    )
     resolve_notifications(db, user_id=loan.approved_by, module="custody", related_entity_type="loan", related_entity_id=loan.idLoan)
     resolve_related_tasks(db, related_entity_type="loan", related_entity_id=loan.idLoan, module="custody", note="Prestamo devuelto.", completed_by=user.identification)
     notify_action(db, user_id=loan.approved_by, archive_id=loan.ps930IdArchive, module="custody", title=f"Prestamo {_loan_code(loan)} devuelto", message="La unidad documental regreso a custodia.", priority="normal", notification_type="loan_returned", related_entity_type="loan", related_entity_id=loan.idLoan, action_label="Ver prestamo", action_url=f"/loans?loan={loan.idLoan}")

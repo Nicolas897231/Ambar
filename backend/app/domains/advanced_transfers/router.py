@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 
 from app.db.models import (
     Archive,
+    Custodianship,
     Document,
     DocumentLoan,
     Expedient,
@@ -161,7 +162,7 @@ def _related_fields(entity_type: str, entity_id: int) -> dict:
     }
 
 
-def _add_reception_kardex(db: Session, batch: TransferBatch, item: TransferBatchItem, user: User, event: str, old_status: str, notes: str | None = None) -> None:
+def _add_reception_kardex(db: Session, batch: TransferBatch, item: TransferBatchItem, user: User, event: str, old_status: str, notes: str | None = None) -> KardexMovement:
     movement = KardexMovement(
         movement_type=event,
         entity_type=item.entity_type,
@@ -213,6 +214,34 @@ def _add_reception_kardex(db: Session, batch: TransferBatch, item: TransferBatch
                     metadata_json={"parent_movement_id": movement.idMovement, "batch_id": batch.idBatch, "batch_item_id": item.idBatchItem},
                 )
             )
+    return movement
+
+
+def _record_transfer_custody(db: Session, batch: TransferBatch, item: TransferBatchItem, movement_id: int | None = None) -> None:
+    if not batch.ps930DestinationArchiveId:
+        return
+    archive = db.get(Archive, batch.ps930DestinationArchiveId)
+    for current in db.query(Custodianship).filter(
+        Custodianship.entity_type == item.entity_type,
+        Custodianship.entity_id == item.entity_id,
+        Custodianship.is_current.is_(True),
+    ).all():
+        current.is_current = False
+    db.add(
+        Custodianship(
+            entity_type=item.entity_type,
+            entity_id=item.entity_id,
+            ps930IdArchive=batch.ps930DestinationArchiveId,
+            custodian_identification=archive.custodian_identification if archive else None,
+            current_location_path=f"Archivo {batch.ps930DestinationArchiveId}",
+            status="active",
+            source_module="transfers",
+            related_movement_id=movement_id,
+            related_transfer_id=batch.idBatch,
+            is_current=True,
+            metadata_json={"batch_code": batch.batch_code, "batch_item_id": item.idBatchItem, "event": "reception.item.accepted"},
+        )
+    )
 
 
 def _notify_origin(db: Session, batch: TransferBatch, message: str) -> None:
@@ -715,7 +744,8 @@ def accept_reception_item(batch_id: int, item_id: int, payload: ReceptionItemDec
     _sync_legacy_item(db, batch_id, item)
     _update_batch_fuid_reception(db, batch)
     _recalculate_batch_status(db, batch)
-    _add_reception_kardex(db, batch, item, user, "reception.item.accepted", old_status, payload.observation or "Unidad aceptada y custodia actualizada")
+    movement = _add_reception_kardex(db, batch, item, user, "reception.item.accepted", old_status, payload.observation or "Unidad aceptada y custodia actualizada")
+    _record_transfer_custody(db, batch, item, movement.idMovement)
     write_audit(db, action="reception_item_accepted", module="transfers", user_id=user.identification, entity="transfer_batch_item", entity_id=item.idBatchItem, old_values=old, new_values=_item_to_dict(item), request=request)
     db.commit()
     db.refresh(item)
