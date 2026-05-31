@@ -365,6 +365,15 @@ th, td { font-size: .98rem; padding: 13px 14px; }
 .field-error { color: var(--danger); font-size: .82rem; line-height: 1.25; }
 .profile-summary { display: grid; gap: 8px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-hover); }
 .profile-summary p { margin: 0; color: var(--muted); }
+.context-help { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--info) 22%, var(--line)); border-radius: var(--radius-md); background: color-mix(in srgb, var(--info) 7%, var(--panel)); color: var(--text); }
+.context-help p { margin: 0; color: var(--muted); }
+.context-help svg { color: var(--info); margin-top: 2px; }
+.document-step-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.metadata-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.document-side-panel { display: grid; gap: 14px; align-content: start; }
+.document-context-card { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-hover); }
+.document-context-card h3 { margin: 0; }
+.foliation-hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); align-items: start; gap: 16px; }
 .permission-matrix { display: grid; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
 .permission-row { display: grid; grid-template-columns: minmax(160px, 1fr) repeat(5, minmax(76px, auto)); align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--panel); }
 .permission-row:first-child { border-top: 0; }
@@ -448,4 +457,5 @@ pre { max-width: 100%; overflow: auto; padding: 12px; border: 1px solid var(--li
   .document-workspace, .trd-workspace { grid-template-columns: 1fr; }
   .document-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .spotlight-row { grid-template-columns: 1fr; }
+  .metadata-grid, .foliation-hero { grid-template-columns: 1fr; }
 }
