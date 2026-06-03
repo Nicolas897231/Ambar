@@ -19,6 +19,7 @@ from app.db.models import (
     Document,
     DocumentFile,
     DocumentLoan,
+    DocumentType,
     Expedient,
     Folder,
     Foliation,
@@ -600,6 +601,40 @@ def _missing_documents(expedient: Expedient, documents: list[Document]) -> list[
     return missing
 
 
+def _required_document_types_for_expedient(db: Session, expedient: Expedient) -> list[DocumentType]:
+    if expedient.ps612IdSubseries:
+        rows = db.query(DocumentType).filter(DocumentType.ps612IdSubseries == expedient.ps612IdSubseries, DocumentType.status == "active").order_by(DocumentType.name.asc()).all()
+        if rows:
+            return rows
+    return []
+
+
+def _document_type_summary(db: Session, expedient: Expedient, documents: list[Document]) -> dict:
+    used_counts: dict[str, int] = {}
+    duplicate_types: list[str] = []
+    metadata_incomplete: list[dict] = []
+    catalog = {item.type_code: item for item in db.query(DocumentType).filter(DocumentType.status == "active").all()}
+    for document in documents:
+        used_counts[document.document_type] = used_counts.get(document.document_type, 0) + 1
+        document_type = catalog.get(document.document_type)
+        required = (document_type.required_metadata or {}).get("items") if document_type else []
+        missing_metadata = [key for key in required or [] if (document.metadata_json or {}).get(key) in {None, ""}]
+        if missing_metadata:
+            metadata_incomplete.append({"document_id": document.idDocument, "document_name": document.document_name, "document_type": document.document_type, "missing_metadata": missing_metadata})
+    for type_code, count in used_counts.items():
+        if count > 1:
+            duplicate_types.append(type_code)
+    required_types = _required_document_types_for_expedient(db, expedient)
+    missing_required_types = [item.type_code for item in required_types if item.type_code not in used_counts]
+    return {
+        "used": [{"type_code": type_code, "count": count, "name": catalog.get(type_code).name if catalog.get(type_code) else type_code, "color": catalog.get(type_code).color if catalog.get(type_code) else None} for type_code, count in sorted(used_counts.items())],
+        "required": [{"type_code": item.type_code, "name": item.name, "icon": item.icon, "color": item.color} for item in required_types],
+        "missing_required": missing_required_types,
+        "duplicates": duplicate_types,
+        "metadata_incomplete": metadata_incomplete,
+    }
+
+
 def _foliation_report(documents: list[Document]) -> dict:
     unfoliated = [
         {"idDocument": item.idDocument, "document_name": item.document_name, "folder_id": item.ps952IdFolder}
@@ -669,6 +704,9 @@ def _expedient_compliance(db: Session, expedient: Expedient) -> dict:
     folders = _expedient_folders(db, expedient.idExpedient)
     documents = _expedient_documents(db, expedient.idExpedient)
     missing = _missing_documents(expedient, documents)
+    type_summary = _document_type_summary(db, expedient, documents)
+    type_missing = type_summary["missing_required"]
+    metadata_incomplete = type_summary["metadata_incomplete"]
     foliation = _foliation_report(documents)
     loans = _expedient_related_loans(db, expedient.idExpedient, folders, documents)
     transfers = _expedient_related_transfers(db, expedient.idExpedient, folders, documents)
@@ -686,6 +724,8 @@ def _expedient_compliance(db: Session, expedient: Expedient) -> dict:
         _check_item("folders", "Carpetas", "complete" if folders else "error", f"{len(folders)} carpetas registradas." if folders else "El expediente no tiene carpetas."),
         _check_item("documents", "Documentos", "complete" if documents else "error", f"{len(documents)} documentos asociados." if documents else "El expediente no tiene documentos."),
         _check_item("missing_documents", "Documentos obligatorios", "complete" if not missing else "warning", "Sin faltantes obligatorios." if not missing else f"Faltan {len(missing)} documentos: {', '.join(missing)}.", critical=False),
+        _check_item("required_types", "Tipologias obligatorias", "complete" if not type_missing else "warning", "Todas las tipologias esperadas estan presentes." if not type_missing else f"Faltan tipologias: {', '.join(type_missing)}.", critical=False),
+        _check_item("metadata_complete", "Metadatos por tipologia", "complete" if not metadata_incomplete else "warning", "Metadatos completos segun tipologia." if not metadata_incomplete else f"{len(metadata_incomplete)} documentos tienen metadatos obligatorios pendientes.", critical=False),
         _check_item("foliation", "Foliacion", foliation["status"], "Foliacion integra." if foliation["status"] == "complete" else "Hay documentos sin foliar, saltos o duplicados."),
         _check_item("loans", "Prestamos activos", "complete" if not active_loans else "error", "Sin prestamos activos." if not active_loans else f"Hay {len(active_loans)} prestamos activos o vencidos."),
         _check_item("transfers", "Transferencias pendientes", "complete" if not pending_transfers else "error", "Sin transferencias pendientes." if not pending_transfers else f"Hay {len(pending_transfers)} items de transferencia pendientes."),
@@ -713,6 +753,15 @@ def _expedient_compliance(db: Session, expedient: Expedient) -> dict:
         "warnings": warnings,
         "checklist": checklist,
         "missing_documents": missing,
+        "document_types": type_summary,
+        "inconsistencies": {
+            "missing_documents": missing,
+            "missing_required_types": type_missing,
+            "metadata_incomplete": metadata_incomplete,
+            "duplicate_types": type_summary["duplicates"],
+            "foliation_duplicates": foliation["duplicates"],
+            "foliation_gaps": foliation["gaps"],
+        },
         "foliation": foliation,
         "active_loans": len(active_loans),
         "pending_transfers": len(pending_transfers),
@@ -727,6 +776,7 @@ def _expedient_detail_payload(db: Session, expedient: Expedient) -> dict:
     folders = _expedient_folders(db, expedient.idExpedient)
     documents = _expedient_documents(db, expedient.idExpedient)
     compliance = _expedient_compliance(db, expedient)
+    type_summary = compliance["document_types"]
     return {
         "idExpedient": expedient.idExpedient,
         "expedient_code": expedient.expedient_code,
@@ -748,6 +798,8 @@ def _expedient_detail_payload(db: Session, expedient: Expedient) -> dict:
         "folios_count": sum(document.folio_total or 0 for document in documents),
         "compliance_status": compliance["status"],
         "ready_to_close": compliance["ready_to_close"],
+        "document_types": type_summary,
+        "inconsistencies": compliance["inconsistencies"],
         "closure": (expedient.metadata_json or {}).get("closure"),
         "metadata": expedient.metadata_json or {},
         "created_at": expedient.created_at,
@@ -2117,31 +2169,53 @@ def locations_movements(archive_id: int | None = None, user: User = Depends(requ
 @router.post("/foliation", status_code=status.HTTP_201_CREATED)
 def create_foliation(payload: FoliationCreate, request: Request, user: User = Depends(require_permission("document.update")), db: Session = Depends(get_db)):
     if payload.folio_end < payload.folio_start:
-        raise HTTPException(status_code=422, detail="Folio end must be greater than or equal to folio start")
+        raise HTTPException(status_code=422, detail="El folio final debe ser mayor o igual al folio inicial.")
     document = db.get(Document, payload.document_id)
     expedient = db.get(Expedient, payload.expedient_id)
     folder = db.get(Folder, payload.folder_id)
     if not document or not expedient or not folder:
-        raise HTTPException(status_code=404, detail="Document, expedient or folder not found")
+        raise HTTPException(status_code=404, detail="No se encontro el documento, expediente o carpeta.")
+    if folder.ps950IdExpedient != expedient.idExpedient:
+        raise HTTPException(status_code=422, detail="La carpeta seleccionada no pertenece al expediente.")
+    if document.ps950IdExpedient and document.ps950IdExpedient != expedient.idExpedient:
+        raise HTTPException(status_code=409, detail="El documento pertenece a otro expediente.")
     _require_archive_access(db, user, expedient.ps930IdArchive, {"operate", "admin"})
     overlap = db.query(Foliation).filter(
         Foliation.ps950IdExpedient == expedient.idExpedient,
+        Foliation.ps520IdDocument != document.idDocument,
         Foliation.folio_start <= payload.folio_end,
         Foliation.folio_end >= payload.folio_start,
     ).first()
     if overlap:
-        raise HTTPException(status_code=409, detail="Folio range overlaps an existing document")
+        raise HTTPException(status_code=409, detail=f"El rango cruza con otro documento: folios {overlap.folio_start}-{overlap.folio_end}.")
     total = payload.folio_end - payload.folio_start + 1
-    item = Foliation(ps520IdDocument=document.idDocument, ps950IdExpedient=expedient.idExpedient, ps952IdFolder=folder.idFolder, folio_start=payload.folio_start, folio_end=payload.folio_end, folio_total=total, electronic_folios=payload.electronic_folios, annexes=payload.annexes)
+    existing = db.query(Foliation).filter(Foliation.ps520IdDocument == document.idDocument).order_by(Foliation.idFoliation.desc()).first()
+    old_values = {
+        "folio_start": document.folio_start,
+        "folio_end": document.folio_end,
+        "folio_total": document.folio_total,
+        "folder_id": document.ps952IdFolder,
+    }
+    if existing:
+        item = existing
+        item.ps950IdExpedient = expedient.idExpedient
+        item.ps952IdFolder = folder.idFolder
+        item.folio_start = payload.folio_start
+        item.folio_end = payload.folio_end
+        item.folio_total = total
+        item.electronic_folios = payload.electronic_folios
+        item.annexes = payload.annexes
+    else:
+        item = Foliation(ps520IdDocument=document.idDocument, ps950IdExpedient=expedient.idExpedient, ps952IdFolder=folder.idFolder, folio_start=payload.folio_start, folio_end=payload.folio_end, folio_total=total, electronic_folios=payload.electronic_folios, annexes=payload.annexes)
+        db.add(item)
     document.ps930IdArchive = expedient.ps930IdArchive
     document.ps950IdExpedient = expedient.idExpedient
     document.ps952IdFolder = folder.idFolder
     document.folio_start = payload.folio_start
     document.folio_end = payload.folio_end
     document.folio_total = total
-    expedient.folio_count += total
-    folder.folio_count += total
-    db.add(item)
+    expedient.folio_count = sum(row.folio_total or 0 for row in db.query(Document).filter(Document.ps950IdExpedient == expedient.idExpedient).all())
+    folder.folio_count = sum(row.folio_total or 0 for row in db.query(Document).filter(Document.ps952IdFolder == folder.idFolder).all())
     movement = KardexMovement(
         movement_type="foliation_validated",
         entity_type="document",
@@ -2149,13 +2223,13 @@ def create_foliation(payload: FoliationCreate, request: Request, user: User = De
         ps930DestinationArchiveId=expedient.ps930IdArchive,
         ps405ActorIdentification=user.identification,
         status="accepted",
-        observations=f"Foliacion validada: {payload.folio_start}-{payload.folio_end}",
-        metadata_json={"folio_start": payload.folio_start, "folio_end": payload.folio_end, "total": total},
+        observations=f"Foliacion {'corregida' if existing else 'validada'}: {payload.folio_start}-{payload.folio_end}",
+        metadata_json={"folio_start": payload.folio_start, "folio_end": payload.folio_end, "total": total, "previous": old_values},
     )
     db.add(movement)
     db.flush()
     _trace(db, movement.idMovement, "foliation_validated", user, request, movement.observations)
-    write_audit(db, action="document_foliated", module="archives", user_id=user.identification, entity="document", entity_id=document.idDocument, new_values=payload.model_dump(), request=request)
+    write_audit(db, action="document_foliated", module="archives", user_id=user.identification, entity="document", entity_id=document.idDocument, old_values=old_values, new_values=payload.model_dump() | {"folio_total": total}, request=request)
     db.commit()
     db.refresh(item)
     return item

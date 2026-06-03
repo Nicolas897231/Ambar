@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_permission, user_permissions
-from app.db.models import Archive, Custodianship, Document, DocumentFile, DocumentHistory, DocumentMetadata, DocumentType, Expedient, Folder, Foliation, KardexMovement, PhysicalBox, Shelf, TrdSubseries, User
+from app.db.models import Archive, Custodianship, Document, DocumentFile, DocumentHistory, DocumentMetadata, DocumentType, Expedient, Folder, Foliation, KardexMovement, PhysicalBox, Shelf, TrdSeries, TrdSubseries, User
 from app.db.session import get_db
 from app.domains.archives.router import _require_archive_access, allowed_archive_ids
 from app.services.audit import write_audit
@@ -18,18 +18,50 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 DOCUMENT_STATUSES = {"draft", "active", "archived", "transferred", "borrowed", "disposed", "locked", "created", "custody"}
 DEFAULT_DOCUMENT_TYPES = [
-    ("contrato", "Contrato"),
-    ("oficio", "Oficio"),
-    ("memorando", "Memorando"),
-    ("certificacion", "Certificacion"),
-    ("certificado", "Certificado"),
-    ("informe", "Informe"),
-    ("resolucion", "Resolucion"),
-    ("historia_laboral", "Historia laboral"),
-    ("acta", "Acta"),
-    ("soporte", "Soporte"),
-    ("factura", "Factura"),
+    {"type_code": "contrato", "name": "Contrato", "sector": "general", "icon": "file-signature", "color": "#2563eb", "required": [], "optional": ["fecha_inicio", "fecha_fin", "tercero"]},
+    {"type_code": "oficio", "name": "Oficio", "sector": "general", "icon": "mail", "color": "#475569", "required": [], "optional": ["numero_oficio", "fecha", "remitente"]},
+    {"type_code": "memorando", "name": "Memorando", "sector": "general", "icon": "notebook-text", "color": "#475569", "required": [], "optional": ["fecha", "dependencia"]},
+    {"type_code": "certificacion", "name": "Certificacion", "sector": "general", "icon": "badge-check", "color": "#059669", "required": [], "optional": ["fecha", "tercero"]},
+    {"type_code": "certificado", "name": "Certificado", "sector": "general", "icon": "award", "color": "#059669", "required": [], "optional": ["fecha", "institucion"]},
+    {"type_code": "informe", "name": "Informe", "sector": "general", "icon": "chart-no-axes-column", "color": "#7c3aed", "required": [], "optional": ["periodo", "responsable"]},
+    {"type_code": "resolucion", "name": "Resolucion", "sector": "general", "icon": "scale", "color": "#9333ea", "required": [], "optional": ["numero_resolucion", "fecha"]},
+    {"type_code": "historia_laboral", "name": "Historia laboral", "sector": "rrhh", "icon": "user-round", "color": "#0f766e", "required": ["identificacion"], "optional": ["cargo", "dependencia"]},
+    {"type_code": "acta", "name": "Acta", "sector": "general", "icon": "clipboard-list", "color": "#475569", "required": [], "optional": ["fecha", "comite"]},
+    {"type_code": "soporte", "name": "Soporte", "sector": "general", "icon": "paperclip", "color": "#64748b", "required": [], "optional": ["referencia", "observacion"]},
+    {"type_code": "factura", "name": "Factura", "sector": "contable", "icon": "receipt-text", "color": "#0891b2", "required": ["numero_factura"], "optional": ["proveedor", "valor", "fecha"]},
+    {"type_code": "comprobante", "name": "Comprobante", "sector": "contable", "icon": "receipt", "color": "#0891b2", "required": ["numero_comprobante"], "optional": ["tercero", "valor", "fecha"]},
+    {"type_code": "conciliacion", "name": "Conciliacion", "sector": "contable", "icon": "list-checks", "color": "#0891b2", "required": ["periodo"], "optional": ["cuenta", "responsable"]},
+    {"type_code": "hoja_vida", "name": "Hoja de vida", "sector": "rrhh", "icon": "user-round", "color": "#0f766e", "required": ["identificacion"], "optional": ["cargo_aspirado"]},
+    {"type_code": "diploma", "name": "Diploma", "sector": "rrhh", "icon": "graduation-cap", "color": "#0f766e", "required": ["institucion", "programa"], "optional": ["fecha_graduacion"]},
+    {"type_code": "afiliacion_eps", "name": "Afiliacion EPS", "sector": "rrhh", "icon": "heart-pulse", "color": "#0f766e", "required": ["eps", "fecha_afiliacion"], "optional": ["identificacion"]},
+    {"type_code": "afiliacion_arl", "name": "Afiliacion ARL", "sector": "rrhh", "icon": "shield-plus", "color": "#0f766e", "required": ["arl", "fecha_afiliacion"], "optional": ["riesgo"]},
+    {"type_code": "afiliacion_afp", "name": "Afiliacion AFP", "sector": "rrhh", "icon": "landmark", "color": "#0f766e", "required": ["afp", "fecha_afiliacion"], "optional": ["identificacion"]},
+    {"type_code": "evaluacion_desempeno", "name": "Evaluacion de desempeno", "sector": "rrhh", "icon": "clipboard-check", "color": "#0f766e", "required": ["periodo", "resultado"], "optional": ["evaluador"]},
+    {"type_code": "incapacidad", "name": "Incapacidad", "sector": "rrhh", "icon": "heart-pulse", "color": "#0f766e", "required": ["fecha_inicio", "fecha_fin"], "optional": ["eps", "diagnostico"]},
+    {"type_code": "manifiesto_carga", "name": "Manifiesto de carga", "sector": "transporte", "icon": "truck", "color": "#b45309", "required": ["numero_manifiesto", "placa", "conductor"], "optional": ["origen", "destino", "fecha_viaje", "valor_flete"]},
+    {"type_code": "remesa", "name": "Remesa", "sector": "transporte", "icon": "package-check", "color": "#b45309", "required": ["numero_remesa"], "optional": ["remitente", "destinatario", "placa", "conductor", "origen", "destino"]},
+    {"type_code": "cumplido", "name": "Cumplido", "sector": "transporte", "icon": "badge-check", "color": "#b45309", "required": ["numero_cumplido"], "optional": ["placa", "fecha_entrega"]},
+    {"type_code": "orden_despacho", "name": "Orden de despacho", "sector": "transporte", "icon": "route", "color": "#b45309", "required": ["numero_orden"], "optional": ["placa", "conductor", "origen", "destino"]},
+    {"type_code": "orden_cargue", "name": "Orden de cargue", "sector": "transporte", "icon": "boxes", "color": "#b45309", "required": ["numero_orden"], "optional": ["placa", "bodega", "fecha_cargue"]},
+    {"type_code": "soporte_rndc", "name": "Soporte RNDC", "sector": "transporte", "icon": "file-check-2", "color": "#b45309", "required": ["numero_rndc"], "optional": ["placa", "conductor"]},
+    {"type_code": "demanda", "name": "Demanda", "sector": "juridico", "icon": "scale", "color": "#7c3aed", "required": ["radicado"], "optional": ["demandante", "demandado"]},
+    {"type_code": "sentencia", "name": "Sentencia", "sector": "juridico", "icon": "gavel", "color": "#7c3aed", "required": ["radicado"], "optional": ["fecha_sentencia", "juzgado"]},
+    {"type_code": "poder", "name": "Poder", "sector": "juridico", "icon": "file-signature", "color": "#7c3aed", "required": ["poderdante", "apoderado"], "optional": ["radicado"]},
+    {"type_code": "recurso", "name": "Recurso", "sector": "juridico", "icon": "file-text", "color": "#7c3aed", "required": ["radicado"], "optional": ["tipo_recurso", "fecha"]},
 ]
+
+SECTOR_TEMPLATES: dict[str, list[str]] = {
+    "rrhh": ["hoja_vida", "diploma", "historia_laboral", "contrato", "afiliacion_eps", "afiliacion_arl", "afiliacion_afp", "evaluacion_desempeno", "incapacidad", "certificado"],
+    "transporte": ["manifiesto_carga", "remesa", "cumplido", "orden_despacho", "orden_cargue", "soporte_rndc", "soporte"],
+    "juridico": ["demanda", "sentencia", "poder", "recurso", "oficio"],
+    "contable": ["factura", "comprobante", "conciliacion", "soporte", "certificacion"],
+    "general": ["contrato", "oficio", "memorando", "certificacion", "informe", "resolucion", "acta", "soporte"],
+    "salud": ["historia_laboral", "certificacion", "soporte"],
+    "educacion": ["diploma", "certificado", "acta"],
+    "gobierno": ["resolucion", "oficio", "acta", "informe"],
+    "constructora": ["contrato", "acta", "informe", "soporte"],
+    "personalizado": [],
+}
 
 
 class DocumentCreate(BaseModel):
@@ -95,8 +127,15 @@ class DocumentTypeCreate(BaseModel):
     type_code: str = Field(min_length=2, max_length=80)
     name: str = Field(min_length=2, max_length=140)
     description: str | None = None
+    series_id: int | None = None
+    subseries_id: int | None = None
+    sector: str | None = Field(default=None, max_length=80)
+    icon: str | None = Field(default=None, max_length=80)
+    color: str | None = Field(default=None, max_length=40)
+    template_sector: str | None = Field(default=None, max_length=80)
     required_metadata: list[str] = Field(default_factory=list)
     optional_metadata: list[str] = Field(default_factory=list)
+    validation_schema: dict = Field(default_factory=dict)
 
 
 class DocumentMetadataUpdate(BaseModel):
@@ -126,10 +165,31 @@ def _document_out(document: Document) -> DocumentOut:
 
 
 def _ensure_default_document_types(db: Session) -> None:
-    existing = {item.type_code for item in db.query(DocumentType).all()}
-    for type_code, name in DEFAULT_DOCUMENT_TYPES:
+    existing = {item.type_code: item for item in db.query(DocumentType).all()}
+    for definition in DEFAULT_DOCUMENT_TYPES:
+        type_code = definition["type_code"]
         if type_code not in existing:
-            db.add(DocumentType(type_code=type_code, name=name, required_metadata={"items": []}, optional_metadata={"items": []}, status="active"))
+            db.add(
+                DocumentType(
+                    type_code=type_code,
+                    name=definition["name"],
+                    sector=definition.get("sector"),
+                    icon=definition.get("icon"),
+                    color=definition.get("color"),
+                    template_sector=definition.get("sector"),
+                    required_metadata={"items": definition.get("required", [])},
+                    optional_metadata={"items": definition.get("optional", [])},
+                    validation_schema={"required": definition.get("required", []), "optional": definition.get("optional", [])},
+                    status="active",
+                )
+            )
+        else:
+            item = existing[type_code]
+            item.icon = item.icon or definition.get("icon")
+            item.color = item.color or definition.get("color")
+            item.template_sector = item.template_sector or definition.get("sector")
+            if not (item.validation_schema or {}).get("required"):
+                item.validation_schema = {"required": (item.required_metadata or {}).get("items") or definition.get("required", []), "optional": (item.optional_metadata or {}).get("items") or definition.get("optional", [])}
     db.flush()
 
 
@@ -143,6 +203,37 @@ def _document_type(db: Session, type_code: str) -> DocumentType:
 
 def _required_metadata_keys(document_type: DocumentType) -> list[str]:
     return list((document_type.required_metadata or {}).get("items") or [])
+
+
+def _optional_metadata_keys(document_type: DocumentType) -> list[str]:
+    return list((document_type.optional_metadata or {}).get("items") or [])
+
+
+def _metadata_schema(document_type: DocumentType) -> list[dict]:
+    return [
+        {"key": key, "label": key.replace("_", " ").title(), "required": True, "type": "text"}
+        for key in _required_metadata_keys(document_type)
+    ] + [
+        {"key": key, "label": key.replace("_", " ").title(), "required": False, "type": "text"}
+        for key in _optional_metadata_keys(document_type)
+        if key not in _required_metadata_keys(document_type)
+    ]
+
+
+def _validate_document_type_context(document_type: DocumentType, subseries_id: int | None) -> None:
+    if document_type.ps612IdSubseries and subseries_id and document_type.ps612IdSubseries != subseries_id:
+        raise HTTPException(status_code=422, detail="La tipologia documental no pertenece a la subserie seleccionada.")
+
+
+def _validate_type_trd_scope(db: Session, series_id: int | None, subseries_id: int | None) -> None:
+    if series_id and not db.get(TrdSeries, series_id):
+        raise HTTPException(status_code=404, detail="Serie TRD no encontrada.")
+    if subseries_id:
+        subseries = db.get(TrdSubseries, subseries_id)
+        if not subseries:
+            raise HTTPException(status_code=404, detail="Subserie TRD no encontrada.")
+        if series_id and subseries.ps610IdSeries != series_id:
+            raise HTTPException(status_code=422, detail="La subserie no pertenece a la serie TRD seleccionada.")
 
 
 def _sync_metadata(db: Session, document: Document, metadata: dict, required_keys: list[str]) -> None:
@@ -249,21 +340,93 @@ def supported_file_types(_: User = Depends(require_permission("document.read")))
 
 
 @router.get("/types")
-def list_document_types(user: User = Depends(require_permission("document.read")), db: Session = Depends(get_db)) -> list[dict]:
+def list_document_types(
+    sector: str | None = None,
+    series_id: int | None = None,
+    subseries_id: int | None = None,
+    user: User = Depends(require_permission("document.read")),
+    db: Session = Depends(get_db),
+) -> list[dict]:
     _ensure_default_document_types(db)
     db.commit()
+    query = db.query(DocumentType)
+    if sector:
+        query = query.filter(DocumentType.sector == sector)
+    if series_id:
+        query = query.filter((DocumentType.ps610IdSeries == series_id) | (DocumentType.ps610IdSeries.is_(None)))
+    if subseries_id:
+        query = query.filter((DocumentType.ps612IdSubseries == subseries_id) | (DocumentType.ps612IdSubseries.is_(None)))
     return [
         {
             "idDocumentType": item.idDocumentType,
             "type_code": item.type_code,
             "name": item.name,
             "description": item.description,
-            "required_metadata": (item.required_metadata or {}).get("items") or [],
-            "optional_metadata": (item.optional_metadata or {}).get("items") or [],
+            "series_id": item.ps610IdSeries,
+            "subseries_id": item.ps612IdSubseries,
+            "sector": item.sector,
+            "icon": item.icon,
+            "color": item.color,
+            "template_sector": item.template_sector,
+            "required_metadata": _required_metadata_keys(item),
+            "optional_metadata": _optional_metadata_keys(item),
+            "metadata_schema": _metadata_schema(item),
+            "validation_schema": item.validation_schema or {},
             "status": item.status,
         }
-        for item in db.query(DocumentType).order_by(DocumentType.name.asc()).all()
+        for item in query.order_by(DocumentType.name.asc()).all()
     ]
+
+
+@router.get("/types/library")
+def document_type_library(_: User = Depends(require_permission("document.read")), db: Session = Depends(get_db)) -> dict:
+    _ensure_default_document_types(db)
+    db.commit()
+    types = {item.type_code: item for item in db.query(DocumentType).filter(DocumentType.status == "active").all()}
+    return {
+        sector: [
+            {
+                "type_code": code,
+                "name": types[code].name,
+                "icon": types[code].icon,
+                "color": types[code].color,
+                "required_metadata": _required_metadata_keys(types[code]),
+                "optional_metadata": _optional_metadata_keys(types[code]),
+            }
+            for code in codes
+            if code in types
+        ]
+        for sector, codes in SECTOR_TEMPLATES.items()
+    }
+
+
+@router.post("/types/apply-template/{sector}")
+def apply_document_type_template(
+    sector: str,
+    request: Request,
+    series_id: int | None = None,
+    subseries_id: int | None = None,
+    user: User = Depends(require_permission("trd.manage")),
+    db: Session = Depends(get_db),
+) -> dict:
+    _ensure_default_document_types(db)
+    if sector not in SECTOR_TEMPLATES:
+        raise HTTPException(status_code=404, detail="Plantilla sectorial no encontrada.")
+    _validate_type_trd_scope(db, series_id, subseries_id)
+    updated = 0
+    for type_code in SECTOR_TEMPLATES[sector]:
+        item = db.query(DocumentType).filter(DocumentType.type_code == type_code).one_or_none()
+        if item:
+            item.sector = sector
+            item.template_sector = sector
+            if series_id:
+                item.ps610IdSeries = series_id
+            if subseries_id:
+                item.ps612IdSubseries = subseries_id
+            updated += 1
+    write_audit(db, action="document_type_template_applied", module="documents", user_id=user.identification, entity="document_type", entity_id=sector, new_values={"sector": sector, "series_id": series_id, "subseries_id": subseries_id, "updated": updated}, request=request)
+    db.commit()
+    return {"sector": sector, "updated": updated}
 
 
 @router.post("/types", status_code=status.HTTP_201_CREATED)
@@ -271,19 +434,27 @@ def create_document_type(payload: DocumentTypeCreate, request: Request, user: Us
     _ensure_default_document_types(db)
     if db.query(DocumentType).filter(DocumentType.type_code == payload.type_code).first():
         raise HTTPException(status_code=409, detail="Document type already exists")
+    _validate_type_trd_scope(db, payload.series_id, payload.subseries_id)
     item = DocumentType(
         type_code=payload.type_code.strip(),
         name=payload.name.strip(),
         description=payload.description,
+        ps610IdSeries=payload.series_id,
+        ps612IdSubseries=payload.subseries_id,
+        sector=payload.sector.strip().lower() if payload.sector else None,
+        icon=payload.icon,
+        color=payload.color,
+        template_sector=(payload.template_sector or payload.sector).strip().lower() if payload.template_sector or payload.sector else None,
         required_metadata={"items": payload.required_metadata},
         optional_metadata={"items": payload.optional_metadata},
+        validation_schema=payload.validation_schema or {"required": payload.required_metadata, "optional": payload.optional_metadata},
         status="active",
     )
     db.add(item)
     db.flush()
     write_audit(db, action="document_type_created", module="documents", user_id=user.identification, entity="document_type", entity_id=item.idDocumentType, new_values=payload.model_dump(), request=request)
     db.commit()
-    return {"idDocumentType": item.idDocumentType, "type_code": item.type_code, "name": item.name, "status": item.status}
+    return {"idDocumentType": item.idDocumentType, "type_code": item.type_code, "name": item.name, "status": item.status, "sector": item.sector, "icon": item.icon, "color": item.color, "template_sector": item.template_sector}
 
 
 @router.get("", response_model=list[DocumentOut])
@@ -323,6 +494,8 @@ def create_document(
     if payload.subseries_id and not db.get(TrdSubseries, payload.subseries_id):
         raise HTTPException(status_code=422, detail="TRD subseries not found")
     archive_id, expedient, folder = _resolve_archival_context(db, user, payload)
+    effective_subseries_id = payload.subseries_id or expedient.ps612IdSubseries
+    _validate_document_type_context(document_type, effective_subseries_id)
     folio_total = _folio_total(payload.folio_start, payload.folio_end)
     document = Document(
         document_name=payload.document_name,
@@ -332,7 +505,7 @@ def create_document(
         location_id=payload.location_id or user.location_id,
         metadata_json=payload.metadata,
         status="active",
-        ps612IdSubseries=payload.subseries_id or expedient.ps612IdSubseries,
+        ps612IdSubseries=effective_subseries_id,
         ps930IdArchive=archive_id,
         ps950IdExpedient=expedient.idExpedient,
         ps952IdFolder=folder.idFolder,

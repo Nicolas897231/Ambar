@@ -34,9 +34,12 @@ export default function SearchPage() {
   const view = searchParams.get("view") ?? "global";
   const [q, setQ] = useState("");
   const [entityType, setEntityType] = useState("");
+  const [documentType, setDocumentType] = useState("");
+  const [metadataKey, setMetadataKey] = useState("");
+  const [metadataValue, setMetadataValue] = useState("");
   const [status, setStatus] = useState("");
   const search = useMutation({
-    mutationFn: async () => (await api.post<SearchResult>("/search/documents", { q, entity_type: entityType || null, status: status || null, page: 1, size: 25 })).data
+    mutationFn: async () => (await api.post<SearchResult>("/search/documents", { q, entity_type: entityType || null, document_type: documentType || null, metadata_key: metadataKey || null, metadata_value: metadataValue || null, status: status || null, page: 1, size: 25 })).data
   });
   const reindex = useMutation({ mutationFn: async () => api.post("/search/documents/reindex") });
   const groupedItems = useMemo(() => {
@@ -76,6 +79,7 @@ export default function SearchPage() {
                 <option value="archive">Archivos</option>
                 <option value="series">Series</option>
                 <option value="subseries">Subseries</option>
+                <option value="document_type">Tipologias</option>
                 <option value="document">Documentos</option>
                 <option value="expedient">Expedientes</option>
                 <option value="folder">Carpetas</option>
@@ -88,6 +92,9 @@ export default function SearchPage() {
                 <option value="rejected">rejected</option>
                 <option value="archived">archived</option>
               </select>
+              <input placeholder="Tipologia: manifiesto, remesa, contrato..." value={documentType} onChange={(event) => setDocumentType(event.target.value)} />
+              <input placeholder="Campo: placa, conductor, cargo..." value={metadataKey} onChange={(event) => setMetadataKey(event.target.value)} />
+              <input placeholder="Valor: ABC123, Juan Perez..." value={metadataValue} onChange={(event) => setMetadataValue(event.target.value)} />
             </>
           ) : null}
           <button><Search size={17} /> Buscar</button>

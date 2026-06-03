@@ -370,6 +370,8 @@ th, td { font-size: .98rem; padding: 13px 14px; }
 .context-help svg { color: var(--info); margin-top: 2px; }
 .document-step-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .metadata-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.document-type-chip { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line); border-left-width: 4px; border-radius: var(--radius-md); background: var(--surface); }
+.document-type-chip strong { font-size: 1rem; }
 .document-side-panel { display: grid; gap: 14px; align-content: start; }
 .document-context-card { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-hover); }
 .document-context-card h3 { margin: 0; }

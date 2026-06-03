@@ -4,7 +4,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_permission, user_permissions
-from app.db.models import Archive, Document, Employee, Expedient, Folder, HRCandidate, HRDepartment, HRPosition, InventoryFuid, KardexMovement, PhysicalBox, TrdSeries, TrdSubseries, User
+from app.db.models import Archive, Document, DocumentMetadata, DocumentType, Employee, Expedient, Folder, HRCandidate, HRDepartment, HRPosition, InventoryFuid, KardexMovement, PhysicalBox, TrdSeries, TrdSubseries, User
 from app.db.session import get_db
 from app.domains.archives.router import allowed_archive_ids
 from app.services.audit import write_audit
@@ -18,6 +18,8 @@ class SearchRequest(BaseModel):
     entity_type: str | None = None
     archive_id: int | None = None
     document_type: str | None = None
+    metadata_key: str | None = None
+    metadata_value: str | None = None
     status: str | None = None
     location_id: int | None = None
     page: int = Field(default=1, ge=1)
@@ -105,15 +107,34 @@ def document_search(
     query = db.query(Document).filter(Document.company_id == user.company_id)
     query = query.filter(Document.ps930IdArchive.in_(requested_archive_ids))
     if term:
-        query = query.filter(or_(_matches_text(Document.document_name, term), _matches_text(Document.document_type, term)))
+        metadata_document_ids = db.query(DocumentMetadata.ps520IdDocument).filter(or_(_matches_text(DocumentMetadata.metadata_key, term), _matches_text(DocumentMetadata.metadata_value, term)))
+        query = query.filter(or_(_matches_text(Document.document_name, term), _matches_text(Document.document_type, term), Document.idDocument.in_(metadata_document_ids)))
     if payload.document_type:
         query = query.filter(Document.document_type == payload.document_type)
+    if payload.metadata_key or payload.metadata_value:
+        metadata_query = db.query(DocumentMetadata.ps520IdDocument)
+        if payload.metadata_key:
+            metadata_query = metadata_query.filter(DocumentMetadata.metadata_key == payload.metadata_key)
+        if payload.metadata_value:
+            metadata_query = metadata_query.filter(_matches_text(DocumentMetadata.metadata_value, payload.metadata_value))
+        query = query.filter(Document.idDocument.in_(metadata_query))
     if payload.status:
         query = query.filter(Document.status == payload.status)
     if payload.location_id:
         query = query.filter(Document.location_id == payload.location_id)
     if entity_filter in {None, "", "document"}:
         results.extend(_doc_payload(item) for item in query.order_by(Document.created_at.desc()).limit(200).all())
+
+    if entity_filter in {None, "", "document_type", "tipologia"}:
+        type_query = db.query(DocumentType).filter(DocumentType.status == "active")
+        if term:
+            type_query = type_query.filter(or_(_matches_text(DocumentType.type_code, term), _matches_text(DocumentType.name, term), _matches_text(DocumentType.sector, term), _matches_text(DocumentType.description, term)))
+        if payload.document_type:
+            type_query = type_query.filter(DocumentType.type_code == payload.document_type)
+        results.extend(
+            _result("document_type", item.idDocumentType, item.name, f"{item.type_code} / {item.sector or 'general'}", item.status, None, f"/trd?view=subseries&type={item.type_code}")
+            for item in type_query.order_by(DocumentType.name.asc()).limit(100).all()
+        )
 
     if entity_filter in {None, "", "archive"}:
         archive_query = db.query(Archive).filter(Archive.idArchive.in_(requested_archive_ids))

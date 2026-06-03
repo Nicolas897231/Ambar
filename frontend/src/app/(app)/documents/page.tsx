@@ -12,7 +12,8 @@ type SeriesItem = { idSeries: number; code: string; name: string };
 type SubseriesItem = { idSubseries: number; ps610IdSeries: number; name: string; retention_years: number };
 type ExpedientItem = { idExpedient: number; expedient_code: string; expedient_name: string; ps930IdArchive: number };
 type FolderItem = { idFolder: number; folder_code: string; folder_name: string; ps950IdExpedient: number };
-type DocumentType = { idDocumentType: number; type_code: string; name: string; required_metadata: string[]; optional_metadata: string[]; status: string };
+type MetadataField = { key: string; label: string; required: boolean; type?: string };
+type DocumentType = { idDocumentType: number; type_code: string; name: string; required_metadata: string[]; optional_metadata: string[]; metadata_schema?: MetadataField[]; sector?: string; series_id?: number; subseries_id?: number; icon?: string; color?: string; template_sector?: string; status: string };
 type DocumentItem = { idDocument: number; document_name: string; document_type: string; version: number; status: string; files_count: number; archive_id?: number; expedient_id?: number; folder_id?: number; subseries_id?: number; folio_start?: number; folio_end?: number; metadata: Record<string, unknown> };
 type FileItem = { idFile: number; original_name: string; content_type: string; checksum: string; size_bytes: number; url: string; version?: number; trace_id?: string };
 type VersionInfo = { current_version: number; history: Array<{ action: string; user: string; date: string; details: unknown }>; files: Array<{ idFile: number; version: number; original_name: string; checksum: string; uploaded_at: string; trace_id?: string }> };
@@ -48,7 +49,7 @@ export default function DocumentsPage() {
   const archives = useQuery({ queryKey: ["archives"], queryFn: async () => (await api.get<ArchiveItem[]>("/archives")).data });
   const series = useQuery({ queryKey: ["trd-series"], queryFn: async () => (await api.get<SeriesItem[]>("/trd/series")).data });
   const subseries = useQuery({ queryKey: ["trd-subseries"], queryFn: async () => (await api.get<SubseriesItem[]>("/trd/subseries")).data });
-  const documentTypes = useQuery({ queryKey: ["document-types"], queryFn: async () => (await api.get<DocumentType[]>("/documents/types")).data });
+  const documentTypes = useQuery({ queryKey: ["document-types", subseriesId], queryFn: async () => (await api.get<DocumentType[]>(`/documents/types${subseriesId ? `?subseries_id=${subseriesId}` : ""}`)).data });
   const expedients = useQuery({ queryKey: ["expedients", archiveId], queryFn: async () => (await api.get<ExpedientItem[]>(`/archives/expedients${archiveId ? `?archive_id=${archiveId}` : ""}`)).data });
   const folders = useQuery({ queryKey: ["folders", expedientId], queryFn: async () => (await api.get<FolderItem[]>(`/archives/folders${expedientId ? `?expedient_id=${expedientId}` : ""}`)).data });
   const documents = useQuery({ queryKey: ["documents", archiveId, expedientId, folderId], queryFn: async () => (await api.get<DocumentItem[]>(`/documents?limit=100${archiveId ? `&archive_id=${archiveId}` : ""}${expedientId ? `&expedient_id=${expedientId}` : ""}${folderId ? `&folder_id=${folderId}` : ""}`)).data });
@@ -59,7 +60,11 @@ export default function DocumentsPage() {
   const selectedType = useMemo(() => documentTypes.data?.find((item) => item.type_code === documentType), [documentType, documentTypes.data]);
   const requiredMetadata = useMemo(() => selectedType?.required_metadata ?? [], [selectedType]);
   const optionalMetadata = useMemo(() => selectedType?.optional_metadata ?? [], [selectedType]);
-  const metadataKeys = useMemo(() => [...requiredMetadata, ...optionalMetadata], [optionalMetadata, requiredMetadata]);
+  const metadataFields = useMemo<MetadataField[]>(() => {
+    if (selectedType?.metadata_schema?.length) return selectedType.metadata_schema;
+    return [...requiredMetadata.map((key) => ({ key, label: metadataLabel(key), required: true, type: "text" })), ...optionalMetadata.map((key) => ({ key, label: metadataLabel(key), required: false, type: "text" }))];
+  }, [optionalMetadata, requiredMetadata, selectedType]);
+  const metadataKeys = useMemo(() => metadataFields.map((item) => item.key), [metadataFields]);
   const folioEnd = useMemo(() => {
     const start = Number(folioStart);
     const count = Number(folioCount);
@@ -212,17 +217,22 @@ export default function DocumentsPage() {
               <div className="form-grid">
                 <div className="form-row-2">
                   <label>Nombre documental<input value={documentName} onChange={(event) => setDocumentName(event.target.value)} placeholder="Ej: Contrato firmado Nicolas Ramirez" required /></label>
-                  <label>Tipo documental<select value={documentType} onChange={(event) => { setDocumentType(event.target.value); setMetadataValues({}); }} required><option value="">Seleccionar tipologia</option>{documentTypes.data?.map((item) => <option key={item.idDocumentType} value={item.type_code}>{item.name}</option>)}</select></label>
+                  <label>Tipo documental<select value={documentType} onChange={(event) => { setDocumentType(event.target.value); setMetadataValues({}); }} required><option value="">Seleccionar tipologia</option>{documentTypes.data?.map((item) => <option key={item.idDocumentType} value={item.type_code}>{item.name}{item.sector ? ` / ${item.sector}` : ""}</option>)}</select></label>
                 </div>
+                {selectedType ? <div className="document-type-chip" style={{ borderColor: selectedType.color ?? undefined }}>
+                  <span className="status" style={{ color: selectedType.color ?? undefined }}>{selectedType.sector ?? "general"}</span>
+                  <strong>{selectedType.name}</strong>
+                  <p className="muted">AMBAR generara los campos propios de esta tipologia. Obligatorios: {requiredMetadata.length || "ninguno"}.</p>
+                </div> : null}
                 <div className="context-help">
                   <Info size={18} />
                   <p><strong>Metadatos</strong> son datos extra para buscar y controlar documentos, por ejemplo numero de contrato, tercero o fecha. No son obligatorios salvo que la tipologia lo pida.</p>
                 </div>
                 {metadataKeys.length ? (
                   <div className="metadata-grid">
-                    {metadataKeys.map((key) => (
-                      <label key={key}>{metadataLabel(key)}{requiredMetadata.includes(key) ? " *" : ""}
-                        <input value={metadataValues[key] ?? ""} onChange={(event) => setMetadataValues((current) => ({ ...current, [key]: event.target.value }))} />
+                    {metadataFields.map((field) => (
+                      <label key={field.key}>{field.label}{field.required ? " *" : ""}
+                        <input type={field.type === "date" || field.key.includes("fecha") ? "date" : field.type === "number" || field.key.includes("valor") || field.key.includes("salario") ? "number" : "text"} value={metadataValues[field.key] ?? ""} onChange={(event) => setMetadataValues((current) => ({ ...current, [field.key]: event.target.value }))} />
                       </label>
                     ))}
                   </div>

@@ -118,6 +118,13 @@ class CandidateHire(BaseModel):
         return normalized
 
 
+class PositionChange(BaseModel):
+    new_position: str = Field(min_length=2, max_length=120)
+    new_department: str | None = Field(default=None, max_length=120)
+    effective_date: datetime | None = None
+    observation: str | None = None
+
+
 def _notify_hr(db: Session, user_id: str, message: str, action_url: str) -> None:
     notification = AdvancedNotification(ps405Identification=user_id, module="hr", message=message, action_url=action_url, status="pending")
     db.add(notification)
@@ -150,6 +157,34 @@ def _department_node(department: HRDepartment, children_by_parent: dict[int | No
         "responsible_identification": department.responsible_identification,
         "status": department.status,
         "children": [_department_node(child, children_by_parent) for child in children_by_parent.get(department.idDepartment, [])],
+    }
+
+
+def _required_documents_for_employee(db: Session, employee: Employee) -> set[str]:
+    position = (
+        db.query(HRPosition)
+        .filter(HRPosition.name == employee.position, HRPosition.status == "active")
+        .order_by(HRPosition.idPosition.desc())
+        .first()
+    )
+    if position and position.required_documents:
+        items = position.required_documents.get("items") or []
+        if items:
+            return set(items)
+    return set(MANDATORY_FILES)
+
+
+def _employee_checklist(db: Session, employee: Employee) -> dict:
+    required = sorted(_required_documents_for_employee(db, employee))
+    present = {item.file_type for item in db.query(EmployeeFile).filter(EmployeeFile.ps1010Identification == employee.identification).all()}
+    items = [{"file_type": item, "complete": item in present} for item in required]
+    completed = sum(1 for item in items if item["complete"])
+    return {
+        "required": required,
+        "items": items,
+        "missing_files": [item["file_type"] for item in items if not item["complete"]],
+        "complete": completed == len(items),
+        "compliance": round((completed / len(items)) * 100, 2) if items else 100,
     }
 
 
@@ -295,12 +330,15 @@ def hire_candidate(candidate_id: int, payload: CandidateHire, request: Request, 
     db.flush()
     candidate.status = "contratado"
     candidate.hired_employee_id = employee.identification
+    if candidate.resume_document_id:
+        db.add(EmployeeFile(ps1010Identification=employee.identification, file_type="hoja_vida", ps520IdDocument=candidate.resume_document_id))
     _notify_hr(db, user.identification, f"Completar onboarding documental de {employee.full_name}", f"/hr?view=employees&employee={employee.identification}")
-    write_audit(db, action="hr_candidate_hired", module="hr", user_id=user.identification, entity="hr_candidate", entity_id=candidate.idCandidate, new_values={"employee": employee.identification, "checklist": sorted(MANDATORY_FILES)}, request=request)
+    checklist = _employee_checklist(db, employee)
+    write_audit(db, action="hr_candidate_hired", module="hr", user_id=user.identification, entity="hr_candidate", entity_id=candidate.idCandidate, new_values={"employee": employee.identification, "checklist": checklist["required"], "resume_reused": bool(candidate.resume_document_id)}, request=request)
     db.commit()
     publish_event("employee.created", {"employee_id": employee.identification, "source": "candidate"})
     db.refresh(employee)
-    return {"employee": employee, "candidate": _candidate_out(candidate), "onboarding_checklist": sorted(MANDATORY_FILES), "timeline": ["candidate.hired", "employee.created", "onboarding.created"]}
+    return {"employee": employee, "candidate": _candidate_out(candidate), "onboarding_checklist": checklist, "timeline": ["candidate.hired", "employee.created", "candidate.documents.reused", "onboarding.created"]}
 
 
 @router.get("/employees")
@@ -330,9 +368,7 @@ def employee_compliance(identification: str, db: Session = Depends(get_db), _: U
     employee = db.get(Employee, identification)
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
-    present = {item.file_type for item in db.query(EmployeeFile).filter(EmployeeFile.ps1010Identification == identification).all()}
-    missing = sorted(MANDATORY_FILES - present)
-    return {"employee": identification, "complete": not missing, "missing_files": missing, "compliance": round(((len(MANDATORY_FILES) - len(missing)) / len(MANDATORY_FILES)) * 100, 2)}
+    return {"employee": identification, **_employee_checklist(db, employee)}
 
 
 @router.post("/employees/{identification}/files", status_code=status.HTTP_201_CREATED)
@@ -342,8 +378,13 @@ def link_employee_file(identification: str, payload: EmployeeFileLink, request: 
     document = db.get(Document, payload.document_id)
     if not document or document.company_id != user.company_id:
         raise HTTPException(status_code=404, detail="Document not found")
-    link = EmployeeFile(ps1010Identification=identification, file_type=payload.file_type, ps520IdDocument=payload.document_id)
-    db.add(link)
+    existing = db.query(EmployeeFile).filter(EmployeeFile.ps1010Identification == identification, EmployeeFile.file_type == payload.file_type).one_or_none()
+    if existing:
+        existing.ps520IdDocument = payload.document_id
+        link = existing
+    else:
+        link = EmployeeFile(ps1010Identification=identification, file_type=payload.file_type, ps520IdDocument=payload.document_id)
+        db.add(link)
     db.flush()
     write_audit(db, action="employee_file_linked", module="hr", user_id=user.identification, entity="employee", entity_id=identification, new_values=payload.model_dump(), request=request)
     db.commit()
@@ -382,6 +423,27 @@ def create_incident(identification: str, payload: IncidentCreate, request: Reque
     db.commit()
     db.refresh(incident)
     return incident
+
+
+@router.post("/employees/{identification}/position-changes", status_code=status.HTTP_201_CREATED)
+def change_employee_position(identification: str, payload: PositionChange, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
+    employee = db.get(Employee, identification)
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    old_values = {"position": employee.position, "department": employee.department}
+    employee.position = payload.new_position.strip()
+    if payload.new_department:
+        employee.department = payload.new_department.strip()
+    incident = EmployeeIncident(
+        ps1010Identification=identification,
+        incident_type="cargo_change",
+        description=payload.observation or f"Cambio de cargo: {old_values['position']} -> {employee.position}",
+    )
+    db.add(incident)
+    write_audit(db, action="employee_position_changed", module="hr", user_id=user.identification, entity="employee", entity_id=identification, old_values=old_values, new_values={"position": employee.position, "department": employee.department, "effective_date": payload.effective_date}, request=request)
+    db.commit()
+    db.refresh(incident)
+    return {"employee": employee, "change": incident, "checklist": _employee_checklist(db, employee)}
 
 
 @router.get("/employees/{identification}/timeline")

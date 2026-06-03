@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Archive, ClipboardList, GitBranch, Plus, RefreshCcw, ShieldCheck } from "lucide-react";
+import { Archive, ClipboardList, Download, GitBranch, Plus, RefreshCcw, ShieldCheck, Upload } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { DetailDrawer, EmptyState, LoadingSkeleton, MetricCard, StatusBadge, TimelineEvent } from "@/components/ui/enterprise";
@@ -14,8 +14,9 @@ type Subseries = { idSubseries: number; ps610IdSeries: number; name: string; ret
 type Disposition = { idDisposition: number; ps612IdSubseries: number; archive_management: number; archive_central: number; final_action: string };
 type SeriesTree = Series & { subseries: Array<Subseries & { active_expedients: number; documents: number }> };
 type Workspace = { series: Series; subseries: Subseries[]; kpis: { total_expedients: number; active_expedients: number; closed_expedients: number; total_documents: number; total_folders: number }; dispositions: Disposition[] };
-type SubseriesWorkspace = { subseries: Subseries; series: Series; expedients: unknown[]; documents: unknown[]; retention: { management_years: number; central_years: number; total_years: number; final_action: string }; audit: unknown[] };
+type SubseriesWorkspace = { subseries: Subseries; series: Series; document_types: Array<{ type_code: string; name: string; sector?: string; required_metadata: string[] }>; expedients: unknown[]; documents: unknown[]; retention: { management_years: number; central_years: number; total_years: number; final_action: string }; audit: unknown[] };
 type RetentionTimeline = { steps: Array<{ stage: string; years: number | null; description: string }> };
+type TrdImportImpact = { rows: number; series_new: string[]; subseries_new: string[]; document_types_new: string[]; invalid_rows: Array<{ row: number; reason: string }>; can_import: boolean };
 
 const viewCopy: Record<string, { title: string; description: string }> = {
   series: { title: "Series TRD", description: "Arbol documental con subseries, volumen, expedientes y cumplimiento." },
@@ -49,6 +50,10 @@ export default function TrdPage() {
   const [managementYears, setManagementYears] = useState(2);
   const [centralYears, setCentralYears] = useState(5);
   const [finalAction, setFinalAction] = useState("conservacion total");
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [impact, setImpact] = useState<TrdImportImpact | null>(null);
+  const [templateSector, setTemplateSector] = useState("transporte");
+  const [templateSubseriesId, setTemplateSubseriesId] = useState("");
   const [message, setMessage] = useState("");
 
   const series = useQuery({ queryKey: ["trd-series"], queryFn: async () => (await api.get<Series[]>("/trd/series")).data });
@@ -63,6 +68,28 @@ export default function TrdPage() {
   const createSubseries = useMutation({ mutationFn: async () => api.post("/trd/subseries", { series_id: Number(seriesId), name: subName, retention_years: years }), onSuccess: () => { setSubName(""); setDrawer(""); setMessage("Subserie creada."); client.invalidateQueries({ queryKey: ["trd-subseries"] }); client.invalidateQueries({ queryKey: ["trd-series-tree"] }); } });
   const updateRetention = useMutation({ mutationFn: async () => api.patch(`/trd/subseries/${retentionSubseriesId}/retention`, { retention_years: retentionYears }), onSuccess: () => { setDrawer(""); setMessage("Retencion actualizada."); client.invalidateQueries({ queryKey: ["trd-subseries"] }); client.invalidateQueries({ queryKey: ["trd-retention-timeline"] }); } });
   const createDisposition = useMutation({ mutationFn: async () => api.post("/trd/dispositions", { subseries_id: Number(dispositionSubseriesId), archive_management: managementYears, archive_central: centralYears, final_action: finalAction }), onSuccess: () => { setDrawer(""); setMessage("Disposicion final registrada."); client.invalidateQueries({ queryKey: ["trd-dispositions"] }); } });
+  const simulateImport = useMutation({
+    mutationFn: async () => {
+      if (!importFile) return null;
+      const form = new FormData();
+      form.append("file", importFile);
+      return (await api.post<TrdImportImpact>("/trd/import/simulate", form)).data;
+    },
+    onSuccess: (data) => { setImpact(data ?? null); setMessage(data?.can_import ? "Simulacion lista. Puedes importar la TRD." : "La simulacion encontro filas por corregir."); }
+  });
+  const applyImport = useMutation({
+    mutationFn: async () => {
+      if (!importFile) return null;
+      const form = new FormData();
+      form.append("file", importFile);
+      return api.post("/trd/import/apply", form);
+    },
+    onSuccess: () => { setMessage("TRD importada correctamente."); setImpact(null); setImportFile(null); series.refetch(); subseries.refetch(); tree.refetch(); dispositions.refetch(); }
+  });
+  const applyTemplate = useMutation({
+    mutationFn: async () => api.post(`/documents/types/apply-template/${templateSector}?subseries_id=${templateSubseriesId}`),
+    onSuccess: () => { setMessage("Plantilla sectorial aplicada a la subserie."); subWorkspace.refetch(); }
+  });
   function submitSeries(event: FormEvent) { event.preventDefault(); createSeries.mutate(); }
   function submitSubseries(event: FormEvent) { event.preventDefault(); createSubseries.mutate(); }
   function submitRetention(event: FormEvent) { event.preventDefault(); updateRetention.mutate(); }
@@ -72,7 +99,7 @@ export default function TrdPage() {
 
   return (
     <>
-      <PageTitle title={viewCopy[view]?.title ?? "TRD"} description={viewCopy[view]?.description ?? "Series, subseries, retencion y disposicion documental."} action={<div className="toolbar"><button onClick={() => setDrawer(primaryAction)}><Plus size={17} /> Crear / actualizar</button><button className="ghost" onClick={() => { series.refetch(); subseries.refetch(); tree.refetch(); }}><RefreshCcw size={17} /> Actualizar</button></div>} />
+      <PageTitle title={viewCopy[view]?.title ?? "TRD"} description={viewCopy[view]?.description ?? "Series, subseries, retencion y disposicion documental."} action={<div className="toolbar"><a className="button-link ghost-link" href="/api/v1/trd/export?format=xlsx"><Download size={17} /> Exportar</a><button onClick={() => setDrawer(primaryAction)}><Plus size={17} /> Crear / actualizar</button><button className="ghost" onClick={() => { series.refetch(); subseries.refetch(); tree.refetch(); }}><RefreshCcw size={17} /> Actualizar</button></div>} />
       <nav className="tabbar view-tabs">
         <Link className={view === "series" ? "active" : ""} href="/trd?view=series">Series</Link>
         <Link className={view === "subseries" ? "active" : ""} href="/trd?view=subseries">Subseries</Link>
@@ -80,6 +107,21 @@ export default function TrdPage() {
         <Link className={view === "disposition" ? "active" : ""} href="/trd?view=disposition">Disposicion final</Link>
       </nav>
       {message ? <div className="card compact"><span className="status">{message}</span></div> : null}
+
+      <section className="card compact">
+        <div className="toolbar">
+          <label>Importar TRD CSV/XLSX<input type="file" accept=".csv,.xlsx" onChange={(event) => { setImportFile(event.target.files?.[0] ?? null); setImpact(null); }} /></label>
+          <button className="ghost" disabled={!importFile || simulateImport.isPending} onClick={() => simulateImport.mutate()}><Upload size={16} /> Simular</button>
+          <button disabled={!impact?.can_import || applyImport.isPending} onClick={() => applyImport.mutate()}><Upload size={16} /> Importar</button>
+        </div>
+        {impact ? <div className="module-grid"><MetricCard label="Filas" value={impact.rows} /><MetricCard label="Series nuevas" value={impact.series_new.length} /><MetricCard label="Subseries nuevas" value={impact.subseries_new.length} /><MetricCard label="Tipologias nuevas" value={impact.document_types_new.length} tone="info" /></div> : null}
+        {impact?.invalid_rows.length ? <div className="validation-panel">{impact.invalid_rows.map((item) => <span key={item.row}>Fila {item.row}: {item.reason}</span>)}</div> : null}
+        <div className="toolbar wrap">
+          <label>Plantilla sectorial<select value={templateSector} onChange={(event) => setTemplateSector(event.target.value)}><option value="transporte">Transporte</option><option value="rrhh">RRHH</option><option value="juridico">Juridico</option><option value="contable">Contable</option><option value="salud">Salud</option><option value="educacion">Educacion</option><option value="gobierno">Gobierno</option><option value="constructora">Constructora</option><option value="general">General</option></select></label>
+          <label>Subserie destino<select value={templateSubseriesId} onChange={(event) => setTemplateSubseriesId(event.target.value)}><option value="">Seleccionar subserie</option>{subseries.data?.map((item) => <option key={item.idSubseries} value={item.idSubseries}>{item.name}</option>)}</select></label>
+          <button className="ghost" disabled={!templateSubseriesId || applyTemplate.isPending} onClick={() => applyTemplate.mutate()}><GitBranch size={16} /> Aplicar plantilla</button>
+        </div>
+      </section>
 
       {view === "series" ? <div className="trd-workspace">
         <section className="card">
@@ -100,7 +142,7 @@ export default function TrdPage() {
         <section className="card">
           <h2>Workspace subserie</h2>
           {!selectedSubseries ? <EmptyState title="Selecciona una subserie" description="Consulta informacion, tipologias, expedientes, documentos, retencion y auditoria." /> : null}
-          {subWorkspace.data ? <div className="grid"><div className="tabbar scroll-tabs"><button className="active">Informacion</button><button>Tipologias</button><button>Expedientes</button><button>Documentos</button><button>Retencion</button><button>Auditoria</button></div><MetricCard label="Expedientes" value={subWorkspace.data.expedients.length} /><MetricCard label="Documentos" value={subWorkspace.data.documents.length} /><MetricCard label="Disposicion" value={subWorkspace.data.retention.final_action} tone={dispositionTone(subWorkspace.data.retention.final_action)} /></div> : null}
+          {subWorkspace.data ? <div className="grid"><div className="tabbar scroll-tabs"><button className="active">Informacion</button><button>Tipologias</button><button>Expedientes</button><button>Documentos</button><button>Retencion</button><button>Auditoria</button></div><MetricCard label="Expedientes" value={subWorkspace.data.expedients.length} /><MetricCard label="Documentos" value={subWorkspace.data.documents.length} /><MetricCard label="Tipologias" value={subWorkspace.data.document_types.length} tone="info" /><MetricCard label="Disposicion" value={subWorkspace.data.retention.final_action} tone={dispositionTone(subWorkspace.data.retention.final_action)} />{subWorkspace.data.document_types.map((item) => <article className="card compact" key={item.type_code}><strong>{item.name}</strong><p className="muted">{item.sector ?? "general"} / obligatorios: {item.required_metadata.join(", ") || "sin campos obligatorios"}</p></article>)}</div> : null}
         </section>
       </div> : null}
 

@@ -12,9 +12,11 @@ type SeriesItem = { idSeries: number; code: string; name: string };
 type SubseriesItem = { idSubseries: number; ps610IdSeries: number; name: string };
 type ExpedientItem = { idExpedient: number; expedient_code: string; expedient_name: string; expedient_type: string; status: string; ps930IdArchive: number; document_count: number; folio_count: number; physical_location?: string; digital_location?: string };
 type ComplianceItem = { key: string; label: string; status: "complete" | "warning" | "error" | "pending"; message: string; critical: boolean };
-type Compliance = { status: string; ready_to_close: boolean; checklist: ComplianceItem[]; missing_documents: string[]; foliation: FoliationReport; active_loans: number; pending_transfers: number };
+type DocumentTypeSummary = { used: Array<{ type_code: string; name: string; count: number; color?: string }>; required: Array<{ type_code: string; name: string; icon?: string; color?: string }>; missing_required: string[]; duplicates: string[]; metadata_incomplete: Array<{ document_id: number; document_name: string; document_type: string; missing_metadata: string[] }> };
+type ExpedientInconsistencies = { missing_documents: string[]; missing_required_types: string[]; metadata_incomplete: DocumentTypeSummary["metadata_incomplete"]; duplicate_types: string[]; foliation_duplicates: unknown[]; foliation_gaps: Array<{ from: number; to: number }> };
+type Compliance = { status: string; ready_to_close: boolean; checklist: ComplianceItem[]; missing_documents: string[]; document_types?: DocumentTypeSummary; inconsistencies?: ExpedientInconsistencies; foliation: FoliationReport; active_loans: number; pending_transfers: number };
 type FoliationReport = { status: string; ranges: Array<{ document_id: number; document_name: string; start: number; end: number; total: number; folder_id: number }>; unfoliated: Array<{ idDocument: number; document_name: string; folder_id: number }>; duplicates: unknown[]; gaps: Array<{ from: number; to: number }>; total_folios: number };
-type ExpedientDetail = ExpedientItem & { archive_id: number; archive_name?: string; series?: { code: string; name: string } | null; subseries?: { name: string; retention_years: number } | null; responsible_identification?: string; custodian?: string; folders_count: number; documents_count: number; folios_count: number; compliance_status: string; ready_to_close: boolean; closure?: { closed_at: string; closed_by: string; observation?: string } | null };
+type ExpedientDetail = ExpedientItem & { archive_id: number; archive_name?: string; series?: { code: string; name: string } | null; subseries?: { name: string; retention_years: number } | null; responsible_identification?: string; custodian?: string; folders_count: number; documents_count: number; folios_count: number; compliance_status: string; ready_to_close: boolean; document_types?: DocumentTypeSummary; inconsistencies?: ExpedientInconsistencies; closure?: { closed_at: string; closed_by: string; observation?: string } | null };
 type TreeDocument = { id: number; type: "document"; name: string; document_type: string; folio_start?: number; folio_end?: number; folio_total?: number; support: string; status: string; version: number; has_digital_file: boolean };
 type TreeFolder = { id: number; type: "folder"; code: string; name: string; status: string; documents_count: number; folios_count: number; box_id?: number; physical_location?: string; children: TreeDocument[] };
 type ExpedientTree = { id: number; code: string; name: string; status: string; children: TreeFolder[] };
@@ -24,7 +26,7 @@ type KardexItem = { idMovement: number; event_type: string; entity_type: string;
 type AuditItem = { idAudit: number; action: string; module: string; entity?: string; entity_id?: string; created_at?: string };
 type LocationSummary = { physical_location?: string; digital_location?: string; folders: Array<{ folder_id: number; folder_code: string; folder_name: string; physical_location?: string; box_code?: string; shelf_code?: string; shelf_location?: string }> };
 
-const tabs = ["Resumen", "Arbol", "Documentos", "Foliacion", "Ubicacion", "Transferencias", "Prestamos", "FUID", "Kardex", "Auditoria", "Cumplimiento"];
+const tabs = ["Resumen", "Arbol", "Documentos", "Tipologias", "Inconsistencias", "Foliacion", "Ubicacion", "Transferencias", "Prestamos", "FUID", "Kardex", "Auditoria", "Cumplimiento"];
 
 function statusTone(status: string) {
   if (["active", "complete", "ready_to_close", "accepted", "closed"].includes(status)) return "success";
@@ -99,6 +101,8 @@ export default function ExpedientsPage() {
   const filteredSubseries = (subseries.data ?? []).filter((item) => !seriesId || item.ps610IdSeries === Number(seriesId));
   const currentFuid = (fuid.data ?? []).filter((item) => item.ps950IdExpedient === detailId);
   const detailData = detailQuery.data;
+  const typeSummary = detailData?.document_types ?? compliance.data?.document_types;
+  const inconsistencies = detailData?.inconsistencies ?? compliance.data?.inconsistencies;
   const documents = tree.data?.children.flatMap((folder) => folder.children.map((document) => ({ ...document, folder_code: folder.code, folder_name: folder.name }))) ?? [];
   const totals = useMemo(() => ({
     active: filtered.filter((item) => item.status === "active").length,
@@ -171,6 +175,7 @@ export default function ExpedientsPage() {
             <MetricCard label="Carpetas" value={detailData?.folders_count ?? tree.data?.children.length ?? 0} />
             <MetricCard label="Documentos" value={detailData?.documents_count ?? detail.document_count} />
             <MetricCard label="Folios" value={detailData?.folios_count ?? detail.folio_count} tone={foliation.data?.status === "complete" ? "success" : "warning"} />
+            <MetricCard label="Tipologias usadas" value={typeSummary?.used.length ?? 0} tone="info" />
           </div>
           <div className="toolbar wrap">
             <Link className="ghost" href={`/folders?expedient=${detail.idExpedient}`}><GitBranch size={16} /> Agregar carpeta</Link>
@@ -195,6 +200,19 @@ export default function ExpedientsPage() {
           </section> : null}
 
           {activeTab === "Documentos" ? <DataTable><table><thead><tr><th>Documento</th><th>Carpeta</th><th>Tipo</th><th>Folios</th><th>Soporte</th><th>Estado</th></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td>{document.name}</td><td>{document.folder_code}</td><td>{document.document_type}</td><td>{document.folio_start ?? "-"} - {document.folio_end ?? "-"}</td><td>{document.has_digital_file ? "Digital" : document.support}</td><td><StatusBadge value={document.status} tone={statusTone(document.status)} /></td></tr>)}</tbody></table></DataTable> : null}
+
+          {activeTab === "Tipologias" ? <section className="grid">
+            <div className="grid metrics"><MetricCard label="Usadas" value={typeSummary?.used.length ?? 0} /><MetricCard label="Esperadas por subserie" value={typeSummary?.required.length ?? 0} /><MetricCard label="Faltantes" value={typeSummary?.missing_required.length ?? 0} tone={(typeSummary?.missing_required.length ?? 0) ? "warning" : "success"} /></div>
+            <article className="card compact"><h3>Tipologias utilizadas</h3><div className="checklist">{typeSummary?.used.length ? typeSummary.used.map((item) => <span className="badge badge-info" style={{ borderColor: item.color ?? undefined }} key={item.type_code}>{item.name}: {item.count}</span>) : <span className="muted">Este expediente todavia no tiene tipologias documentales usadas.</span>}</div></article>
+            <article className="card compact"><h3>Tipologias esperadas</h3><div className="checklist">{typeSummary?.required.length ? typeSummary.required.map((item) => <span className={typeSummary.missing_required.includes(item.type_code) ? "badge badge-warning" : "badge badge-success"} key={item.type_code}>{item.name}</span>) : <span className="muted">La subserie no tiene tipologias obligatorias configuradas.</span>}</div></article>
+          </section> : null}
+
+          {activeTab === "Inconsistencias" ? <section className="grid">
+            <div className="grid metrics"><MetricCard label="Docs faltantes" value={inconsistencies?.missing_documents.length ?? 0} tone={(inconsistencies?.missing_documents.length ?? 0) ? "warning" : "success"} /><MetricCard label="Metadatos pendientes" value={inconsistencies?.metadata_incomplete.length ?? 0} tone={(inconsistencies?.metadata_incomplete.length ?? 0) ? "warning" : "success"} /><MetricCard label="Saltos foliacion" value={inconsistencies?.foliation_gaps.length ?? 0} tone={(inconsistencies?.foliation_gaps.length ?? 0) ? "danger" : "success"} /></div>
+            {inconsistencies?.missing_required_types.length ? <article className="card compact"><h3>Tipologias faltantes</h3><p className="muted">{inconsistencies.missing_required_types.join(", ")}</p></article> : null}
+            {inconsistencies?.metadata_incomplete.length ? <article className="card compact"><h3>Metadatos incompletos</h3>{inconsistencies.metadata_incomplete.map((item) => <p className="muted" key={item.document_id}>{item.document_name}: falta {item.missing_metadata.join(", ")}</p>)}</article> : null}
+            {!inconsistencies?.missing_documents.length && !inconsistencies?.missing_required_types.length && !inconsistencies?.metadata_incomplete.length && !inconsistencies?.foliation_gaps.length ? <EmptyState title="Sin inconsistencias criticas" description="El expediente no presenta faltantes documentales ni metadatos obligatorios pendientes." /> : null}
+          </section> : null}
 
           {activeTab === "Foliacion" ? <section className="grid">
             <MetricCard label="Estado foliacion" value={foliation.data?.status ?? "pendiente"} tone={statusTone(foliation.data?.status ?? "pending")} />

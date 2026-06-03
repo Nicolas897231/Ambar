@@ -4,12 +4,12 @@ import axios from "axios";
 import { clearSession, getRefreshToken, saveSession } from "@/lib/auth";
 
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1",
+  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "/api/v1",
   timeout: 15000,
   withCredentials: true
 });
 
-const apiBaseURL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+const apiBaseURL = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 
 api.interceptors.request.use((config) => {
   const token = typeof window !== "undefined" ? window.localStorage.getItem("ambar_access_token") : null;

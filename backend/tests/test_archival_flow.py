@@ -63,6 +63,143 @@ def _create_document(client: TestClient, headers: dict, archive_id: int, expedie
     return document.json()["idDocument"]
 
 
+def test_foliation_can_correct_existing_document_range_without_self_overlap():
+    suffix = uuid4().hex[:8]
+    with TestClient(app) as client:
+        headers = _headers(client)
+        archive_id, expedient_id, folder_id = _create_expedient_and_folder(client, headers, suffix)
+        _create_document(client, headers, archive_id, expedient_id, folder_id, f"{suffix}-first", start=1, end=1)
+        document_id = _create_document(client, headers, archive_id, expedient_id, folder_id, f"{suffix}-second", start=2, end=2)
+
+        correction = client.post(
+            "/api/v1/archives/foliation",
+            json={"document_id": document_id, "expedient_id": expedient_id, "folder_id": folder_id, "folio_start": 2, "folio_end": 4},
+            headers=headers,
+        )
+        assert correction.status_code == 201, correction.text
+        assert correction.json()["folio_start"] == 2
+        assert correction.json()["folio_end"] == 4
+        assert correction.json()["folio_total"] == 3
+
+        report = client.get(f"/api/v1/archives/expedients/{expedient_id}/foliation", headers=headers)
+        assert report.status_code == 200, report.text
+        assert report.json()["total_folios"] == 4
+        assert any(item["document_id"] == document_id and item["end"] == 4 for item in report.json()["ranges"])
+
+        overlap = client.post(
+            "/api/v1/archives/foliation",
+            json={"document_id": document_id, "expedient_id": expedient_id, "folder_id": folder_id, "folio_start": 1, "folio_end": 3},
+            headers=headers,
+        )
+        assert overlap.status_code == 409
+        assert "cruza con otro documento" in overlap.json()["detail"]
+
+
+def test_document_type_dynamic_metadata_and_search_by_business_metadata():
+    suffix = uuid4().hex[:8]
+    with TestClient(app) as client:
+        headers = _headers(client)
+        archive_id, expedient_id, folder_id = _create_expedient_and_folder(client, headers, suffix)
+        subseries = client.get("/api/v1/trd/subseries", headers=headers)
+        assert subseries.status_code == 200, subseries.text
+        type_code = f"manifiesto_{suffix}"
+        created_type = client.post(
+            "/api/v1/documents/types",
+            json={
+                "type_code": type_code,
+                "name": "Manifiesto de carga QA",
+                "sector": "transporte",
+                "subseries_id": subseries.json()[0]["idSubseries"],
+                "required_metadata": ["numero_manifiesto", "placa", "conductor"],
+                "optional_metadata": ["origen", "destino"],
+            },
+            headers=headers,
+        )
+        assert created_type.status_code == 201, created_type.text
+
+        document = client.post(
+            "/api/v1/documents",
+            json={
+                "document_name": "Manifiesto viaje Cali Bogota",
+                "document_type": type_code,
+                "archive_id": archive_id,
+                "expedient_id": expedient_id,
+                "folder_id": folder_id,
+                "subseries_id": subseries.json()[0]["idSubseries"],
+                "metadata": {"numero_manifiesto": "MF-9001", "placa": "ABC123", "conductor": "Carlos Mejia", "origen": "Cali"},
+            },
+            headers=headers,
+        )
+        assert document.status_code == 201, document.text
+        assert document.json()["metadata"]["placa"] == "ABC123"
+
+        search = client.post("/api/v1/search/documents", json={"q": "ABC123", "page": 1, "size": 20}, headers=headers)
+        assert search.status_code == 200, search.text
+        assert any(item["id"] == document.json()["idDocument"] for item in search.json()["items"])
+
+        filtered = client.post("/api/v1/search/documents", json={"metadata_key": "conductor", "metadata_value": "Carlos", "page": 1, "size": 20}, headers=headers)
+        assert filtered.status_code == 200, filtered.text
+        assert any(item["id"] == document.json()["idDocument"] for item in filtered.json()["items"])
+
+
+def test_trd_csv_import_simulate_apply_and_export():
+    suffix = uuid4().hex[:8]
+    with TestClient(app) as client:
+        headers = _headers(client)
+        csv_content = (
+            "dependencia,serie_codigo,serie_nombre,subserie_nombre,retencion,disposicion,tipologias\n"
+            f"Transporte,TR-{suffix},Operacion Transporte,Viajes,{8},conservacion total,Manifiesto QA {suffix};Remesa QA {suffix}\n"
+        ).encode()
+        files = {"file": (f"trd-{suffix}.csv", csv_content, "text/csv")}
+        simulate = client.post("/api/v1/trd/import/simulate", files=files, headers=headers)
+        assert simulate.status_code == 200, simulate.text
+        assert simulate.json()["can_import"] is True
+        assert simulate.json()["series_new"]
+        assert simulate.json()["document_types_new"]
+
+        files = {"file": (f"trd-{suffix}.csv", csv_content, "text/csv")}
+        applied = client.post("/api/v1/trd/import/apply", files=files, headers=headers)
+        assert applied.status_code == 200, applied.text
+        assert applied.json()["created"]["series"] == 1
+        assert applied.json()["created"]["subseries"] == 1
+
+        exported = client.get("/api/v1/trd/export?format=csv", headers=headers)
+        assert exported.status_code == 200, exported.text
+        assert f"TR-{suffix}" in exported.text
+
+
+def test_hr_candidate_hire_reuses_resume_document_in_employee_checklist():
+    suffix = uuid4().hex[:8]
+    with TestClient(app) as client:
+        headers = _headers(client)
+        archive_id, expedient_id, folder_id = _create_expedient_and_folder(client, headers, suffix)
+        resume_id = _create_document(client, headers, archive_id, expedient_id, folder_id, f"resume-{suffix}", start=1, end=1)
+        candidate = client.post(
+            "/api/v1/hr/candidates",
+            json={
+                "candidate_code": f"CAND-{suffix}",
+                "full_name": "Laura Gomez",
+                "email": f"laura-{suffix}@ambar.co",
+                "position_applied": "Analista documental",
+                "department": "Archivo",
+                "resume_document_id": resume_id,
+            },
+            headers=headers,
+        )
+        assert candidate.status_code == 201, candidate.text
+        candidate_id = candidate.json()["idCandidate"]
+        approved = client.patch(f"/api/v1/hr/candidates/{candidate_id}/status", json={"status": "aprobado"}, headers=headers)
+        assert approved.status_code == 200, approved.text
+        numeric_identification = "9" + "".join(str(ord(char) % 10) for char in suffix)[:7]
+        hired = client.post(f"/api/v1/hr/candidates/{candidate_id}/hire", json={"identification": numeric_identification}, headers=headers)
+        assert hired.status_code == 201, hired.text
+        employee_id = hired.json()["employee"]["identification"]
+
+        compliance = client.get(f"/api/v1/hr/employees/{employee_id}/compliance", headers=headers)
+        assert compliance.status_code == 200, compliance.text
+        assert "hoja_vida" not in compliance.json()["missing_files"]
+
+
 def test_archival_document_upload_repository_and_kardex_flow():
     suffix = uuid4().hex[:8]
     with TestClient(app) as client:

@@ -139,9 +139,19 @@ class DocumentType(Base, TimestampMixin):
     type_code: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(140), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
+    ps610IdSeries: Mapped[int | None] = mapped_column(ForeignKey("ps610_trd_series.idSeries"), index=True)
+    ps612IdSubseries: Mapped[int | None] = mapped_column(ForeignKey("ps612_trd_subseries.idSubseries"), index=True)
+    sector: Mapped[str | None] = mapped_column(String(80), index=True)
+    icon: Mapped[str | None] = mapped_column(String(80))
+    color: Mapped[str | None] = mapped_column(String(40))
+    template_sector: Mapped[str | None] = mapped_column(String(80), index=True)
     required_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
     optional_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
+    validation_schema: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+
+    series: Mapped["TrdSeries | None"] = relationship()
+    subseries: Mapped["TrdSubseries | None"] = relationship()
 
 
 class DocumentMetadata(Base, TimestampMixin):

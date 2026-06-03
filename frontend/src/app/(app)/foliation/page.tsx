@@ -66,11 +66,14 @@ export default function FoliationPage() {
       setFolioStart("");
       setFolioCount("");
       setDocumentId("");
-      setMessage("Foliacion registrada. El expediente fue validado nuevamente.");
+      setMessage("Foliacion actualizada. El expediente fue validado nuevamente.");
       report.refetch();
       client.invalidateQueries({ queryKey: ["documents"] });
     },
-    onError: () => setMessage("No fue posible registrar folios. Revisa duplicados, saltos o contexto documental.")
+    onError: (error) => {
+      const apiError = error as { response?: { data?: { detail?: string } } };
+      setMessage(apiError.response?.data?.detail ?? "No fue posible registrar folios. Revisa duplicados, saltos o contexto documental.");
+    }
   });
 
   function submit(event: FormEvent) {
@@ -114,14 +117,20 @@ export default function FoliationPage() {
         <section className="card">
           <h2>Registrar foliacion</h2>
           <form className="form-grid" onSubmit={submit}>
-            <label>Documento<select value={documentId} onChange={(event) => setDocumentId(event.target.value)} required><option value="">Seleccionar documento</option>{documents.data?.map((item) => <option key={item.idDocument} value={item.idDocument}>{item.document_name}</option>)}</select></label>
+            <label>Documento<select value={documentId} onChange={(event) => {
+              const value = event.target.value;
+              const current = documents.data?.find((item) => item.idDocument === Number(value));
+              setDocumentId(value);
+              setFolioStart(current?.folio_start ? String(current.folio_start) : "");
+              setFolioCount(current?.folio_start && current?.folio_end ? String(current.folio_end - current.folio_start + 1) : "");
+            }} required><option value="">Seleccionar documento</option>{documents.data?.map((item) => <option key={item.idDocument} value={item.idDocument}>{item.document_name}</option>)}</select></label>
             <div className="form-row-2">
               <label>Folio inicial<input type="number" min="1" value={folioStart} onChange={(event) => setFolioStart(event.target.value)} placeholder="Ej: 1" required /></label>
               <label>Cantidad de folios<input type="number" min="1" value={folioCount} onChange={(event) => setFolioCount(event.target.value)} placeholder="Ej: 3" required /></label>
             </div>
             <div className="profile-summary">
               <strong>{folioEnd ? `Se registrara: folios ${folioStart} al ${folioEnd}` : "Completa inicio y cantidad"}</strong>
-              <p>Carpeta detectada: {selected?.folder_id ?? "pendiente"}. El sistema valida duplicados y saltos al guardar.</p>
+              <p>Carpeta detectada: {selected?.folder_id ?? "pendiente"}. {selected?.folio_start && selected?.folio_end ? `Este documento ya tenia folios ${selected.folio_start} al ${selected.folio_end}; al guardar se corrige ese rango.` : "El sistema valida duplicados y saltos al guardar."}</p>
             </div>
             {errors.length ? <div className="validation-panel">{errors.map((item) => <span key={item}>{item}</span>)}</div> : null}
             <button disabled={create.isPending}><Plus size={17} /> Registrar folios</button>

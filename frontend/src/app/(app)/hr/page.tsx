@@ -15,6 +15,7 @@ type Contract = { idContract: number; ps1010Identification: string; contract_typ
 type Candidate = { idCandidate: number; candidate_code: string; full_name: string; email?: string; phone?: string; position_applied: string; department: string; status: string; resume_document_id?: number; hired_employee_id?: string; observations?: { items?: string[] } };
 type Department = { idDepartment: number; department_code: string; name: string; parent_id?: number | null; responsible_identification?: string | null; status: string };
 type DepartmentNode = Department & { children: DepartmentNode[] };
+type Compliance = { compliance: number; missing_files: string[]; items: Array<{ file_type: string; complete: boolean }> };
 
 const candidateColumns = [
   { key: "postulado", label: "Postulados" },
@@ -51,6 +52,21 @@ function DepartmentBranch({ node }: { node: DepartmentNode }) {
       </div>
       {node.children.length ? <ul>{node.children.map((child) => <DepartmentBranch key={child.idDepartment} node={child} />)}</ul> : null}
     </li>
+  );
+}
+
+function EmployeeComplianceCard({ employee, onAttach }: { employee: Employee; onAttach: () => void }) {
+  const compliance = useQuery({ queryKey: ["employee-compliance", employee.identification], queryFn: async () => (await api.get<Compliance>(`/hr/employees/${employee.identification}/compliance`)).data });
+  return (
+    <article className="workspace-card">
+      <div className="toolbar space-between"><strong>{employee.full_name}</strong><StatusBadge value={`${compliance.data?.compliance ?? 0}%`} tone={(compliance.data?.compliance ?? 0) >= 100 ? "success" : "warning"} /></div>
+      <p className="muted">{employee.employee_code} - {employee.position} - {employee.department}</p>
+      <div className="module-grid">
+        {(compliance.data?.items ?? []).map((item) => <span className={item.complete ? "badge badge-success" : "badge badge-warning"} key={item.file_type}>{item.complete ? "✓" : "Pendiente"} {item.file_type}</span>)}
+      </div>
+      {compliance.data?.missing_files.length ? <p className="muted">Faltan: {compliance.data.missing_files.join(", ")}</p> : <p className="muted">Documentacion laboral completa.</p>}
+      <button className="ghost" onClick={onAttach}><FileText size={16} /> Asociar documento</button>
+    </article>
   );
 }
 
@@ -234,7 +250,7 @@ export default function HrPage() {
 
       {view === "expedients" ? (
         <section className="workspace-grid">
-          {(employees.data ?? []).map((item) => <article className="workspace-card" key={item.identification}><div className="toolbar space-between"><strong>{item.full_name}</strong><StatusBadge value="checklist laboral" tone="info" /></div><p className="muted">{item.employee_code} - {item.position} - {item.department}</p><div className="module-grid"><span className="status">Hoja de vida</span><span className="status">Contrato</span><span className="status">ARL</span><span className="status">EPS</span></div><button className="ghost" onClick={() => { setSelectedEmployee(item.identification); setDrawer("file"); }}><FileText size={16} /> Asociar documento</button></article>)}
+          {(employees.data ?? []).map((item) => <EmployeeComplianceCard employee={item} key={item.identification} onAttach={() => { setSelectedEmployee(item.identification); setDrawer("file"); }} />)}
         </section>
       ) : null}
 
