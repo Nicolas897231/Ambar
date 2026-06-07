@@ -47,6 +47,20 @@ def _create_index_if_missing(table: str, index_name: str, columns: list[str]) ->
         op.create_index(index_name, table, columns)
 
 
+def _create_metadata_key_value_index() -> None:
+    if not _has_table("ps528_document_metadata") or _has_index("ps528_document_metadata", "ix_document_metadata_key_value"):
+        return
+    if op.get_bind().dialect.name in {"mysql", "mariadb"}:
+        op.execute(
+            sa.text(
+                "CREATE INDEX ix_document_metadata_key_value "
+                "ON ps528_document_metadata (metadata_key, metadata_value(191))"
+            )
+        )
+        return
+    op.create_index("ix_document_metadata_key_value", "ps528_document_metadata", ["metadata_key", "metadata_value"])
+
+
 def upgrade() -> None:
     _add_column_if_missing("ps526_document_types", sa.Column("ps610IdSeries", sa.Integer(), nullable=True))
     _add_column_if_missing("ps526_document_types", sa.Column("ps612IdSubseries", sa.Integer(), nullable=True))
@@ -55,7 +69,7 @@ def upgrade() -> None:
     _create_index_if_missing("ps526_document_types", "ix_ps526_document_types_ps610IdSeries", ["ps610IdSeries"])
     _create_index_if_missing("ps526_document_types", "ix_ps526_document_types_ps612IdSubseries", ["ps612IdSubseries"])
     _create_index_if_missing("ps526_document_types", "ix_ps526_document_types_sector", ["sector"])
-    _create_index_if_missing("ps528_document_metadata", "ix_document_metadata_key_value", ["metadata_key", "metadata_value"])
+    _create_metadata_key_value_index()
 
 
 def downgrade() -> None:
