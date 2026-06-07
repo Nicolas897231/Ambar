@@ -148,6 +148,7 @@ class DocumentType(Base, TimestampMixin):
     required_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
     optional_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
     validation_schema: Mapped[dict] = mapped_column(JSON, default=dict)
+    required_in_expedient: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     status: Mapped[str] = mapped_column(String(40), default="active", index=True)
 
     series: Mapped["TrdSeries | None"] = relationship()
@@ -176,13 +177,27 @@ class DocumentHistory(Base):
     details: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class TrdDependency(Base, TimestampMixin):
+    __tablename__ = "ps608_trd_dependencies"
+
+    idDependency: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+
+
 class TrdSeries(Base):
     __tablename__ = "ps610_trd_series"
 
     idSeries: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ps608IdDependency: Mapped[int | None] = mapped_column(ForeignKey("ps608_trd_dependencies.idDependency"), index=True)
     code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+
+    dependency: Mapped["TrdDependency | None"] = relationship()
 
 
 class TrdSubseries(Base):
@@ -192,6 +207,7 @@ class TrdSubseries(Base):
     ps610IdSeries: Mapped[int] = mapped_column(ForeignKey("ps610_trd_series.idSeries"), nullable=False)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     retention_years: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
     series: Mapped[TrdSeries] = relationship()
 
 
@@ -203,6 +219,7 @@ class TrdDisposition(Base):
     archive_management: Mapped[int] = mapped_column(Integer, nullable=False)
     archive_central: Mapped[int] = mapped_column(Integer, nullable=False)
     final_action: Mapped[str] = mapped_column(String(120), nullable=False)
+    procedure: Mapped[str | None] = mapped_column(Text)
     subseries: Mapped[TrdSubseries] = relationship()
 
 
@@ -384,6 +401,29 @@ class HRCandidate(Base, TimestampMixin):
     observations: Mapped[dict | None] = mapped_column(JSON)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
     hired_employee_id: Mapped[str | None] = mapped_column(ForeignKey("ps1010_employees.identification"))
+
+
+class HRVacancy(Base, TimestampMixin):
+    __tablename__ = "ps1005_hr_vacancies"
+    __table_args__ = (
+        Index("ix_ps1005_hr_vacancies_status_department", "status", "department"),
+        Index("ix_ps1005_hr_vacancies_position", "ps1008IdPosition"),
+    )
+
+    idVacancy: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vacancy_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    department: Mapped[str] = mapped_column(String(120), nullable=False)
+    ps1008IdPosition: Mapped[int | None] = mapped_column(ForeignKey("ps1008_hr_positions.idPosition"))
+    description: Mapped[str | None] = mapped_column(Text)
+    requirements: Mapped[dict | None] = mapped_column(JSON)
+    contract_type: Mapped[str | None] = mapped_column(String(80))
+    location: Mapped[str | None] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(40), default="open", index=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
+    position: Mapped[HRPosition | None] = relationship()
 
 
 class EmployeeFile(Base):
@@ -679,6 +719,7 @@ class Shelf(Base, TimestampMixin):
     ps930IdArchive: Mapped[int] = mapped_column(ForeignKey("ps930_archives.idArchive"), nullable=False)
     shelf_code: Mapped[str] = mapped_column(String(60), nullable=False)
     shelf_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    aisle: Mapped[str | None] = mapped_column(String(80))
     floor: Mapped[str | None] = mapped_column(String(80))
     module: Mapped[str | None] = mapped_column(String(80))
     bay: Mapped[str | None] = mapped_column(String(80))
@@ -715,6 +756,7 @@ class Expedient(Base, TimestampMixin):
     expedient_name: Mapped[str] = mapped_column(String(220), nullable=False)
     expedient_type: Mapped[str] = mapped_column(String(80), default="administrativo", index=True)
     ps930IdArchive: Mapped[int] = mapped_column(ForeignKey("ps930_archives.idArchive"), nullable=False)
+    ps608IdDependency: Mapped[int | None] = mapped_column(ForeignKey("ps608_trd_dependencies.idDependency"), index=True)
     ps610IdSeries: Mapped[int | None] = mapped_column(ForeignKey("ps610_trd_series.idSeries"))
     ps612IdSubseries: Mapped[int | None] = mapped_column(ForeignKey("ps612_trd_subseries.idSubseries"))
     responsible_identification: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
@@ -726,6 +768,7 @@ class Expedient(Base, TimestampMixin):
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
     archive: Mapped[Archive] = relationship()
+    dependency: Mapped["TrdDependency | None"] = relationship()
     series: Mapped[TrdSeries] = relationship()
     subseries: Mapped[TrdSubseries] = relationship()
 

@@ -13,6 +13,7 @@ from app.db.models import (
     Role,
     RolePermission,
     TrdDisposition,
+    TrdDependency,
     TrdSeries,
     TrdSubseries,
     User,
@@ -207,11 +208,17 @@ def seed_database(db: Session) -> None:
                 status="active",
             )
         )
+    dependency = db.query(TrdDependency).filter(TrdDependency.code == "GENERAL").one_or_none()
+    if not dependency:
+        dependency = TrdDependency(code="GENERAL", name="General", description="Dependencia documental inicial", status="active")
+        db.add(dependency)
+        db.flush()
+
     if not db.query(TrdSeries).first():
-        series = TrdSeries(code="ADM-001", name="Gestion Administrativa", description="Serie documental inicial")
+        series = TrdSeries(code="ADM-001", name="Gestion Administrativa", description="Serie documental inicial", ps608IdDependency=dependency.idDependency, status="active")
         db.add(series)
         db.flush()
-        subseries = TrdSubseries(ps610IdSeries=series.idSeries, name="Contratos y soportes", retention_years=5)
+        subseries = TrdSubseries(ps610IdSeries=series.idSeries, name="Contratos y soportes", retention_years=5, status="active")
         db.add(subseries)
         db.flush()
         db.add(
@@ -225,6 +232,8 @@ def seed_database(db: Session) -> None:
     else:
         series = db.query(TrdSeries).order_by(TrdSeries.idSeries.asc()).first()
         subseries = db.query(TrdSubseries).order_by(TrdSubseries.idSubseries.asc()).first()
+        if series and not series.ps608IdDependency:
+            series.ps608IdDependency = dependency.idDependency
 
     if default_archive and not db.query(Expedient).filter(Expedient.expedient_code == "EXP-GEN-0001").one_or_none():
         expedient = Expedient(
@@ -232,6 +241,7 @@ def seed_database(db: Session) -> None:
             expedient_name="Expediente General de Entrada",
             expedient_type="administrativo",
             ps930IdArchive=default_archive.idArchive,
+            ps608IdDependency=series.ps608IdDependency if series else dependency.idDependency,
             ps610IdSeries=series.idSeries if series else None,
             ps612IdSubseries=subseries.idSubseries if subseries else None,
             responsible_identification=admin.identification,
@@ -256,6 +266,7 @@ def seed_database(db: Session) -> None:
         if expedient and (not expedient.ps610IdSeries or not expedient.ps612IdSubseries):
             expedient.ps610IdSeries = series.idSeries if series else expedient.ps610IdSeries
             expedient.ps612IdSubseries = subseries.idSubseries if subseries else expedient.ps612IdSubseries
+            expedient.ps608IdDependency = series.ps608IdDependency if series and series.ps608IdDependency else expedient.ps608IdDependency
     if not db.query(Workflow).first():
         workflow = Workflow(
             workflow_name="Contratacion RRHH",

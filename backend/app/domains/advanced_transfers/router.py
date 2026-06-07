@@ -12,6 +12,7 @@ from app.db.models import (
     Custodianship,
     Document,
     DocumentLoan,
+    DocumentType,
     Expedient,
     Folder,
     InventoryFuid,
@@ -22,10 +23,11 @@ from app.db.models import (
     TransferBatchDocument,
     TransferBatchItem,
     TransferEvidence,
+    TrdDisposition,
     User,
 )
 from app.db.session import get_db
-from app.domains.archives.router import _require_archive_access, allowed_archive_ids
+from app.domains.archives.router import _physical_location_path, _require_archive_access, allowed_archive_ids
 from app.services.audit import write_audit
 from app.services.events import publish_event
 from app.services.operational import create_operational_task, notify_action, resolve_notifications, resolve_related_tasks
@@ -217,31 +219,37 @@ def _add_reception_kardex(db: Session, batch: TransferBatch, item: TransferBatch
     return movement
 
 
-def _record_transfer_custody(db: Session, batch: TransferBatch, item: TransferBatchItem, movement_id: int | None = None) -> None:
+def _record_one_transfer_custody(db: Session, batch: TransferBatch, entity_type: str, entity_id: int, item: TransferBatchItem, movement_id: int | None = None) -> None:
     if not batch.ps930DestinationArchiveId:
         return
     archive = db.get(Archive, batch.ps930DestinationArchiveId)
     for current in db.query(Custodianship).filter(
-        Custodianship.entity_type == item.entity_type,
-        Custodianship.entity_id == item.entity_id,
+        Custodianship.entity_type == entity_type,
+        Custodianship.entity_id == entity_id,
         Custodianship.is_current.is_(True),
     ).all():
         current.is_current = False
     db.add(
         Custodianship(
-            entity_type=item.entity_type,
-            entity_id=item.entity_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
             ps930IdArchive=batch.ps930DestinationArchiveId,
             custodian_identification=archive.custodian_identification if archive else None,
-            current_location_path=f"Archivo {batch.ps930DestinationArchiveId}",
+            current_location_path=_physical_location_path(db, entity_type, entity_id) or f"Archivo {batch.ps930DestinationArchiveId}",
             status="active",
             source_module="transfers",
             related_movement_id=movement_id,
             related_transfer_id=batch.idBatch,
             is_current=True,
-            metadata_json={"batch_code": batch.batch_code, "batch_item_id": item.idBatchItem, "event": "reception.item.accepted"},
+            metadata_json={"batch_code": batch.batch_code, "batch_item_id": item.idBatchItem, "event": "reception.item.accepted", "parent_entity_type": item.entity_type, "parent_entity_id": item.entity_id},
         )
     )
+
+
+def _record_transfer_custody(db: Session, batch: TransferBatch, item: TransferBatchItem, movement_id: int | None = None) -> None:
+    _record_one_transfer_custody(db, batch, item.entity_type, item.entity_id, item, movement_id)
+    for child_type, child_id in _child_entities(db, item.entity_type, item.entity_id):
+        _record_one_transfer_custody(db, batch, child_type, child_id, item, movement_id)
 
 
 def _notify_origin(db: Session, batch: TransferBatch, message: str) -> None:
@@ -358,9 +366,10 @@ def _child_entities(db: Session, entity_type: str, entity_id: int) -> list[tuple
     elif entity_type == "box":
         folders = db.query(Folder).filter(Folder.ps936IdBox == entity_id).all()
         children.extend(("folder", row.idFolder) for row in folders)
+        children.extend(("expedient", row.ps950IdExpedient) for row in folders if row.ps950IdExpedient)
         for folder in folders:
             children.extend(("document", row.idDocument) for row in db.query(Document).filter(Document.ps952IdFolder == folder.idFolder).all())
-    return children
+    return list(dict.fromkeys(children))
 
 
 def _loan_related_units(db: Session, entity_type: str, entity_id: int) -> set[tuple[str, int]]:
@@ -402,6 +411,82 @@ def _active_loan_for_transfer_entity(db: Session, entity_type: str, entity_id: i
     if not conditions:
         return None
     return db.query(DocumentLoan).filter(or_(*conditions), DocumentLoan.status.in_(ACTIVE_LOAN_STATUSES)).first()
+
+
+def _expedients_for_transfer_entity(db: Session, entity_type: str, entity_id: int) -> list[Expedient]:
+    expedient_ids: set[int] = set()
+    if entity_type == "expedient":
+        expedient_ids.add(entity_id)
+    elif entity_type == "document":
+        document = db.get(Document, entity_id)
+        if document and document.ps950IdExpedient:
+            expedient_ids.add(document.ps950IdExpedient)
+    elif entity_type == "folder":
+        folder = db.get(Folder, entity_id)
+        if folder and folder.ps950IdExpedient:
+            expedient_ids.add(folder.ps950IdExpedient)
+    elif entity_type == "box":
+        for folder in db.query(Folder).filter(Folder.ps936IdBox == entity_id).all():
+            if folder.ps950IdExpedient:
+                expedient_ids.add(folder.ps950IdExpedient)
+    if not expedient_ids:
+        return []
+    return db.query(Expedient).filter(Expedient.idExpedient.in_(expedient_ids)).all()
+
+
+def _documents_for_transfer_entity(db: Session, entity_type: str, entity_id: int) -> list[Document]:
+    if entity_type == "document":
+        document = db.get(Document, entity_id)
+        return [document] if document else []
+    if entity_type == "folder":
+        return db.query(Document).filter(Document.ps952IdFolder == entity_id).all()
+    if entity_type == "expedient":
+        return db.query(Document).filter(Document.ps950IdExpedient == entity_id).all()
+    if entity_type == "box":
+        return db.query(Document).join(Folder, Document.ps952IdFolder == Folder.idFolder).filter(Folder.ps936IdBox == entity_id).all()
+    return []
+
+
+def _folio_has_errors(documents: list[Document]) -> bool:
+    ranges = sorted((item.folio_start, item.folio_end) for item in documents if item.folio_start and item.folio_end)
+    if len(ranges) != len(documents):
+        return True
+    previous_end: int | None = None
+    for start, end in ranges:
+        if start is None or end is None or start > end:
+            return True
+        if previous_end is not None and start <= previous_end:
+            return True
+        previous_end = end
+    return False
+
+
+def _trd_transfer_blockers(db: Session, entity_type: str, entity_id: int) -> tuple[list[str], list[str]]:
+    blockers: list[str] = []
+    warnings: list[str] = []
+    for expedient in _expedients_for_transfer_entity(db, entity_type, entity_id):
+        label = expedient.expedient_code or f"EXP-{expedient.idExpedient}"
+        if not expedient.ps610IdSeries or not expedient.ps612IdSubseries or not expedient.ps608IdDependency:
+            blockers.append(f"{label}: falta dependencia, serie o subserie TRD.")
+            continue
+        if entity_type == "expedient":
+            documents = db.query(Document).filter(Document.ps950IdExpedient == expedient.idExpedient).all()
+            used_types = {document.document_type for document in documents}
+            required_types = db.query(DocumentType).filter(
+                DocumentType.ps612IdSubseries == expedient.ps612IdSubseries,
+                DocumentType.status == "active",
+                DocumentType.required_in_expedient.is_(True),
+            ).all()
+            missing = [item.name for item in required_types if item.type_code not in used_types]
+            if missing:
+                blockers.append(f"{label}: faltan tipologias obligatorias ({', '.join(missing)}).")
+        disposition = db.query(TrdDisposition).filter(TrdDisposition.ps612IdSubseries == expedient.ps612IdSubseries).order_by(TrdDisposition.idDisposition.desc()).first()
+        if not disposition:
+            warnings.append(f"{label}: no tiene retencion/disposicion final completa en TRD.")
+    unit_documents = _documents_for_transfer_entity(db, entity_type, entity_id)
+    if unit_documents and _folio_has_errors(unit_documents):
+        blockers.append("La unidad seleccionada tiene documentos sin rango de folios o rangos duplicados.")
+    return blockers, warnings
 
 
 def _ensure_batch_fuid(db: Session, batch: TransferBatch, user: User) -> InventoryFuid | None:
@@ -591,6 +676,9 @@ def add_document(batch_id: int, payload: BatchDocumentCreate, request: Request, 
             raise HTTPException(status_code=422, detail="Document does not belong to transfer origin archive")
     if not document.ps930IdArchive or not document.ps950IdExpedient or not document.ps952IdFolder:
         raise HTTPException(status_code=422, detail="Document requires archive, expedient and folder before transfer")
+    blockers, warnings = _trd_transfer_blockers(db, "document", payload.document_id)
+    if blockers:
+        raise HTTPException(status_code=409, detail={"message": "La transferencia no cumple la TRD.", "blocking_errors": blockers})
     item = TransferBatchDocument(ps1070IdBatch=batch_id, ps520IdDocument=payload.document_id, status="pending")
     db.add(item)
     db.flush()
@@ -606,7 +694,7 @@ def add_document(batch_id: int, payload: BatchDocumentCreate, request: Request, 
                 folio_total=document.folio_total or 0,
                 ps930OriginArchiveId=batch.ps930OriginArchiveId,
                 ps930DestinationArchiveId=batch.ps930DestinationArchiveId,
-                metadata_json={"name": document.document_name},
+                metadata_json={"name": document.document_name, "trd_warnings": warnings},
             )
         )
     _add_batch_kardex(db, batch, user, "pending_validation", f"Documento #{document.idDocument} agregado al lote {batch.batch_code}")
@@ -634,6 +722,9 @@ def add_item(batch_id: int, payload: BatchItemCreate, request: Request, user: Us
     active_loan = _active_loan_for_transfer_entity(db, payload.entity_type, payload.entity_id)
     if active_loan:
         raise HTTPException(status_code=409, detail="Documentary unit cannot be transferred because it has an active loan")
+    blockers, warnings = _trd_transfer_blockers(db, payload.entity_type, payload.entity_id)
+    if blockers:
+        raise HTTPException(status_code=409, detail={"message": "La transferencia no cumple la TRD.", "blocking_errors": blockers})
     existing = db.query(TransferBatchItem).filter(
         TransferBatchItem.ps1070IdBatch == batch_id,
         TransferBatchItem.entity_type == payload.entity_type,
@@ -651,7 +742,7 @@ def add_item(batch_id: int, payload: BatchItemCreate, request: Request, user: Us
         folio_total=folio_total,
         ps930OriginArchiveId=batch.ps930OriginArchiveId,
         ps930DestinationArchiveId=batch.ps930DestinationArchiveId,
-        metadata_json={"name": name},
+        metadata_json={"name": name, "trd_warnings": warnings},
     )
     db.add(item)
     db.flush()

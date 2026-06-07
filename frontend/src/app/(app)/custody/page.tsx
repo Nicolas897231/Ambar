@@ -21,7 +21,12 @@ type Dashboard = {
   expedients: number;
   current_custodies: number;
   pending_movements: number;
+  pending_transfers: number;
+  pending_receptions: number;
   overdue_loans: number;
+  recent_rejections: number;
+  boxes_occupied: number;
+  active_custodians: number;
   by_archive: { idArchive: number; archive_name: string; documents: number; expedients: number; boxes: number }[];
 };
 
@@ -73,7 +78,7 @@ export default function CustodyPage() {
         <MetricCard label="Documentos custodiados" value={dashboard.data?.documents ?? 0} tone="success" cta="Ver repositorio" href="/repository" />
         <MetricCard label="Expedientes activos" value={dashboard.data?.expedients ?? 0} cta="Expedientes vivos" href="/expedients" />
         <MetricCard label="Custodias actuales" value={dashboard.data?.current_custodies ?? custody.data?.current ?? 0} tone="info" cta="Ver trazabilidad" href="/kardex" />
-        <MetricCard label="Recepciones pendientes" value={dashboard.data?.pending_movements ?? 0} tone={(dashboard.data?.pending_movements ?? 0) ? "warning" : "success"} cta="Revisar recepcion" href="/reception" />
+        <MetricCard label="Recepciones pendientes" value={dashboard.data?.pending_receptions ?? dashboard.data?.pending_movements ?? 0} tone={(dashboard.data?.pending_receptions ?? dashboard.data?.pending_movements ?? 0) ? "warning" : "success"} cta="Revisar recepcion" href="/reception" />
         <MetricCard label="Prestamos vencidos" value={dashboard.data?.overdue_loans ?? 0} tone={(dashboard.data?.overdue_loans ?? 0) ? "danger" : "success"} cta="Resolver prestamos" href="/loans" />
       </section>
 
@@ -106,7 +111,7 @@ export default function CustodyPage() {
         </section>
 
         <section className="card">
-          <div className="toolbar space-between"><h2>Capacidad por archivo</h2><StatusBadge value={`${dashboard.data?.by_archive.length ?? 0} archivos`} tone="info" /></div>
+          <div className="toolbar space-between"><h2>Operacion por archivo</h2><StatusBadge value={`${dashboard.data?.active_custodians ?? 0} custodios`} tone="info" /></div>
           {dashboard.isLoading ? <LoadingSkeleton rows={4} /> : null}
           <DataTable>
             <table>

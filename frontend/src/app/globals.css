@@ -411,6 +411,17 @@ th, td { font-size: .98rem; padding: 13px 14px; }
 .checklist { display: flex; flex-wrap: wrap; gap: 8px; }
 .service-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
 .service-card { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--panel); }
+.full-span { grid-column: 1 / -1; }
+.jobs-page { min-height: 100vh; background: var(--surface); color: var(--text); padding: clamp(18px, 3vw, 42px); display: grid; gap: 20px; align-content: start; }
+.jobs-hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; max-width: 1240px; width: 100%; margin: 0 auto; }
+.jobs-hero h1 { font-size: clamp(2rem, 3vw, 3.2rem); margin: 6px 0 8px; letter-spacing: 0; }
+.jobs-hero p { max-width: 720px; color: var(--muted); margin: 0; }
+.jobs-layout { width: 100%; max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: minmax(320px, 420px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.jobs-list, .jobs-apply { display: grid; gap: 12px; }
+.job-card { min-height: 116px; display: grid; gap: 6px; align-content: start; text-align: left; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px; }
+.job-card span, .job-card small { color: var(--muted); }
+.job-card.active, .job-card:hover { border-color: color-mix(in srgb, var(--brand) 52%, var(--line)); box-shadow: inset 3px 0 0 var(--brand); background: var(--surface-hover); }
+.jobs-apply form { gap: 12px; }
 .role-matrix { display: grid; border: 1px solid var(--line); border-radius: var(--radius-md); overflow-x: auto; }
 .role-matrix-row { min-width: 760px; display: grid; grid-template-columns: minmax(180px, 1fr) repeat(5, minmax(96px, .45fr)); gap: 8px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--panel); }
 .role-matrix-row:first-child { border-top: 0; }
@@ -460,4 +471,6 @@ pre { max-width: 100%; overflow: auto; padding: 12px; border: 1px solid var(--li
   .document-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .spotlight-row { grid-template-columns: 1fr; }
   .metadata-grid, .foliation-hero { grid-template-columns: 1fr; }
+  .jobs-hero { flex-direction: column; }
+  .jobs-layout { grid-template-columns: 1fr; }
 }

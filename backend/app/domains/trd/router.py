@@ -1,4 +1,5 @@
 import csv
+from datetime import UTC, datetime
 from io import BytesIO, StringIO
 from zipfile import ZipFile
 from xml.etree import ElementTree
@@ -8,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_permission
-from app.db.models import AuditLog, Document, DocumentType, Expedient, Folder, TrdDisposition, TrdSeries, TrdSubseries, User
+from app.db.models import AuditLog, Document, DocumentType, Expedient, Folder, TrdDependency, TrdDisposition, TrdSeries, TrdSubseries, User
 from app.db.session import get_db
 from app.services.audit import write_audit
 
@@ -19,6 +20,15 @@ class SeriesCreate(BaseModel):
     code: str = Field(min_length=2, max_length=40)
     name: str = Field(min_length=3, max_length=160)
     description: str | None = None
+    dependency_id: int | None = None
+    status: str = Field(default="active", pattern="^(active|inactive)$")
+
+
+class DependencyCreate(BaseModel):
+    code: str = Field(min_length=2, max_length=40)
+    name: str = Field(min_length=3, max_length=160)
+    description: str | None = None
+    status: str = Field(default="active", pattern="^(active|inactive)$")
 
 
 class SubseriesCreate(BaseModel):
@@ -31,11 +41,16 @@ class DispositionCreate(BaseModel):
     subseries_id: int
     archive_management: int = Field(ge=0, le=100)
     archive_central: int = Field(ge=0, le=100)
-    final_action: str = Field(min_length=3, max_length=120)
+    final_action: str = Field(min_length=1, max_length=120)
+    procedure: str | None = None
 
 
 class RetentionUpdate(BaseModel):
-    retention_years: int = Field(ge=1, le=100)
+    retention_years: int | None = Field(default=None, ge=1, le=100)
+    archive_management: int | None = Field(default=None, ge=0, le=100)
+    archive_central: int | None = Field(default=None, ge=0, le=100)
+    final_action: str | None = Field(default=None, min_length=1, max_length=120)
+    procedure: str | None = None
 
 
 TRD_IMPORT_COLUMNS = {
@@ -52,17 +67,60 @@ TRD_IMPORT_COLUMNS = {
     "subseries_name": "subserie_nombre",
     "retencion": "retencion",
     "retention_years": "retencion",
+    "retencion_total": "retencion",
+    "retencion_gestion": "retencion_gestion",
+    "retención_gestión": "retencion_gestion",
+    "archivo_gestion": "retencion_gestion",
+    "retention_management": "retencion_gestion",
+    "retencion_central": "retencion_central",
+    "retención_central": "retencion_central",
+    "archivo_central": "retencion_central",
+    "retention_central": "retencion_central",
     "disposicion": "disposicion",
     "disposicion_final": "disposicion",
     "final_action": "disposicion",
+    "procedimiento": "procedimiento",
+    "procedure": "procedimiento",
     "tipologias": "tipologias",
     "tipologias_documentales": "tipologias",
+    "tipo_documental": "tipologias",
+    "tipo_documental_trd": "tipologias",
     "document_types": "tipologias",
+}
+
+FINAL_ACTIONS = {
+    "ct": "CT",
+    "conservacion_total": "CT",
+    "conservación_total": "CT",
+    "conservacion total": "CT",
+    "conservación total": "CT",
+    "e": "E",
+    "eliminacion": "E",
+    "eliminación": "E",
+    "s": "S",
+    "seleccion": "S",
+    "selección": "S",
+    "mt": "MT",
+    "medio_tecnologico": "MT",
+    "medio tecnológico": "MT",
+    "medio tecnologico": "MT",
+    "microfilmacion": "MT",
+    "microfilmación": "MT",
+    "digitalizacion": "MT",
+    "digitalización": "MT",
 }
 
 
 def _series_out(series: TrdSeries) -> dict:
-    return {"idSeries": series.idSeries, "code": series.code, "name": series.name, "description": series.description}
+    return {
+        "idSeries": series.idSeries,
+        "dependency_id": series.ps608IdDependency,
+        "dependency": _dependency_out(series.dependency) if series.dependency else None,
+        "code": series.code,
+        "name": series.name,
+        "description": series.description,
+        "status": series.status,
+    }
 
 
 def _subseries_out(subseries: TrdSubseries) -> dict:
@@ -71,6 +129,7 @@ def _subseries_out(subseries: TrdSubseries) -> dict:
         "ps610IdSeries": subseries.ps610IdSeries,
         "name": subseries.name,
         "retention_years": subseries.retention_years,
+        "status": subseries.status,
     }
 
 
@@ -111,6 +170,7 @@ def _disposition_out(disposition: TrdDisposition) -> dict:
         "archive_management": disposition.archive_management,
         "archive_central": disposition.archive_central,
         "final_action": disposition.final_action,
+        "procedure": disposition.procedure,
     }
 
 
@@ -137,6 +197,57 @@ def _normalize_type_code(value: str) -> str:
     for source, target in replacements.items():
         normalized = normalized.replace(source, target)
     return "".join(char if char.isalnum() else "_" for char in normalized).strip("_")
+
+
+def _normalize_dependency_code(value: str) -> str:
+    base = _normalize_type_code(value or "general").upper().replace("_", "-")
+    return base[:40] or "GENERAL"
+
+
+def _normalize_final_action(value: str | None) -> str:
+    if not value:
+        raise HTTPException(status_code=422, detail="La disposicion final es obligatoria.")
+    key = value.strip().lower().replace("-", "_")
+    compact = key.replace("_", " ")
+    if key in FINAL_ACTIONS:
+        return FINAL_ACTIONS[key]
+    if compact in FINAL_ACTIONS:
+        return FINAL_ACTIONS[compact]
+    raise HTTPException(status_code=422, detail="Disposicion final invalida. Usa CT, E, S o MT.")
+
+
+def _parse_year(value: str | int | None, default: int | None = None) -> int:
+    if value in {None, ""}:
+        if default is None:
+            raise HTTPException(status_code=422, detail="La retencion documental es obligatoria.")
+        return default
+    try:
+        year = int(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Retencion invalida: {value}") from exc
+    if year < 0 or year > 100:
+        raise HTTPException(status_code=422, detail="La retencion debe estar entre 0 y 100 anos.")
+    return year
+
+
+def _default_dependency(db: Session) -> TrdDependency:
+    dependency = db.query(TrdDependency).filter(TrdDependency.code == "GENERAL").one_or_none()
+    if dependency:
+        return dependency
+    dependency = TrdDependency(code="GENERAL", name="General", description="Dependencia general para datos existentes o compatibilidad.", status="active")
+    db.add(dependency)
+    db.flush()
+    return dependency
+
+
+def _dependency_out(dependency: TrdDependency) -> dict:
+    return {
+        "idDependency": dependency.idDependency,
+        "code": dependency.code,
+        "name": dependency.name,
+        "description": dependency.description,
+        "status": dependency.status,
+    }
 
 
 def _split_types(value: str | None) -> list[str]:
@@ -213,21 +324,49 @@ def _parse_import_rows(filename: str, content: bytes) -> list[dict]:
 
 
 def _trd_import_impact(db: Session, rows: list[dict]) -> dict:
+    existing_dependencies = {item.code for item in db.query(TrdDependency).all()}
     existing_series = {item.code for item in db.query(TrdSeries).all()}
     existing_subseries = {(item.ps610IdSeries, item.name.lower()) for item in db.query(TrdSubseries).all()}
     series_by_code = {item.code: item for item in db.query(TrdSeries).all()}
     existing_types = {item.type_code for item in db.query(DocumentType).all()}
+    new_dependencies: set[str] = set()
     new_series: set[str] = set()
     new_subseries: set[str] = set()
     new_types: set[str] = set()
     invalid_rows: list[dict] = []
     for index, row in enumerate(rows, start=2):
+        dependency_name = row.get("dependencia")
         code = row.get("serie_codigo")
         series_name = row.get("serie_nombre")
         subseries_name = row.get("subserie_nombre")
+        management = row.get("retencion_gestion")
+        central = row.get("retencion_central") or row.get("retencion")
+        final_action = row.get("disposicion")
         if not code or not series_name or not subseries_name:
             invalid_rows.append({"row": index, "reason": "Faltan serie_codigo, serie_nombre o subserie."})
             continue
+        if not dependency_name:
+            invalid_rows.append({"row": index, "reason": "Falta dependencia."})
+            continue
+        if central in {None, ""}:
+            invalid_rows.append({"row": index, "reason": "Falta retencion central o retencion total."})
+            continue
+        if management in {None, ""} and row.get("retencion") in {None, ""}:
+            invalid_rows.append({"row": index, "reason": "Falta retencion gestion."})
+            continue
+        if not final_action:
+            invalid_rows.append({"row": index, "reason": "Falta disposicion final."})
+            continue
+        try:
+            _parse_year(management, default=0)
+            _parse_year(central)
+            _normalize_final_action(final_action)
+        except HTTPException as exc:
+            invalid_rows.append({"row": index, "reason": str(exc.detail)})
+            continue
+        dependency_code = _normalize_dependency_code(dependency_name)
+        if dependency_code not in existing_dependencies:
+            new_dependencies.add(f"{dependency_code} - {dependency_name}")
         if code not in existing_series:
             new_series.add(f"{code} - {series_name}")
         series_id = series_by_code.get(code).idSeries if code in series_by_code else None
@@ -239,6 +378,7 @@ def _trd_import_impact(db: Session, rows: list[dict]) -> dict:
                 new_types.add(type_name)
     return {
         "rows": len(rows),
+        "dependencies_new": sorted(new_dependencies),
         "series_new": sorted(new_series),
         "subseries_new": sorted(new_subseries),
         "document_types_new": sorted(new_types),
@@ -248,31 +388,50 @@ def _trd_import_impact(db: Session, rows: list[dict]) -> dict:
 
 
 def _apply_trd_rows(db: Session, rows: list[dict]) -> dict:
-    created = {"series": 0, "subseries": 0, "document_types": 0, "dispositions": 0}
+    created = {"dependencies": 0, "series": 0, "subseries": 0, "document_types": 0, "dispositions": 0}
     for row in rows:
+        dependency_name = row.get("dependencia")
         code = row.get("serie_codigo")
         series_name = row.get("serie_nombre")
         subseries_name = row.get("subserie_nombre")
-        if not code or not series_name or not subseries_name:
+        if not dependency_name or not code or not series_name or not subseries_name:
             continue
+        dependency_code = _normalize_dependency_code(dependency_name)
+        dependency = db.query(TrdDependency).filter(TrdDependency.code == dependency_code).one_or_none()
+        if not dependency:
+            dependency = TrdDependency(code=dependency_code, name=dependency_name, status="active")
+            db.add(dependency)
+            db.flush()
+            created["dependencies"] += 1
         series = db.query(TrdSeries).filter(TrdSeries.code == code).one_or_none()
         if not series:
-            series = TrdSeries(code=code, name=series_name, description=row.get("dependencia"))
+            series = TrdSeries(code=code, name=series_name, description=row.get("procedimiento"), ps608IdDependency=dependency.idDependency, status="active")
             db.add(series)
             db.flush()
             created["series"] += 1
+        else:
+            series.ps608IdDependency = dependency.idDependency
+            series.name = series_name
         retention = int(row.get("retencion") or 5)
+        management = _parse_year(row.get("retencion_gestion"), default=0)
+        central = _parse_year(row.get("retencion_central") or row.get("retencion"), default=retention)
+        final_action = _normalize_final_action(row.get("disposicion"))
         subseries = db.query(TrdSubseries).filter(TrdSubseries.ps610IdSeries == series.idSeries, TrdSubseries.name == subseries_name).one_or_none()
         if not subseries:
-            subseries = TrdSubseries(ps610IdSeries=series.idSeries, name=subseries_name, retention_years=retention)
+            subseries = TrdSubseries(ps610IdSeries=series.idSeries, name=subseries_name, retention_years=management + central, status="active")
             db.add(subseries)
             db.flush()
             created["subseries"] += 1
-        elif subseries.retention_years != retention:
-            subseries.retention_years = retention
-        disposition_text = row.get("disposicion")
-        if disposition_text and not db.query(TrdDisposition).filter(TrdDisposition.ps612IdSubseries == subseries.idSubseries, TrdDisposition.final_action == disposition_text).first():
-            db.add(TrdDisposition(ps612IdSubseries=subseries.idSubseries, archive_management=0, archive_central=retention, final_action=disposition_text))
+        elif subseries.retention_years != management + central:
+            subseries.retention_years = management + central
+        disposition = db.query(TrdDisposition).filter(TrdDisposition.ps612IdSubseries == subseries.idSubseries).order_by(TrdDisposition.idDisposition.desc()).first()
+        if disposition:
+            disposition.archive_management = management
+            disposition.archive_central = central
+            disposition.final_action = final_action
+            disposition.procedure = row.get("procedimiento")
+        else:
+            db.add(TrdDisposition(ps612IdSubseries=subseries.idSubseries, archive_management=management, archive_central=central, final_action=final_action, procedure=row.get("procedimiento")))
             created["dispositions"] += 1
         for type_name in _split_types(row.get("tipologias")):
             type_code = _normalize_type_code(type_name)
@@ -283,7 +442,7 @@ def _apply_trd_rows(db: Session, rows: list[dict]) -> dict:
                 document_type.ps610IdSeries = series.idSeries
                 document_type.ps612IdSubseries = subseries.idSubseries
             else:
-                db.add(DocumentType(type_code=type_code, name=type_name, ps610IdSeries=series.idSeries, ps612IdSubseries=subseries.idSubseries, required_metadata={"items": []}, optional_metadata={"items": []}, validation_schema={"required": [], "optional": []}, status="active"))
+                db.add(DocumentType(type_code=type_code, name=type_name, ps610IdSeries=series.idSeries, ps612IdSubseries=subseries.idSubseries, required_metadata={"items": []}, optional_metadata={"items": []}, validation_schema={"required": [], "optional": []}, required_in_expedient=True, status="active"))
                 created["document_types"] += 1
     return created
 
@@ -316,10 +475,130 @@ def _xlsx_from_csv_lines(lines: list[str]) -> bytes:
     return output.getvalue()
 
 
+def _disposition_for_subseries(db: Session, subseries_id: int | None) -> TrdDisposition | None:
+    if not subseries_id:
+        return None
+    return db.query(TrdDisposition).filter(TrdDisposition.ps612IdSubseries == subseries_id).order_by(TrdDisposition.idDisposition.desc()).first()
+
+
+def _add_years(value: datetime, years: int) -> datetime:
+    try:
+        return value.replace(year=value.year + years)
+    except ValueError:
+        return value.replace(month=2, day=28, year=value.year + years)
+
+
+def _lifecycle_from_expedient(db: Session, expedient: Expedient) -> dict:
+    disposition = _disposition_for_subseries(db, expedient.ps612IdSubseries)
+    if not disposition:
+        return {
+            "status": "incomplete_trd",
+            "current_stage": "TRD incompleta",
+            "message": "La subserie no tiene retencion/disposicion configurada.",
+            "timeline": [],
+        }
+    closure = (expedient.metadata_json or {}).get("closure") or {}
+    closed_at_value = closure.get("closed_at")
+    closed_at = None
+    if closed_at_value:
+        closed_at = datetime.fromisoformat(closed_at_value.replace("Z", "+00:00"))
+    base_date = closed_at or expedient.created_at or datetime.now(UTC)
+    management_until = _add_years(base_date, disposition.archive_management)
+    central_until = _add_years(management_until, disposition.archive_central)
+    now = datetime.now(UTC)
+    if not closed_at:
+        current_stage = "Archivo Gestion"
+    elif now <= management_until:
+        current_stage = "Archivo Gestion"
+    elif now <= central_until:
+        current_stage = "Archivo Central"
+    else:
+        current_stage = "Disposicion Final" if disposition.final_action != "CT" else "Archivo Historico"
+    return {
+        "status": "calculated",
+        "current_stage": current_stage,
+        "closed_at": closed_at,
+        "management_until": management_until,
+        "central_until": central_until,
+        "final_action": disposition.final_action,
+        "procedure": disposition.procedure,
+        "timeline": [
+            {"stage": "Archivo Gestion", "from": base_date, "until": management_until, "years": disposition.archive_management},
+            {"stage": "Archivo Central", "from": management_until, "until": central_until, "years": disposition.archive_central},
+            {"stage": "Disposicion Final", "from": central_until, "until": None, "action": disposition.final_action, "procedure": disposition.procedure},
+        ],
+    }
+
+
+@router.get("/editor")
+def trd_editor(db: Session = Depends(get_db), _: User = Depends(require_permission("document.read"))) -> dict:
+    rows = []
+    dependencies = {item.idDependency: item for item in db.query(TrdDependency).all()}
+    series_rows = db.query(TrdSeries).order_by(TrdSeries.code.asc()).all()
+    for series in series_rows:
+        subseries_rows = db.query(TrdSubseries).filter(TrdSubseries.ps610IdSeries == series.idSeries).order_by(TrdSubseries.name.asc()).all()
+        for subseries in subseries_rows:
+            disposition = _disposition_for_subseries(db, subseries.idSubseries)
+            types = db.query(DocumentType).filter(DocumentType.ps612IdSubseries == subseries.idSubseries).order_by(DocumentType.name.asc()).all()
+            rows.append({
+                "dependency": _dependency_out(dependencies[series.ps608IdDependency]) if series.ps608IdDependency in dependencies else None,
+                "series": _series_out(series),
+                "subseries": _subseries_out(subseries),
+                "document_types": [
+                    {"idDocumentType": item.idDocumentType, "type_code": item.type_code, "name": item.name, "status": item.status, "required_in_expedient": item.required_in_expedient, "metadata_schema": item.validation_schema or {}}
+                    for item in types
+                ],
+                "retention": {
+                    "management_years": disposition.archive_management if disposition else None,
+                    "central_years": disposition.archive_central if disposition else None,
+                    "total_years": subseries.retention_years,
+                    "final_action": disposition.final_action if disposition else None,
+                    "procedure": disposition.procedure if disposition else None,
+                    "complete": bool(disposition and disposition.final_action),
+                },
+                "usage": {
+                    "expedients": db.query(Expedient).filter(Expedient.ps612IdSubseries == subseries.idSubseries).count(),
+                    "documents": db.query(Document).filter(Document.ps612IdSubseries == subseries.idSubseries).count(),
+                },
+            })
+    return {"rows": rows, "total": len(rows)}
+
 
 @router.get("/series")
 def list_series(db: Session = Depends(get_db), _: User = Depends(require_permission("document.read"))):
-    return db.query(TrdSeries).order_by(TrdSeries.code.asc()).all()
+    rows = db.query(TrdSeries).order_by(TrdSeries.code.asc()).all()
+    default_dependency = _default_dependency(db)
+    changed = False
+    for row in rows:
+        if not row.ps608IdDependency:
+            row.ps608IdDependency = default_dependency.idDependency
+            changed = True
+    if changed:
+        db.commit()
+    return [_series_out(item) for item in rows]
+
+
+@router.get("/dependencies")
+def list_dependencies(db: Session = Depends(get_db), _: User = Depends(require_permission("document.read"))) -> list[dict]:
+    rows = db.query(TrdDependency).order_by(TrdDependency.name.asc()).all()
+    if not rows:
+        rows = [_default_dependency(db)]
+        db.commit()
+    return [_dependency_out(item) for item in rows]
+
+
+@router.post("/dependencies", status_code=status.HTTP_201_CREATED)
+def create_dependency(payload: DependencyCreate, request: Request, user: User = Depends(require_permission("trd.manage")), db: Session = Depends(get_db)) -> dict:
+    code = payload.code.strip().upper()
+    if db.query(TrdDependency).filter(TrdDependency.code == code).first():
+        raise HTTPException(status_code=409, detail="Dependency code already exists")
+    item = TrdDependency(code=code, name=payload.name.strip(), description=payload.description, status=payload.status)
+    db.add(item)
+    db.flush()
+    write_audit(db, action="trd_dependency_created", module="trd", user_id=user.identification, entity="dependency", entity_id=item.idDependency, new_values=payload.model_dump(), request=request)
+    db.commit()
+    db.refresh(item)
+    return _dependency_out(item)
 
 
 @router.post("/import/simulate")
@@ -342,22 +621,25 @@ async def apply_trd_import(request: Request, file: UploadFile = File(...), user:
 
 @router.get("/export")
 def export_trd(request: Request, format: str = "csv", user: User = Depends(require_permission("document.read")), db: Session = Depends(get_db)) -> Response:
-    lines = ["dependencia,serie_codigo,serie_nombre,subserie_nombre,retencion,disposicion,tipologias"]
+    lines = ["Dependencia,Serie Codigo,Serie,Subserie,Tipo Documental,Retencion Gestion,Retencion Central,Disposicion Final,Procedimiento"]
     series_rows = db.query(TrdSeries).order_by(TrdSeries.code.asc()).all()
     for series in series_rows:
         subseries_rows = db.query(TrdSubseries).filter(TrdSubseries.ps610IdSeries == series.idSeries).order_by(TrdSubseries.name.asc()).all()
         for subseries in subseries_rows:
             disposition = db.query(TrdDisposition).filter(TrdDisposition.ps612IdSubseries == subseries.idSubseries).order_by(TrdDisposition.idDisposition.desc()).first()
             types = db.query(DocumentType).filter(DocumentType.ps612IdSubseries == subseries.idSubseries).order_by(DocumentType.name.asc()).all()
-            lines.append(",".join([
-                _csv_escape(series.description or ""),
-                _csv_escape(series.code),
-                _csv_escape(series.name),
-                _csv_escape(subseries.name),
-                _csv_escape(subseries.retention_years),
-                _csv_escape(disposition.final_action if disposition else ""),
-                _csv_escape("; ".join(item.name for item in types)),
-            ]))
+            for document_type in types or [None]:
+                lines.append(",".join([
+                    _csv_escape(series.dependency.name if series.dependency else ""),
+                    _csv_escape(series.code),
+                    _csv_escape(series.name),
+                    _csv_escape(subseries.name),
+                    _csv_escape(document_type.name if document_type else ""),
+                    _csv_escape(disposition.archive_management if disposition else ""),
+                    _csv_escape(disposition.archive_central if disposition else ""),
+                    _csv_escape(disposition.final_action if disposition else ""),
+                    _csv_escape(disposition.procedure if disposition else ""),
+                ]))
     write_audit(db, action="trd_exported", module="trd", user_id=user.identification, entity="trd", entity_id=format, new_values={"format": format, "rows": len(lines) - 1}, request=request)
     db.commit()
     if format == "xlsx":
@@ -369,15 +651,19 @@ def export_trd(request: Request, format: str = "csv", user: User = Depends(requi
 def series_tree(db: Session = Depends(get_db), _: User = Depends(require_permission("document.read"))) -> list[dict]:
     series_rows = db.query(TrdSeries).order_by(TrdSeries.code.asc()).all()
     subseries_rows = db.query(TrdSubseries).order_by(TrdSubseries.name.asc()).all()
+    dependencies = {item.idDependency: item for item in db.query(TrdDependency).all()}
     by_series: dict[int, list[TrdSubseries]] = {}
     for subseries in subseries_rows:
         by_series.setdefault(subseries.ps610IdSeries, []).append(subseries)
     return [
         {
             "idSeries": series.idSeries,
+            "dependency_id": series.ps608IdDependency,
+            "dependency": _dependency_out(dependencies[series.ps608IdDependency]) if series.ps608IdDependency in dependencies else None,
             "code": series.code,
             "name": series.name,
             "description": series.description,
+            "status": series.status,
             "subseries": [
                 {
                     "idSubseries": subseries.idSubseries,
@@ -426,13 +712,22 @@ def create_series(
 ):
     if db.query(TrdSeries).filter(TrdSeries.code == payload.code).first():
         raise HTTPException(status_code=409, detail="Series code already exists")
-    item = TrdSeries(**payload.model_dump())
+    dependency = db.get(TrdDependency, payload.dependency_id) if payload.dependency_id else _default_dependency(db)
+    if not dependency:
+        raise HTTPException(status_code=422, detail="La dependencia TRD no existe.")
+    item = TrdSeries(
+        code=payload.code.strip(),
+        name=payload.name.strip(),
+        description=payload.description,
+        ps608IdDependency=dependency.idDependency,
+        status=payload.status,
+    )
     db.add(item)
     db.flush()
     write_audit(db, action="trd_series_created", module="trd", user_id=user.identification, entity="series", entity_id=item.idSeries, new_values=payload.model_dump(), request=request)
     db.commit()
     db.refresh(item)
-    return item
+    return _series_out(item)
 
 
 @router.get("/subseries")
@@ -461,6 +756,7 @@ def subseries_workspace(subseries_id: int, db: Session = Depends(get_db), _: Use
                 "sector": item.sector,
                 "required_metadata": (item.required_metadata or {}).get("items") or [],
                 "optional_metadata": (item.optional_metadata or {}).get("items") or [],
+                "required_in_expedient": item.required_in_expedient,
             }
             for item in document_types
         ],
@@ -494,6 +790,23 @@ def retention_timeline(subseries_id: int, db: Session = Depends(get_db), _: User
     }
 
 
+@router.get("/expedients/{expedient_id}/lifecycle")
+def expedient_lifecycle(expedient_id: int, db: Session = Depends(get_db), _: User = Depends(require_permission("document.read"))) -> dict:
+    expedient = db.get(Expedient, expedient_id)
+    if not expedient:
+        raise HTTPException(status_code=404, detail="Expedient not found")
+    series = db.get(TrdSeries, expedient.ps610IdSeries) if expedient.ps610IdSeries else None
+    subseries = db.get(TrdSubseries, expedient.ps612IdSubseries) if expedient.ps612IdSubseries else None
+    lifecycle = _lifecycle_from_expedient(db, expedient)
+    return {
+        "expedient": _expedient_out(expedient),
+        "dependency": _dependency_out(series.dependency) if series and series.dependency else None,
+        "series": _series_out(series) if series else None,
+        "subseries": _subseries_out(subseries) if subseries else None,
+        "lifecycle": lifecycle,
+    }
+
+
 @router.post("/subseries", status_code=status.HTTP_201_CREATED)
 def create_subseries(
     payload: SubseriesCreate,
@@ -523,8 +836,28 @@ def update_retention(
     item = db.get(TrdSubseries, subseries_id)
     if not item:
         raise HTTPException(status_code=404, detail="Subseries not found")
-    old_values = {"retention_years": item.retention_years}
-    item.retention_years = payload.retention_years
+    disposition = db.query(TrdDisposition).filter(TrdDisposition.ps612IdSubseries == subseries_id).order_by(TrdDisposition.idDisposition.desc()).first()
+    old_values = {
+        "retention_years": item.retention_years,
+        "archive_management": disposition.archive_management if disposition else None,
+        "archive_central": disposition.archive_central if disposition else None,
+        "final_action": disposition.final_action if disposition else None,
+    }
+    if payload.retention_years is not None:
+        item.retention_years = payload.retention_years
+    if payload.archive_management is not None or payload.archive_central is not None or payload.final_action is not None or payload.procedure is not None:
+        management = payload.archive_management if payload.archive_management is not None else (disposition.archive_management if disposition else 0)
+        central = payload.archive_central if payload.archive_central is not None else (disposition.archive_central if disposition else item.retention_years)
+        final_action = _normalize_final_action(payload.final_action or (disposition.final_action if disposition else None))
+        item.retention_years = management + central
+        if disposition:
+            disposition.archive_management = management
+            disposition.archive_central = central
+            disposition.final_action = final_action
+            if payload.procedure is not None:
+                disposition.procedure = payload.procedure
+        else:
+            db.add(TrdDisposition(ps612IdSubseries=subseries_id, archive_management=management, archive_central=central, final_action=final_action, procedure=payload.procedure))
     write_audit(db, action="trd_retention_updated", module="trd", user_id=user.identification, entity="subseries", entity_id=item.idSubseries, old_values=old_values, new_values=payload.model_dump(), request=request)
     db.commit()
     db.refresh(item)
@@ -549,8 +882,12 @@ def create_disposition(
         ps612IdSubseries=payload.subseries_id,
         archive_management=payload.archive_management,
         archive_central=payload.archive_central,
-        final_action=payload.final_action,
+        final_action=_normalize_final_action(payload.final_action),
+        procedure=payload.procedure,
     )
+    subseries = db.get(TrdSubseries, payload.subseries_id)
+    if subseries:
+        subseries.retention_years = payload.archive_management + payload.archive_central
     db.add(item)
     db.flush()
     write_audit(db, action="trd_disposition_created", module="trd", user_id=user.identification, entity="disposition", entity_id=item.idDisposition, new_values=payload.model_dump(), request=request)

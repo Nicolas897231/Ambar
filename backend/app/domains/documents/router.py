@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_permission, user_permissions
-from app.db.models import Archive, Custodianship, Document, DocumentFile, DocumentHistory, DocumentMetadata, DocumentType, Expedient, Folder, Foliation, KardexMovement, PhysicalBox, Shelf, TrdSeries, TrdSubseries, User
+from app.db.models import Archive, Custodianship, Document, DocumentFile, DocumentHistory, DocumentMetadata, DocumentType, Expedient, Folder, Foliation, KardexMovement, Location, PhysicalBox, Shelf, TrdSeries, TrdSubseries, User
 from app.db.session import get_db
 from app.domains.archives.router import _require_archive_access, allowed_archive_ids
 from app.services.audit import write_audit
@@ -136,6 +136,7 @@ class DocumentTypeCreate(BaseModel):
     required_metadata: list[str] = Field(default_factory=list)
     optional_metadata: list[str] = Field(default_factory=list)
     validation_schema: dict = Field(default_factory=dict)
+    required_in_expedient: bool = True
 
 
 class DocumentMetadataUpdate(BaseModel):
@@ -180,6 +181,7 @@ def _ensure_default_document_types(db: Session) -> None:
                     required_metadata={"items": definition.get("required", [])},
                     optional_metadata={"items": definition.get("optional", [])},
                     validation_schema={"required": definition.get("required", []), "optional": definition.get("optional", [])},
+                    required_in_expedient=True,
                     status="active",
                 )
             )
@@ -223,6 +225,14 @@ def _metadata_schema(document_type: DocumentType) -> list[dict]:
 def _validate_document_type_context(document_type: DocumentType, subseries_id: int | None) -> None:
     if document_type.ps612IdSubseries and subseries_id and document_type.ps612IdSubseries != subseries_id:
         raise HTTPException(status_code=422, detail="La tipologia documental no pertenece a la subserie seleccionada.")
+
+
+def _bind_document_type_to_trd(document_type: DocumentType, subseries: TrdSubseries) -> None:
+    if document_type.ps612IdSubseries and document_type.ps612IdSubseries != subseries.idSubseries:
+        raise HTTPException(status_code=422, detail="La tipologia documental no pertenece a la subserie seleccionada.")
+    if not document_type.ps612IdSubseries:
+        document_type.ps610IdSeries = subseries.ps610IdSeries
+        document_type.ps612IdSubseries = subseries.idSubseries
 
 
 def _validate_type_trd_scope(db: Session, series_id: int | None, subseries_id: int | None) -> None:
@@ -291,6 +301,8 @@ def _resolve_archival_context(db: Session, user: User, payload: DocumentCreate |
         raise HTTPException(status_code=422, detail="Folder, expedient and archive do not match")
     if not (payload.subseries_id or expedient.ps612IdSubseries):
         raise HTTPException(status_code=422, detail="Document requires TRD subseries through payload or expedient")
+    if expedient.ps612IdSubseries and payload.subseries_id and expedient.ps612IdSubseries != payload.subseries_id:
+        raise HTTPException(status_code=422, detail="La subserie del documento debe coincidir con la subserie del expediente.")
     return archive_id, expedient, folder
 
 
@@ -307,10 +319,17 @@ def _document_location_path(db: Session, document: Document) -> str | None:
     folder = db.get(Folder, document.ps952IdFolder) if document.ps952IdFolder else None
     box = db.get(PhysicalBox, folder.ps936IdBox) if folder and folder.ps936IdBox else None
     shelf = db.get(Shelf, box.ps934IdShelf) if box and box.ps934IdShelf else None
+    location = db.get(Location, archive.ps700IdLocation) if archive and archive.ps700IdLocation else None
+
+    def label_part(label: str, value: str | None) -> str | None:
+        if not value:
+            return None
+        return value if value.lower().startswith(label.lower()) else f"{label} {value}"
+
     shelf_parts = []
     if shelf:
-        shelf_parts.extend([shelf.floor, shelf.shelf_code, shelf.module, shelf.bay])
-    return " / ".join(part for part in [archive.archive_name if archive else None, *shelf_parts, box.box_code if box else None, folder.folder_code if folder else None, document.document_name] if part)
+        shelf_parts.extend([label_part("Piso", shelf.floor), label_part("Pasillo", shelf.aisle), label_part("Estanteria", shelf.shelf_code), label_part("Cuerpo", shelf.module), label_part("Nivel", shelf.bay)])
+    return " / ".join(part for part in [location.location_name if location else None, archive.archive_name if archive else None, *shelf_parts, box.box_code if box else None, folder.folder_code if folder else None, document.document_name] if part)
 
 
 def _record_document_custody(db: Session, document: Document, custodian: str | None, related_movement_id: int | None = None) -> None:
@@ -372,6 +391,7 @@ def list_document_types(
             "optional_metadata": _optional_metadata_keys(item),
             "metadata_schema": _metadata_schema(item),
             "validation_schema": item.validation_schema or {},
+            "required_in_expedient": item.required_in_expedient,
             "status": item.status,
         }
         for item in query.order_by(DocumentType.name.asc()).all()
@@ -448,13 +468,14 @@ def create_document_type(payload: DocumentTypeCreate, request: Request, user: Us
         required_metadata={"items": payload.required_metadata},
         optional_metadata={"items": payload.optional_metadata},
         validation_schema=payload.validation_schema or {"required": payload.required_metadata, "optional": payload.optional_metadata},
+        required_in_expedient=payload.required_in_expedient,
         status="active",
     )
     db.add(item)
     db.flush()
     write_audit(db, action="document_type_created", module="documents", user_id=user.identification, entity="document_type", entity_id=item.idDocumentType, new_values=payload.model_dump(), request=request)
     db.commit()
-    return {"idDocumentType": item.idDocumentType, "type_code": item.type_code, "name": item.name, "status": item.status, "sector": item.sector, "icon": item.icon, "color": item.color, "template_sector": item.template_sector}
+    return {"idDocumentType": item.idDocumentType, "type_code": item.type_code, "name": item.name, "status": item.status, "sector": item.sector, "icon": item.icon, "color": item.color, "template_sector": item.template_sector, "required_in_expedient": item.required_in_expedient}
 
 
 @router.get("", response_model=list[DocumentOut])
@@ -496,6 +517,10 @@ def create_document(
     archive_id, expedient, folder = _resolve_archival_context(db, user, payload)
     effective_subseries_id = payload.subseries_id or expedient.ps612IdSubseries
     _validate_document_type_context(document_type, effective_subseries_id)
+    effective_subseries = db.get(TrdSubseries, effective_subseries_id)
+    if not effective_subseries:
+        raise HTTPException(status_code=422, detail="TRD subseries not found")
+    _bind_document_type_to_trd(document_type, effective_subseries)
     folio_total = _folio_total(payload.folio_start, payload.folio_end)
     document = Document(
         document_name=payload.document_name,
@@ -512,7 +537,7 @@ def create_document(
         folio_start=payload.folio_start,
         folio_end=payload.folio_end,
         folio_total=folio_total,
-        physical_location=payload.physical_location or folder.physical_location,
+        physical_location=folder.physical_location,
     )
     db.add(document)
     db.flush()
@@ -555,11 +580,14 @@ def update_document(document_id: int, payload: DocumentUpdate, request: Request,
     old_values = _document_out(document).model_dump()
     if payload.status is not None and payload.status not in DOCUMENT_STATUSES:
         raise HTTPException(status_code=422, detail="Invalid document status")
+    if payload.physical_location is not None:
+        raise HTTPException(status_code=422, detail="La ubicacion fisica del documento se hereda desde carpeta/caja. Mueve la carpeta o la caja.")
     if payload.archive_id or payload.expedient_id or payload.folder_id:
         archive_id, expedient, folder = _resolve_archival_context(db, user, payload)
         document.ps930IdArchive = archive_id
         document.ps950IdExpedient = expedient.idExpedient
         document.ps952IdFolder = folder.idFolder
+        document.physical_location = folder.physical_location
     if payload.document_name is not None:
         document.document_name = payload.document_name
     document_type = None
@@ -572,16 +600,21 @@ def update_document(document_id: int, payload: DocumentUpdate, request: Request,
     if payload.status is not None:
         document.status = payload.status
     if payload.subseries_id is not None:
-        if not db.get(TrdSubseries, payload.subseries_id):
+        subseries = db.get(TrdSubseries, payload.subseries_id)
+        if not subseries:
             raise HTTPException(status_code=422, detail="TRD subseries not found")
+        document_type = document_type or _document_type(db, document.document_type)
+        _bind_document_type_to_trd(document_type, subseries)
         document.ps612IdSubseries = payload.subseries_id
+    elif document_type is not None and document.ps612IdSubseries:
+        subseries = db.get(TrdSubseries, document.ps612IdSubseries)
+        if subseries:
+            _bind_document_type_to_trd(document_type, subseries)
     if payload.folio_start is not None or payload.folio_end is not None:
         total = _folio_total(payload.folio_start, payload.folio_end)
         document.folio_start = payload.folio_start
         document.folio_end = payload.folio_end
         document.folio_total = total
-    if payload.physical_location is not None:
-        document.physical_location = payload.physical_location
     document.version += 1
     db.add(DocumentHistory(ps520IdDocument=document.idDocument, action="updated", ps405Identification=user.identification, details=payload.model_dump(exclude_unset=True)))
     write_audit(db, action="document_updated", module="documents", user_id=user.identification, archive_id=document.ps930IdArchive, entity="document", entity_id=document.idDocument, entity_label=document.document_name, old_values=old_values, new_values=payload.model_dump(exclude_unset=True), request=request)

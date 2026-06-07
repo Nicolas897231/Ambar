@@ -6,7 +6,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { Breadcrumbs, DataTable, DetailDrawer, EmptyState, FilterBar, LoadingSkeleton, MetricCard, PageHeader, StatusBadge, TimelineEvent } from "@/components/ui/enterprise";
 
-type ArchiveItem = { idArchive: number; archive_code: string; archive_name: string; archive_type: string; status: string; physical_location?: string; box_count: number; expedient_count: number; document_count: number; capacity_units?: number; custodian_identification?: string; responsible_identification?: string };
+type ArchiveItem = { idArchive: number; archive_code: string; archive_name: string; archive_type: string; status: string; location_id?: number; physical_location?: string; box_count: number; expedient_count: number; document_count: number; capacity_units?: number; custodian_identification?: string; responsible_identification?: string };
+type LocationItem = { idLocation: number; location_name: string; address?: string };
 
 function archiveTone(status: string) {
   if (status === "active") return "success";
@@ -19,7 +20,10 @@ export default function ArchivesPage() {
   const [archiveCode, setArchiveCode] = useState("");
   const [archiveName, setArchiveName] = useState("");
   const [archiveType, setArchiveType] = useState("gestion");
-  const [physicalLocation, setPhysicalLocation] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const [responsibleIdentification, setResponsibleIdentification] = useState("");
+  const [custodianIdentification, setCustodianIdentification] = useState("");
+  const [capacityUnits, setCapacityUnits] = useState("100");
   const [selectedArchive, setSelectedArchive] = useState("");
   const [identification, setIdentification] = useState("");
   const [accessLevel, setAccessLevel] = useState("read");
@@ -28,9 +32,10 @@ export default function ArchivesPage() {
   const [message, setMessage] = useState("");
 
   const archives = useQuery({ queryKey: ["archives"], queryFn: async () => (await api.get<ArchiveItem[]>("/archives")).data });
+  const locations = useQuery({ queryKey: ["transfer-locations"], queryFn: async () => (await api.get<LocationItem[]>("/transfers/locations")).data });
   const create = useMutation({
-    mutationFn: async () => api.post("/archives", { archive_code: archiveCode, archive_name: archiveName, archive_type: archiveType, physical_location: physicalLocation || null, capacity_units: 0 }),
-    onSuccess: () => { setArchiveCode(""); setArchiveName(""); setPhysicalLocation(""); setMessage("Archivo creado correctamente."); client.invalidateQueries({ queryKey: ["archives"] }); },
+    mutationFn: async () => api.post("/archives", { archive_code: archiveCode, archive_name: archiveName, archive_type: archiveType, location_id: locationId ? Number(locationId) : 1, responsible_identification: responsibleIdentification || null, custodian_identification: custodianIdentification || null, capacity_units: Number(capacityUnits) || 0 }),
+    onSuccess: () => { setArchiveCode(""); setArchiveName(""); setLocationId(""); setResponsibleIdentification(""); setCustodianIdentification(""); setCapacityUnits("100"); setMessage("Archivo creado correctamente."); client.invalidateQueries({ queryKey: ["archives"] }); },
     onError: () => setMessage("No fue posible crear el archivo. Revisa codigo unico y permisos.")
   });
   const grant = useMutation({
@@ -41,8 +46,8 @@ export default function ArchivesPage() {
 
   const filtered = useMemo(() => {
     const term = filter.toLowerCase();
-    return (archives.data ?? []).filter((item) => `${item.archive_name} ${item.archive_code} ${item.archive_type} ${item.physical_location ?? ""}`.toLowerCase().includes(term));
-  }, [archives.data, filter]);
+    return (archives.data ?? []).filter((item) => `${item.archive_name} ${item.archive_code} ${item.archive_type} ${item.physical_location ?? ""} ${locations.data?.find((loc) => loc.idLocation === item.location_id)?.location_name ?? ""}`.toLowerCase().includes(term));
+  }, [archives.data, filter, locations.data]);
   const totals = useMemo(() => ({
     archives: archives.data?.length ?? 0,
     documents: (archives.data ?? []).reduce((acc, item) => acc + item.document_count, 0),
@@ -73,7 +78,10 @@ export default function ArchivesPage() {
             <label>Codigo<input value={archiveCode} onChange={(event) => setArchiveCode(event.target.value)} placeholder="ARCH-CALI-GESTION" required /></label>
             <label>Nombre<input value={archiveName} onChange={(event) => setArchiveName(event.target.value)} placeholder="Archivo Gestion RRHH Cali" required /></label>
             <label>Tipo<select value={archiveType} onChange={(event) => setArchiveType(event.target.value)}><option value="gestion">Gestion</option><option value="central">Central</option><option value="historico">Historico</option><option value="satelite">Satelite</option></select></label>
-            <label>Ubicacion fisica<input value={physicalLocation} onChange={(event) => setPhysicalLocation(event.target.value)} /></label>
+            <label>Sede<select value={locationId} onChange={(event) => setLocationId(event.target.value)}><option value="">Seleccionar sede</option>{locations.data?.map((item) => <option key={item.idLocation} value={item.idLocation}>{item.location_name}</option>)}</select></label>
+            <label>Responsable<input value={responsibleIdentification} onChange={(event) => setResponsibleIdentification(event.target.value.replace(/\D/g, ""))} placeholder="Identificacion responsable" /></label>
+            <label>Custodio principal<input value={custodianIdentification} onChange={(event) => setCustodianIdentification(event.target.value.replace(/\D/g, ""))} placeholder="Identificacion custodio" /></label>
+            <label>Capacidad cajas<input type="number" min={0} value={capacityUnits} onChange={(event) => setCapacityUnits(event.target.value)} /></label>
             <button disabled={create.isPending}><Plus size={17} /> Crear archivo</button>
           </form>
           <hr />
@@ -107,7 +115,7 @@ export default function ArchivesPage() {
           <DataTable>
             <table>
               <thead><tr><th>Archivo</th><th>Tipo</th><th>Ubicacion</th><th>Expedientes</th><th>Docs</th><th>Cajas</th><th>Estado</th></tr></thead>
-              <tbody>{filtered.map((item) => <tr key={item.idArchive}><td><strong>{item.archive_name}</strong><br /><span className="muted">{item.archive_code}</span></td><td>{item.archive_type}</td><td>{item.physical_location ?? "Sin ubicacion"}</td><td>{item.expedient_count}</td><td>{item.document_count}</td><td>{item.box_count}</td><td><StatusBadge value={item.status} tone={archiveTone(item.status)} /></td></tr>)}</tbody>
+              <tbody>{filtered.map((item) => <tr key={item.idArchive}><td><strong>{item.archive_name}</strong><br /><span className="muted">{item.archive_code}</span></td><td>{item.archive_type}</td><td>{locations.data?.find((loc) => loc.idLocation === item.location_id)?.location_name ?? item.physical_location ?? "Sin sede"}</td><td>{item.expedient_count}</td><td>{item.document_count}</td><td>{item.box_count}</td><td><StatusBadge value={item.status} tone={archiveTone(item.status)} /></td></tr>)}</tbody>
             </table>
           </DataTable>
         </section>
@@ -116,7 +124,7 @@ export default function ArchivesPage() {
       <DetailDrawer open={Boolean(detail)} title={detail?.archive_name ?? "Archivo"} subtitle={detail?.archive_code} onClose={() => setDetail(null)}>
         {detail ? <>
           <div className="grid metrics drawer-metrics"><MetricCard label="Expedientes" value={detail.expedient_count} /><MetricCard label="Documentos" value={detail.document_count} /><MetricCard label="Cajas" value={detail.box_count} /></div>
-          <section className="card compact"><h3>Custodia</h3><p className="muted">Custodio: {detail.custodian_identification ?? "Sin asignar"}</p><p className="muted">Responsable: {detail.responsible_identification ?? "Sin asignar"}</p><p className="muted">Ubicacion: {detail.physical_location ?? "Sin registrar"}</p></section>
+          <section className="card compact"><h3>Custodia</h3><p className="muted">Custodio: {detail.custodian_identification ?? "Sin asignar"}</p><p className="muted">Responsable: {detail.responsible_identification ?? "Sin asignar"}</p><p className="muted">Sede: {locations.data?.find((loc) => loc.idLocation === detail.location_id)?.location_name ?? "Sin sede"}</p></section>
           <section className="timeline"><TimelineEvent state="Activo" tone="success" title="Archivo disponible" description="El backend filtra documentos, expedientes, cajas y kardex por los permisos de este archivo." /><TimelineEvent state="Accesos" tone="info" title="RBAC por archivo" description="Asigna usuarios desde este modulo para limitar operacion por sede o archivo." /></section>
           <div className="module-grid"><a className="module-card" href={`/expedients?archive=${detail.idArchive}`}><FolderKanban size={18} /><strong>Expedientes</strong></a><a className="module-card" href={`/boxes?archive=${detail.idArchive}`}><Package size={18} /><strong>Cajas</strong></a><a className="module-card" href={`/users`}><Users size={18} /><strong>Usuarios</strong></a></div>
         </> : null}

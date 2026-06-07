@@ -25,6 +25,7 @@ from app.db.models import (
     Foliation,
     InventoryFuid,
     KardexMovement,
+    Location,
     MovementTrace,
     PhysicalBox,
     Shelf,
@@ -83,6 +84,7 @@ class ExpedientCreate(BaseModel):
     expedient_name: str = Field(min_length=3, max_length=220)
     expedient_type: str = Field(default="administrativo", max_length=80)
     archive_id: int
+    dependency_id: int | None = None
     series_id: int
     subseries_id: int
     responsible_identification: str | None = None
@@ -104,9 +106,12 @@ class ShelfCreate(BaseModel):
     archive_id: int
     shelf_code: str = Field(min_length=1, max_length=60)
     shelf_name: str = Field(min_length=2, max_length=160)
+    aisle: str | None = None
     floor: str | None = None
     module: str | None = None
     bay: str | None = None
+    body: str | None = None
+    level: str | None = None
     capacity_boxes: int = 0
     physical_location: str | None = None
 
@@ -121,9 +126,12 @@ class BoxCreate(BaseModel):
 
 class ShelfUpdate(BaseModel):
     shelf_name: str | None = Field(default=None, min_length=2, max_length=160)
+    aisle: str | None = None
     floor: str | None = None
     module: str | None = None
     bay: str | None = None
+    body: str | None = None
+    level: str | None = None
     capacity_boxes: int | None = Field(default=None, ge=0)
     status: str | None = Field(default=None, pattern="^(active|full|available|reserved|inactive|moved|archived|damaged)$")
     physical_location: str | None = None
@@ -410,25 +418,44 @@ def grant_archive_access(archive_id: int, payload: ArchiveAccessCreate, request:
 def custody_dashboard(user: User = Depends(require_permission("document.read")), db: Session = Depends(get_db)) -> dict:
     ids = allowed_archive_ids(db, user)
     if not ids:
-        return {"archives": 0, "documents": 0, "expedients": 0, "pending_movements": 0, "overdue_loans": 0, "by_archive": []}
+        return {"archives": 0, "documents": 0, "expedients": 0, "pending_movements": 0, "pending_transfers": 0, "pending_receptions": 0, "overdue_loans": 0, "recent_rejections": 0, "boxes_occupied": 0, "active_custodians": 0, "by_archive": [], "multisite": []}
     now = datetime.now(UTC)
     by_archive = []
     for archive in db.query(Archive).filter(Archive.idArchive.in_(ids)).order_by(Archive.archive_name.asc()).all():
+        boxes = db.query(PhysicalBox).filter(PhysicalBox.ps930IdArchive == archive.idArchive).count()
+        capacity = archive.capacity_units or 0
         by_archive.append({
             "idArchive": archive.idArchive,
             "archive_name": archive.archive_name,
+            "archive_code": archive.archive_code,
+            "archive_type": archive.archive_type,
+            "headquarters": archive.physical_location,
+            "custodian": archive.custodian_identification,
             "documents": db.query(Document).filter(Document.ps930IdArchive == archive.idArchive).count(),
             "expedients": db.query(Expedient).filter(Expedient.ps930IdArchive == archive.idArchive).count(),
-            "boxes": db.query(PhysicalBox).filter(PhysicalBox.ps930IdArchive == archive.idArchive).count(),
+            "boxes": boxes,
+            "capacity": capacity,
+            "occupancy_percent": round((boxes / capacity) * 100, 2) if capacity else 0,
+            "pending_receptions": db.query(TransferBatchItem).filter(TransferBatchItem.ps930DestinationArchiveId == archive.idArchive, TransferBatchItem.status.in_(["pending", "pending_review", "with_inconsistency"])).count(),
+            "overdue_loans": db.query(DocumentLoan).filter(DocumentLoan.ps930IdArchive == archive.idArchive, DocumentLoan.status == "overdue").count(),
         })
+    pending_transfer_statuses = ["pending", "approved", "packed", "shipped", "under_review", "partially_received"]
+    pending_reception_statuses = ["pending", "pending_review", "with_inconsistency"]
+    rejection_movements = db.query(KardexMovement).filter(or_(KardexMovement.ps930OriginArchiveId.in_(ids), KardexMovement.ps930DestinationArchiveId.in_(ids)), KardexMovement.status == "rejected").count()
     return {
         "archives": len(ids),
         "documents": db.query(Document).filter(Document.ps930IdArchive.in_(ids)).count(),
         "expedients": db.query(Expedient).filter(Expedient.ps930IdArchive.in_(ids)).count(),
         "current_custodies": db.query(Custodianship).filter(Custodianship.ps930IdArchive.in_(ids), Custodianship.is_current.is_(True)).count(),
-        "pending_movements": db.query(KardexMovement).filter(or_(KardexMovement.ps930OriginArchiveId.in_(ids), KardexMovement.ps930DestinationArchiveId.in_(ids)), KardexMovement.status.in_(["pending", "in_transit"])).count(),
-        "overdue_loans": db.query(DocumentLoan).filter(DocumentLoan.ps930IdArchive.in_(ids), DocumentLoan.status == "active", DocumentLoan.due_at < now).count(),
+        "pending_movements": db.query(KardexMovement).filter(or_(KardexMovement.ps930OriginArchiveId.in_(ids), KardexMovement.ps930DestinationArchiveId.in_(ids)), KardexMovement.status.in_(["pending", "in_transit", "under_review"])).count(),
+        "pending_transfers": db.query(TransferBatch).filter(or_(TransferBatch.ps930OriginArchiveId.in_(ids), TransferBatch.ps930DestinationArchiveId.in_(ids)), TransferBatch.status.in_(pending_transfer_statuses)).count(),
+        "pending_receptions": db.query(TransferBatchItem).filter(or_(TransferBatchItem.ps930OriginArchiveId.in_(ids), TransferBatchItem.ps930DestinationArchiveId.in_(ids)), TransferBatchItem.status.in_(pending_reception_statuses)).count(),
+        "overdue_loans": db.query(DocumentLoan).filter(DocumentLoan.ps930IdArchive.in_(ids), or_(DocumentLoan.status == "overdue", (DocumentLoan.status.in_(["active", "due_today"]) & (DocumentLoan.due_at < now)))).count(),
+        "recent_rejections": rejection_movements,
+        "boxes_occupied": db.query(PhysicalBox).filter(PhysicalBox.ps930IdArchive.in_(ids)).count(),
+        "active_custodians": len({row.custodian_identification for row in db.query(Custodianship.custodian_identification).filter(Custodianship.ps930IdArchive.in_(ids), Custodianship.is_current.is_(True), Custodianship.custodian_identification.is_not(None)).all()}),
         "by_archive": by_archive,
+        "multisite": by_archive,
     }
 
 
@@ -513,11 +540,17 @@ def create_expedient(payload: ExpedientCreate, request: Request, user: User = De
         raise HTTPException(status_code=422, detail="TRD subseries not found")
     if subseries.ps610IdSeries != series.idSeries:
         raise HTTPException(status_code=422, detail="TRD series and subseries do not match")
+    dependency_id = payload.dependency_id or series.ps608IdDependency
+    if not dependency_id:
+        raise HTTPException(status_code=422, detail="La serie TRD debe pertenecer a una dependencia.")
+    if payload.dependency_id and series.ps608IdDependency and payload.dependency_id != series.ps608IdDependency:
+        raise HTTPException(status_code=422, detail="La serie no pertenece a la dependencia seleccionada.")
     item = Expedient(
         expedient_code=payload.expedient_code,
         expedient_name=payload.expedient_name,
         expedient_type=payload.expedient_type,
         ps930IdArchive=archive.idArchive,
+        ps608IdDependency=dependency_id,
         ps610IdSeries=payload.series_id,
         ps612IdSubseries=payload.subseries_id,
         responsible_identification=payload.responsible_identification or user.identification,
@@ -603,7 +636,7 @@ def _missing_documents(expedient: Expedient, documents: list[Document]) -> list[
 
 def _required_document_types_for_expedient(db: Session, expedient: Expedient) -> list[DocumentType]:
     if expedient.ps612IdSubseries:
-        rows = db.query(DocumentType).filter(DocumentType.ps612IdSubseries == expedient.ps612IdSubseries, DocumentType.status == "active").order_by(DocumentType.name.asc()).all()
+        rows = db.query(DocumentType).filter(DocumentType.ps612IdSubseries == expedient.ps612IdSubseries, DocumentType.status == "active", DocumentType.required_in_expedient.is_(True)).order_by(DocumentType.name.asc()).all()
         if rows:
             return rows
     return []
@@ -628,7 +661,7 @@ def _document_type_summary(db: Session, expedient: Expedient, documents: list[Do
     missing_required_types = [item.type_code for item in required_types if item.type_code not in used_counts]
     return {
         "used": [{"type_code": type_code, "count": count, "name": catalog.get(type_code).name if catalog.get(type_code) else type_code, "color": catalog.get(type_code).color if catalog.get(type_code) else None} for type_code, count in sorted(used_counts.items())],
-        "required": [{"type_code": item.type_code, "name": item.name, "icon": item.icon, "color": item.color} for item in required_types],
+        "required": [{"type_code": item.type_code, "name": item.name, "icon": item.icon, "color": item.color, "required_in_expedient": item.required_in_expedient} for item in required_types],
         "missing_required": missing_required_types,
         "duplicates": duplicate_types,
         "metadata_incomplete": metadata_incomplete,
@@ -807,6 +840,22 @@ def _expedient_detail_payload(db: Session, expedient: Expedient) -> dict:
     }
 
 
+def _label_part(label: str, value: str | None) -> str | None:
+    if not value:
+        return None
+    return value if value.lower().startswith(label.lower()) else f"{label} {value}"
+
+
+def _shelf_topographic_path(shelf: Shelf) -> str:
+    parts = [
+        _label_part("Pasillo", shelf.aisle),
+        _label_part("Estanteria", shelf.shelf_code),
+        _label_part("Cuerpo", shelf.module),
+        _label_part("Nivel", shelf.bay),
+    ]
+    return " / ".join(part for part in parts if part)
+
+
 def _shelf_out(db: Session, shelf: Shelf) -> dict:
     boxes_count = db.query(PhysicalBox).filter(PhysicalBox.ps934IdShelf == shelf.idShelf).count()
     occupancy = round((boxes_count / shelf.capacity_boxes) * 100, 2) if shelf.capacity_boxes else 0
@@ -815,14 +864,18 @@ def _shelf_out(db: Session, shelf: Shelf) -> dict:
         "archive_id": shelf.ps930IdArchive,
         "shelf_code": shelf.shelf_code,
         "shelf_name": shelf.shelf_name,
+        "aisle": shelf.aisle,
         "floor": shelf.floor,
         "module": shelf.module,
         "bay": shelf.bay,
+        "body": shelf.module,
+        "level": shelf.bay,
         "capacity_boxes": shelf.capacity_boxes,
         "current_boxes": boxes_count,
         "occupancy_percent": occupancy,
         "status": "full" if shelf.capacity_boxes and boxes_count >= shelf.capacity_boxes else shelf.status,
-        "physical_location": shelf.physical_location,
+        "physical_location": shelf.physical_location or _shelf_topographic_path(shelf),
+        "topographic_path": _shelf_topographic_path(shelf),
         "created_at": shelf.created_at,
         "updated_at": shelf.updated_at,
     }
@@ -890,9 +943,13 @@ def _physical_location_path(db: Session, entity_type: str, entity_id: int) -> st
         paths = [_physical_location_path(db, "folder", item.idFolder) for item in folders if item.ps936IdBox]
         return " | ".join(path for path in paths if path) or f"{archive.archive_name if archive else 'Archivo'} / {expedient.physical_location or 'ubicacion pendiente'}"
     shelf_parts = []
+    location_name = None
+    if archive and archive.ps700IdLocation:
+        location = db.get(Location, archive.ps700IdLocation)
+        location_name = location.location_name if location else None
     if shelf:
-        shelf_parts.extend([shelf.floor, shelf.shelf_code, shelf.module, shelf.bay])
-    parts = [archive.archive_name if archive else None, *shelf_parts, box.box_code if box else None, folder.folder_code if folder else None, document.document_name if document else None]
+        shelf_parts.extend([_label_part("Piso", shelf.floor), _label_part("Pasillo", shelf.aisle), _label_part("Estanteria", shelf.shelf_code), _label_part("Cuerpo", shelf.module), _label_part("Nivel", shelf.bay)])
+    parts = [location_name, archive.archive_name if archive else None, *shelf_parts, box.box_code if box else None, folder.folder_code if folder else None, document.document_name if document else None]
     return " / ".join(part for part in parts if part)
 
 
@@ -984,6 +1041,15 @@ def _location_movement(db: Session, request: Request, user: User, *, movement_ty
     db.flush()
     _trace(db, movement.idMovement, movement_type, user, request, observation)
     return movement
+
+
+def _sync_inherited_locations(db: Session, folder: Folder) -> None:
+    folder.physical_location = _physical_location_path(db, "folder", folder.idFolder)
+    for document in db.query(Document).filter(Document.ps952IdFolder == folder.idFolder).all():
+        document.physical_location = _physical_location_path(db, "document", document.idDocument)
+    expedient = db.get(Expedient, folder.ps950IdExpedient)
+    if expedient:
+        expedient.physical_location = _physical_location_path(db, "expedient", expedient.idExpedient)
 
 
 ACTIVE_LOAN_STATUSES = {"active", "due_today", "overdue"}
@@ -1742,17 +1808,23 @@ def create_folder(payload: FolderCreate, request: Request, user: User = Depends(
     _require_archive_access(db, user, expedient.ps930IdArchive, {"operate", "admin"})
     if payload.box_id and not db.get(PhysicalBox, payload.box_id):
         raise HTTPException(status_code=422, detail="Box not found")
+    if payload.box_id:
+        box = db.get(PhysicalBox, payload.box_id)
+        if box and box.ps930IdArchive != expedient.ps930IdArchive:
+            raise HTTPException(status_code=422, detail="La caja pertenece a otro archivo. Usa transferencia documental antes de cambiar archivo.")
     item = Folder(
         folder_code=payload.folder_code,
         folder_name=payload.folder_name,
         ps950IdExpedient=expedient.idExpedient,
         ps930IdArchive=expedient.ps930IdArchive,
         ps936IdBox=payload.box_id,
-        physical_location=payload.physical_location,
+        physical_location=None,
         metadata_json=payload.metadata,
     )
     db.add(item)
     db.flush()
+    if payload.box_id:
+        _sync_inherited_locations(db, item)
     expedient.document_count = db.query(Document).filter(Document.ps950IdExpedient == expedient.idExpedient).count()
     if payload.box_id:
         box = db.get(PhysicalBox, payload.box_id)
@@ -1791,7 +1863,10 @@ def create_folder(payload: FolderCreate, request: Request, user: User = Depends(
 @router.post("/shelves", status_code=status.HTTP_201_CREATED)
 def create_shelf(payload: ShelfCreate, request: Request, user: User = Depends(require_permission("archive.manage")), db: Session = Depends(get_db)):
     _require_archive_access(db, user, payload.archive_id, {"admin"})
-    item = Shelf(ps930IdArchive=payload.archive_id, shelf_code=payload.shelf_code, shelf_name=payload.shelf_name, floor=payload.floor, module=payload.module, bay=payload.bay, capacity_boxes=payload.capacity_boxes, physical_location=payload.physical_location)
+    module = payload.body or payload.module
+    bay = payload.level or payload.bay
+    item = Shelf(ps930IdArchive=payload.archive_id, shelf_code=payload.shelf_code, shelf_name=payload.shelf_name, aisle=payload.aisle, floor=payload.floor, module=module, bay=bay, capacity_boxes=payload.capacity_boxes)
+    item.physical_location = _shelf_topographic_path(item)
     db.add(item)
     db.flush()
     _location_movement(db, request, user, movement_type="shelf.created", entity_type="box", entity_id=0, archive_id=payload.archive_id, previous=None, current=payload.shelf_code, observation=f"Estanteria creada: {payload.shelf_code}")
@@ -1829,18 +1904,19 @@ def update_shelf(shelf_id: int, payload: ShelfUpdate, request: Request, user: Us
     old_values = _shelf_out(db, item)
     if payload.shelf_name is not None:
         item.shelf_name = payload.shelf_name
+    if payload.aisle is not None:
+        item.aisle = payload.aisle
     if payload.floor is not None:
         item.floor = payload.floor
-    if payload.module is not None:
-        item.module = payload.module
-    if payload.bay is not None:
-        item.bay = payload.bay
+    if payload.body is not None or payload.module is not None:
+        item.module = payload.body or payload.module
+    if payload.level is not None or payload.bay is not None:
+        item.bay = payload.level or payload.bay
     if payload.capacity_boxes is not None:
         item.capacity_boxes = payload.capacity_boxes
     if payload.status is not None:
         item.status = payload.status
-    if payload.physical_location is not None:
-        item.physical_location = payload.physical_location
+    item.physical_location = _shelf_topographic_path(item)
     db.flush()
     _location_movement(db, request, user, movement_type="shelf.updated", entity_type="box", entity_id=0, archive_id=item.ps930IdArchive, previous=old_values.get("physical_location"), current=item.physical_location or item.shelf_code, observation=f"Estanteria actualizada: {item.shelf_code}")
     write_audit(db, action="shelf_updated", module="archives", user_id=user.identification, entity="shelf", entity_id=item.idShelf, old_values=old_values, new_values=payload.model_dump(exclude_unset=True), request=request)
@@ -1959,7 +2035,7 @@ def move_box(box_id: int, payload: BoxMove, request: Request, user: User = Depen
         metadata={"event": "box.moved", "previous_location": previous_path, "current_location": current_path},
     )
     for folder in db.query(Folder).filter(Folder.ps936IdBox == item.idBox).all():
-        folder.physical_location = _physical_location_path(db, "folder", folder.idFolder)
+        _sync_inherited_locations(db, folder)
         _record_custody(
             db,
             entity_type="folder",
@@ -2034,7 +2110,7 @@ def move_folder_location(folder_id: int, payload: FolderLocationPayload, request
     previous_box = folder.ps936IdBox
     previous_path = _physical_location_path(db, "folder", folder.idFolder)
     folder.ps936IdBox = box.idBox
-    folder.physical_location = _physical_location_path(db, "folder", folder.idFolder)
+    _sync_inherited_locations(db, folder)
     if previous_box and previous_box != box.idBox:
         previous = db.get(PhysicalBox, previous_box)
         if previous and previous.current_folders > 0:
@@ -2042,6 +2118,7 @@ def move_folder_location(folder_id: int, payload: FolderLocationPayload, request
     if previous_box != box.idBox:
         box.current_folders += 1
     db.flush()
+    _sync_inherited_locations(db, folder)
     current_path = _physical_location_path(db, "folder", folder.idFolder)
     movement = _location_movement(db, request, user, movement_type="folder.moved" if previous_box else "location.assigned", entity_type="folder", entity_id=folder.idFolder, archive_id=folder.ps930IdArchive, previous=previous_path, current=current_path, observation=payload.observation)
     archive = db.get(Archive, folder.ps930IdArchive)

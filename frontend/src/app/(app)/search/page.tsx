@@ -20,6 +20,7 @@ type SearchItem = {
   document_name?: string;
   document_type?: string;
   version?: number;
+  location_path?: string | null;
 };
 
 type SearchResult = {
@@ -110,14 +111,14 @@ export default function SearchPage() {
                 {items.map((item) => {
                   const title = item.title ?? item.document_name ?? `Resultado ${item.id ?? item.idDocument}`;
                   const url = item.url ?? (item.idDocument ? `/documents?document=${item.idDocument}` : "#");
-                  return <Link className="spotlight-row" key={`${entity}-${item.id ?? item.idDocument}`} href={url}><strong>{title}</strong><span className="muted">{item.subtitle ?? item.document_type ?? "Resultado autorizado"}</span>{item.status ? <span className="status">{item.status}</span> : null}</Link>;
+                  return <Link className="spotlight-row" key={`${entity}-${item.id ?? item.idDocument}`} href={url}><strong>{title}</strong><span className="muted">{item.subtitle ?? item.document_type ?? "Resultado autorizado"}</span>{item.location_path ? <span className="muted">Ubicacion: {item.location_path}</span> : null}{item.status ? <span className="status">{item.status}</span> : null}</Link>;
                 })}
               </section>
             ))}
           </div>
         ) : (
           <table>
-            <thead><tr><th>Resultado</th><th>Entidad</th><th>Estado</th><th>Archivo</th><th>Accion</th></tr></thead>
+            <thead><tr><th>Resultado</th><th>Entidad</th><th>Estado</th><th>Archivo</th><th>Ubicacion</th><th>Accion</th></tr></thead>
             <tbody>
               {search.data?.items?.map((item) => {
                 const title = item.title ?? item.document_name ?? `Resultado ${item.id ?? item.idDocument}`;
@@ -129,6 +130,7 @@ export default function SearchPage() {
                     <td><span className="status">{entity}</span></td>
                     <td>{item.status ? <span className="status">{item.status}</span> : <span className="muted">N/A</span>}</td>
                     <td>{item.archive_id ?? "N/A"}</td>
+                    <td>{item.location_path ? <span className="muted">{item.location_path}</span> : <span className="muted">Sin ruta</span>}</td>
                     <td>{url !== "#" ? <Link className="button-link ghost-link" href={url}>Abrir</Link> : <span className="muted">Sin ruta</span>}</td>
                   </tr>
                 );

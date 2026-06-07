@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import require_permission, user_permissions
 from app.db.models import Archive, Document, DocumentMetadata, DocumentType, Employee, Expedient, Folder, HRCandidate, HRDepartment, HRPosition, InventoryFuid, KardexMovement, PhysicalBox, TrdSeries, TrdSubseries, User
 from app.db.session import get_db
-from app.domains.archives.router import allowed_archive_ids
+from app.domains.archives.router import _physical_location_path, allowed_archive_ids
 from app.services.audit import write_audit
 from app.services.search import index_document, search_documents
 
@@ -26,7 +26,7 @@ class SearchRequest(BaseModel):
     size: int = Field(default=20, ge=1, le=100)
 
 
-def _doc_payload(document: Document) -> dict:
+def _doc_payload(document: Document, db: Session | None = None) -> dict:
     return {
         "entity_type": "document",
         "id": document.idDocument,
@@ -41,13 +41,14 @@ def _doc_payload(document: Document) -> dict:
         "company_id": document.company_id,
         "location_id": document.location_id,
         "metadata": document.metadata_json or {},
+        "location_path": _physical_location_path(db, "document", document.idDocument) if db else document.physical_location,
         "version": document.version,
         "owner": document.ps405Identification,
         "created_at": document.created_at,
     }
 
 
-def _result(entity_type: str, entity_id: int | str, title: str, subtitle: str | None, status: str | None, archive_id: int | None, url: str) -> dict:
+def _result(entity_type: str, entity_id: int | str, title: str, subtitle: str | None, status: str | None, archive_id: int | None, url: str, location_path: str | None = None) -> dict:
     return {
         "entity_type": entity_type,
         "id": entity_id,
@@ -56,6 +57,7 @@ def _result(entity_type: str, entity_id: int | str, title: str, subtitle: str | 
         "status": status,
         "archive_id": archive_id,
         "url": url,
+        "location_path": location_path,
     }
 
 
@@ -123,7 +125,7 @@ def document_search(
     if payload.location_id:
         query = query.filter(Document.location_id == payload.location_id)
     if entity_filter in {None, "", "document"}:
-        results.extend(_doc_payload(item) for item in query.order_by(Document.created_at.desc()).limit(200).all())
+        results.extend(_doc_payload(item, db) for item in query.order_by(Document.created_at.desc()).limit(200).all())
 
     if entity_filter in {None, "", "document_type", "tipologia"}:
         type_query = db.query(DocumentType).filter(DocumentType.status == "active")
@@ -172,7 +174,7 @@ def document_search(
         if payload.status:
             expedient_query = expedient_query.filter(Expedient.status == payload.status)
         results.extend(
-            _result("expedient", item.idExpedient, item.expedient_name, item.expedient_code, item.status, item.ps930IdArchive, f"/expedients?expedient={item.idExpedient}")
+            _result("expedient", item.idExpedient, item.expedient_name, item.expedient_code, item.status, item.ps930IdArchive, f"/expedients?expedient={item.idExpedient}", _physical_location_path(db, "expedient", item.idExpedient))
             for item in expedient_query.order_by(Expedient.created_at.desc()).limit(100).all()
         )
 
@@ -183,7 +185,7 @@ def document_search(
         if payload.status:
             folder_query = folder_query.filter(Folder.status == payload.status)
         results.extend(
-            _result("folder", item.idFolder, item.folder_name, item.folder_code, item.status, item.ps930IdArchive, f"/folders?folder={item.idFolder}")
+            _result("folder", item.idFolder, item.folder_name, item.folder_code, item.status, item.ps930IdArchive, f"/folders?folder={item.idFolder}", _physical_location_path(db, "folder", item.idFolder))
             for item in folder_query.order_by(Folder.created_at.desc()).limit(100).all()
         )
 
@@ -194,7 +196,7 @@ def document_search(
         if payload.status:
             box_query = box_query.filter(PhysicalBox.status == payload.status)
         results.extend(
-            _result("box", item.idBox, item.box_name or item.box_code, item.box_code, item.status, item.ps930IdArchive, f"/boxes?box={item.idBox}")
+            _result("box", item.idBox, item.box_name or item.box_code, item.box_code, item.status, item.ps930IdArchive, f"/boxes?box={item.idBox}", _physical_location_path(db, "box", item.idBox))
             for item in box_query.order_by(PhysicalBox.created_at.desc()).limit(100).all()
         )
 
@@ -292,7 +294,7 @@ def reindex_documents(
     documents = db.query(Document).filter(Document.company_id == user.company_id).limit(1000).all()
     indexed = 0
     for document in documents:
-        if index_document(_doc_payload(document)):
+        if index_document(_doc_payload(document, db)):
             indexed += 1
     write_audit(
         db,

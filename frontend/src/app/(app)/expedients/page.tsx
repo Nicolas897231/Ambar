@@ -50,7 +50,6 @@ export default function ExpedientsPage() {
   const [type, setType] = useState("administrativo");
   const [seriesId, setSeriesId] = useState("");
   const [subseriesId, setSubseriesId] = useState("");
-  const [physicalLocation, setPhysicalLocation] = useState("");
   const [filter, setFilter] = useState("");
   const [detail, setDetail] = useState<ExpedientItem | null>(null);
   const [activeTab, setActiveTab] = useState("Resumen");
@@ -74,7 +73,7 @@ export default function ExpedientsPage() {
   const fuid = useQuery({ queryKey: ["fuid"], queryFn: async () => (await api.get<Array<{ idFuid: number; fuid_code: string; ps950IdExpedient?: number; folio_total: number; status?: string }>>("/archives/fuid")).data });
 
   const create = useMutation({
-    mutationFn: async () => api.post("/archives/expedients", { archive_id: Number(archiveId), expedient_code: code, expedient_name: name, expedient_type: type, series_id: Number(seriesId), subseries_id: Number(subseriesId), physical_location: physicalLocation || null }),
+    mutationFn: async () => api.post("/archives/expedients", { archive_id: Number(archiveId), expedient_code: code, expedient_name: name, expedient_type: type, series_id: Number(seriesId), subseries_id: Number(subseriesId) }),
     onSuccess: () => { setCode(""); setName(""); setMessage("Expediente vivo creado."); client.invalidateQueries({ queryKey: ["expedients"] }); },
     onError: () => setMessage("No fue posible crear el expediente. Revisa archivo autorizado y codigo unico.")
   });
@@ -138,7 +137,7 @@ export default function ExpedientsPage() {
           <label>Tipo<select value={type} onChange={(event) => setType(event.target.value)}><option value="laboral">Laboral</option><option value="juridico">Juridico</option><option value="contable">Contable</option><option value="administrativo">Administrativo</option><option value="contractual">Contractual</option><option value="hibrido">Hibrido</option><option value="electronico">Electronico</option><option value="fisico">Fisico</option></select></label>
           <label>Serie TRD<select value={seriesId} onChange={(event) => { setSeriesId(event.target.value); setSubseriesId(""); }} required><option value="">Seleccionar</option>{series.data?.map((item) => <option key={item.idSeries} value={item.idSeries}>{item.code} - {item.name}</option>)}</select></label>
           <label>Subserie TRD<select value={subseriesId} onChange={(event) => setSubseriesId(event.target.value)} required><option value="">Seleccionar</option>{filteredSubseries.map((item) => <option key={item.idSubseries} value={item.idSubseries}>{item.name}</option>)}</select></label>
-          <label>Ubicacion fisica<input value={physicalLocation} onChange={(event) => setPhysicalLocation(event.target.value)} /></label>
+          <p className="muted">La ubicacion fisica del expediente se calcula desde las carpetas asignadas a cajas. No se escribe manualmente.</p>
           <button disabled={create.isPending}><Plus size={17} /> Crear expediente</button>
         </form></section>
 

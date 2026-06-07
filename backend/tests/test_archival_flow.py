@@ -95,6 +95,35 @@ def test_foliation_can_correct_existing_document_range_without_self_overlap():
         assert "cruza con otro documento" in overlap.json()["detail"]
 
 
+def test_public_job_portal_uses_real_vacancies_and_creates_candidate():
+    suffix = uuid4().hex[:8]
+    with TestClient(app) as client:
+        headers = _headers(client)
+        vacancy = client.post(
+            "/api/v1/hr/vacancies",
+            json={
+                "vacancy_code": f"VAC-{suffix}",
+                "title": "Analista documental",
+                "department": "Gestion Humana",
+                "description": "Operacion documental SGDEA",
+                "requirements": ["Hoja de vida", "Experiencia documental"],
+                "status": "open",
+            },
+            headers=headers,
+        )
+        assert vacancy.status_code == 201, vacancy.text
+        public_list = client.get("/api/v1/hr/public/vacancies")
+        assert public_list.status_code == 200, public_list.text
+        assert any(item["vacancy_code"] == f"VAC-{suffix}" for item in public_list.json())
+
+        application = client.post(
+            f"/api/v1/hr/public/vacancies/{vacancy.json()['idVacancy']}/apply",
+            data={"full_name": "Persona Aspirante", "email": f"aspirante-{suffix}@ambar.co", "phone": "3001234567"},
+        )
+        assert application.status_code == 201, application.text
+        assert application.json()["status"] == "received"
+
+
 def test_document_type_dynamic_metadata_and_search_by_business_metadata():
     suffix = uuid4().hex[:8]
     with TestClient(app) as client:
@@ -166,6 +195,149 @@ def test_trd_csv_import_simulate_apply_and_export():
         exported = client.get("/api/v1/trd/export?format=csv", headers=headers)
         assert exported.status_code == 200, exported.text
         assert f"TR-{suffix}" in exported.text
+
+
+def test_trd_dependencies_editor_and_lifecycle_from_retention():
+    suffix = uuid4().hex[:8]
+    with TestClient(app) as client:
+        headers = _headers(client)
+        csv_content = (
+            "Dependencia,Serie Codigo,Serie,Subserie,Tipo Documental,Retencion Gestion,Retencion Central,Disposicion Final,Procedimiento\n"
+            f"Juridica {suffix},JR-{suffix},Procesos Judiciales,Laborales,Demanda QA {suffix},2,18,CT,Conservar por valor legal\n"
+        ).encode()
+        files = {"file": (f"trd-full-{suffix}.csv", csv_content, "text/csv")}
+        simulate = client.post("/api/v1/trd/import/simulate", files=files, headers=headers)
+        assert simulate.status_code == 200, simulate.text
+        assert simulate.json()["dependencies_new"]
+        assert simulate.json()["can_import"] is True
+
+        files = {"file": (f"trd-full-{suffix}.csv", csv_content, "text/csv")}
+        applied = client.post("/api/v1/trd/import/apply", files=files, headers=headers)
+        assert applied.status_code == 200, applied.text
+        assert applied.json()["created"]["dependencies"] == 1
+
+        editor = client.get("/api/v1/trd/editor", headers=headers)
+        assert editor.status_code == 200, editor.text
+        row = next(item for item in editor.json()["rows"] if item["series"]["code"] == f"JR-{suffix}")
+        assert row["dependency"]["name"] == f"Juridica {suffix}"
+        assert row["retention"]["management_years"] == 2
+        assert row["retention"]["central_years"] == 18
+        assert row["retention"]["final_action"] == "CT"
+        assert row["document_types"][0]["required_in_expedient"] is True
+
+        archives = client.get("/api/v1/archives", headers=headers)
+        archive_id = archives.json()[0]["idArchive"]
+        expedient = client.post(
+            "/api/v1/archives/expedients",
+            json={
+                "archive_id": archive_id,
+                "expedient_code": f"EXP-LIFE-{suffix}",
+                "expedient_name": "Expediente ciclo vital QA",
+                "series_id": row["series"]["idSeries"],
+                "subseries_id": row["subseries"]["idSubseries"],
+            },
+            headers=headers,
+        )
+        assert expedient.status_code == 201, expedient.text
+        lifecycle = client.get(f"/api/v1/trd/expedients/{expedient.json()['idExpedient']}/lifecycle", headers=headers)
+        assert lifecycle.status_code == 200, lifecycle.text
+        assert lifecycle.json()["dependency"]["name"] == f"Juridica {suffix}"
+        assert lifecycle.json()["lifecycle"]["current_stage"] == "Archivo Gestion"
+
+
+def test_transfer_blocks_expedient_with_missing_required_trd_typology():
+    suffix = uuid4().hex[:8]
+    with TestClient(app) as client:
+        headers = _headers(client)
+        csv_content = (
+            "Dependencia,Serie Codigo,Serie,Subserie,Tipo Documental,Retencion Gestion,Retencion Central,Disposicion Final,Procedimiento\n"
+            f"Transporte,TR-{suffix},Manifiestos,Viajes,Manifiesto QA {suffix}|Cumplido QA {suffix},1,4,S,Seleccion por muestra\n"
+        ).encode()
+        files = {"file": (f"trd-transfer-{suffix}.csv", csv_content, "text/csv")}
+        applied = client.post("/api/v1/trd/import/apply", files=files, headers=headers)
+        assert applied.status_code == 200, applied.text
+
+        editor = client.get("/api/v1/trd/editor", headers=headers)
+        row = next(item for item in editor.json()["rows"] if item["series"]["code"] == f"TR-{suffix}")
+        document_types = {item["name"]: item["type_code"] for item in row["document_types"]}
+
+        archives = client.get("/api/v1/archives", headers=headers)
+        archive_id = archives.json()[0]["idArchive"]
+        destination = client.post(
+            "/api/v1/archives",
+            json={"archive_code": f"ARCH-DEST-{suffix}", "archive_name": f"Archivo Destino {suffix}", "archive_type": "central", "location_id": 1},
+            headers=headers,
+        )
+        assert destination.status_code == 201, destination.text
+        expedient = client.post(
+            "/api/v1/archives/expedients",
+            json={
+                "archive_id": archive_id,
+                "expedient_code": f"EXP-TRD-{suffix}",
+                "expedient_name": "Viaje con TRD incompleta",
+                "series_id": row["series"]["idSeries"],
+                "subseries_id": row["subseries"]["idSubseries"],
+            },
+            headers=headers,
+        )
+        assert expedient.status_code == 201, expedient.text
+        folder = client.post(
+            "/api/v1/archives/folders",
+            json={"expedient_id": expedient.json()["idExpedient"], "folder_code": f"CAR-TRD-{suffix}", "folder_name": "Carpeta viaje"},
+            headers=headers,
+        )
+        assert folder.status_code == 201, folder.text
+        document = client.post(
+            "/api/v1/documents",
+            json={
+                "document_name": "Manifiesto unico",
+                "document_type": document_types[f"Manifiesto QA {suffix}"],
+                "archive_id": archive_id,
+                "expedient_id": expedient.json()["idExpedient"],
+                "folder_id": folder.json()["idFolder"],
+                "subseries_id": row["subseries"]["idSubseries"],
+                "folio_start": 1,
+                "folio_end": 1,
+            },
+            headers=headers,
+        )
+        assert document.status_code == 201, document.text
+
+        batch = client.post(
+            "/api/v1/transfer-batches",
+            json={"batch_code": f"BATCH-TRD-{suffix}", "origin_archive_id": archive_id, "destination_archive_id": destination.json()["idArchive"]},
+            headers=headers,
+        )
+        assert batch.status_code == 201, batch.text
+        blocked = client.post(
+            f"/api/v1/transfer-batches/{batch.json()['idBatch']}/items",
+            json={"entity_type": "expedient", "entity_id": expedient.json()["idExpedient"]},
+            headers=headers,
+        )
+        assert blocked.status_code == 409, blocked.text
+        assert "faltan tipologias obligatorias" in str(blocked.json()["detail"]).lower()
+
+        completed = client.post(
+            "/api/v1/documents",
+            json={
+                "document_name": "Cumplido viaje",
+                "document_type": document_types[f"Cumplido QA {suffix}"],
+                "archive_id": archive_id,
+                "expedient_id": expedient.json()["idExpedient"],
+                "folder_id": folder.json()["idFolder"],
+                "subseries_id": row["subseries"]["idSubseries"],
+                "folio_start": 2,
+                "folio_end": 2,
+            },
+            headers=headers,
+        )
+        assert completed.status_code == 201, completed.text
+        added = client.post(
+            f"/api/v1/transfer-batches/{batch.json()['idBatch']}/items",
+            json={"entity_type": "expedient", "entity_id": expedient.json()["idExpedient"]},
+            headers=headers,
+        )
+        assert added.status_code == 201, added.text
 
 
 def test_hr_candidate_hire_reuses_resume_document_in_employee_checklist():
@@ -1333,6 +1505,11 @@ def test_advanced_reception_reviews_batch_items_individually():
         assert document_timeline.status_code == 200, document_timeline.text
         assert any(item["event_type"] == "custody.changed" for item in document_timeline.json())
 
+        document_custody = client.get(f"/api/v1/archives/entities/document/{accepted_document.json()['idDocument']}/custody", headers=headers)
+        assert document_custody.status_code == 200, document_custody.text
+        assert document_custody.json()[0]["archive_id"] == destination_archive_id
+        assert document_custody.json()[0]["related_transfer_id"] == batch_id
+
         folder_trace = client.get(f"/api/v1/kardex/entities/folder/{folder_id}/trace", headers=headers)
         assert folder_trace.status_code == 200, folder_trace.text
         assert folder_trace.json()["current_archive_id"] == destination_archive_id
@@ -1344,3 +1521,9 @@ def test_advanced_reception_reviews_batch_items_individually():
         exported = client.get("/api/v1/kardex/export", params={"archive_id": destination_archive_id, "status": "accepted"}, headers=headers)
         assert exported.status_code == 200, exported.text
         assert "movement_code,event_type" in exported.text
+
+        custody_dashboard = client.get("/api/v1/archives/dashboard", headers=headers)
+        assert custody_dashboard.status_code == 200, custody_dashboard.text
+        assert "pending_transfers" in custody_dashboard.json()
+        assert "pending_receptions" in custody_dashboard.json()
+        assert "recent_rejections" in custody_dashboard.json()

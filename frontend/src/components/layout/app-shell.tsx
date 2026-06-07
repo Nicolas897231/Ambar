@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Bot, BriefcaseBusiness, Building2, ChevronDown, ClipboardList, Database, FileBox, FilePenLine, FileText, FolderKanban, Gauge, Layers3, Link2, ListChecks, LogOut, MapPin, Menu, Moon, PackageCheck, PlugZap, Route, Search, ServerCog, ShieldCheck, Sun, TableProperties, Users, Warehouse, Zap } from "lucide-react";
+import { Activity, BarChart3, BriefcaseBusiness, Building2, ChevronDown, ClipboardCheck, ClipboardList, FileSearch, FileText, FolderKanban, Gauge, HeartPulse, Layers3, LogOut, Mail, MapPin, Menu, Moon, PackageCheck, Route, ScanLine, Search, ServerCog, Settings, ShieldCheck, Sun, TableProperties, Tags, Users, Warehouse } from "lucide-react";
 import { ReactNode, useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
@@ -14,7 +14,7 @@ type NavGroup = { label: string; icon: typeof Gauge; items: NavItem[]; permissio
 type ArchiveOption = { idArchive: number; archive_name: string; archive_code?: string };
 
 const groups: NavGroup[] = [
-  { label: "Dashboard", icon: Gauge, permissions: ["analytics.view", "bi.view"], items: [{ href: "/dashboard", label: "Centro operacional", icon: Gauge, permissions: ["analytics.view", "bi.view"] }] },
+  { label: "Dashboard", icon: Gauge, permissions: ["analytics.view", "bi.view"], items: [{ href: "/dashboard", label: "Dashboard", icon: Gauge, permissions: ["analytics.view", "bi.view"] }] },
   {
     label: "Gestion Documental",
     icon: FileText,
@@ -22,9 +22,7 @@ const groups: NavGroup[] = [
     items: [
       { href: "/expedients", label: "Expedientes", icon: FolderKanban, permissions: ["document.read", "document.create"] },
       { href: "/documents", label: "Documentos", icon: FileText, permissions: ["document.read", "document.read_all", "document.create", "document.update"] },
-      { href: "/folders", label: "Carpetas", icon: FileBox, permissions: ["document.read", "document.create"] },
-      { href: "/repository", label: "Repositorio", icon: Database, permissions: ["document.read"] },
-      { href: "/foliation", label: "Foliacion", icon: ListChecks, permissions: ["document.update"] }
+      { href: "/digitization", label: "Digitalizacion", icon: ScanLine, permissions: ["document.read", "ocr.manage"] }
     ]
   },
   {
@@ -32,50 +30,57 @@ const groups: NavGroup[] = [
     icon: TableProperties,
     permissions: ["trd.manage"],
     items: [
+      { href: "/trd?view=dependencies", label: "Dependencias", icon: Building2, permissions: ["trd.manage"] },
       { href: "/trd?view=series", label: "Series", icon: TableProperties, permissions: ["trd.manage"] },
       { href: "/trd?view=subseries", label: "Subseries", icon: Layers3, permissions: ["trd.manage"] },
-      { href: "/trd?view=retention", label: "Retencion", icon: ClipboardList, permissions: ["trd.manage"] },
-      { href: "/trd?view=disposition", label: "Disposicion final", icon: PackageCheck, permissions: ["trd.manage"] }
+      { href: "/trd?view=typologies", label: "Tipologias", icon: Tags, permissions: ["trd.manage"] }
     ]
   },
   {
-    label: "Custodia",
+    label: "Custodia Documental",
     icon: Warehouse,
     permissions: ["document.transfer", "transfer.manage", "transfer.batch_manage", "archive.manage"],
     items: [
       { href: "/archives", label: "Archivos", icon: Building2, permissions: ["document.read", "archive.manage"] },
+      { href: "/kardex", label: "Kardex", icon: Route, permissions: ["document.transfer", "transfer.manage"] },
       { href: "/transfer-batches", label: "Transferencias", icon: Warehouse, permissions: ["transfer.batch_manage", "document.transfer"] },
       { href: "/reception", label: "Recepcion", icon: PackageCheck, permissions: ["transfer.manage"] },
-      { href: "/kardex", label: "Kardex", icon: Route, permissions: ["document.transfer", "transfer.manage"] },
-      { href: "/loans", label: "Prestamos", icon: PackageCheck, permissions: ["document.transfer"] },
+      { href: "/loans", label: "Prestamos", icon: ClipboardCheck, permissions: ["document.transfer"] },
       { href: "/inventory", label: "Inventarios", icon: ClipboardList, permissions: ["document.transfer", "transfer.manage"] },
-      { href: "/fuid", label: "FUID", icon: ClipboardList, permissions: ["document.transfer", "transfer.manage"] },
       { href: "/locations", label: "Ubicaciones", icon: MapPin, permissions: ["archive.manage"] }
     ]
   },
+  { label: "Correspondencia", icon: Mail, permissions: ["document.read"], items: [{ href: "/correspondence", label: "Correspondencia", icon: Mail, permissions: ["document.read"] }] },
   {
     label: "RRHH",
     icon: BriefcaseBusiness,
     permissions: ["hr.view", "hr.manage"],
     items: [
       { href: "/hr?view=employees", label: "Empleados", icon: BriefcaseBusiness, permissions: ["hr.view", "hr.manage"] },
-      { href: "/hr?view=candidates", label: "Candidatos", icon: Users, permissions: ["hr.view", "hr.manage"] },
-      { href: "/hr?view=expedients", label: "Expedientes laborales", icon: FolderKanban, permissions: ["hr.view", "hr.manage"] },
       { href: "/hr?view=contracts", label: "Contratos", icon: FileText, permissions: ["hr.manage"] },
-      { href: "/hr?view=positions", label: "Cargos", icon: Users, permissions: ["hr.manage"] },
-      { href: "/hr?view=departments", label: "Dependencias", icon: Building2, permissions: ["hr.manage"] }
+      { href: "/recruitment", label: "Reclutamiento", icon: Users, permissions: ["hr.view", "hr.manage"] }
     ]
   },
-  { label: "Busqueda", icon: Search, permissions: ["search.query", "search.reindex", "ocr.manage"], items: [{ href: "/search?view=global", label: "Global", icon: Search, permissions: ["search.query"] }, { href: "/search?view=advanced", label: "Avanzada", icon: Database, permissions: ["search.query"] }, { href: "/ocr", label: "OCR futuro", icon: Bot, permissions: ["ocr.manage"] }] },
-  { label: "Auditoria", icon: ShieldCheck, permissions: ["audit.view"], items: [{ href: "/audit", label: "Eventos y seguridad", icon: ShieldCheck, permissions: ["audit.view"] }] },
-  { label: "Plataforma", icon: ServerCog, permissions: ["signature.manage", "integration.manage", "webhook.manage", "platform.view", "users.manage", "archive.manage", "workflow.manage"], items: [{ href: "/users", label: "Seguridad", icon: ShieldCheck, permissions: ["users.manage"] }, { href: "/integrations", label: "Integraciones", icon: PlugZap, permissions: ["integration.manage"] }, { href: "/webhooks", label: "Webhooks", icon: Link2, permissions: ["webhook.manage"] }, { href: "/signatures", label: "Firmas", icon: FilePenLine, permissions: ["signature.manage"] }, { href: "/platform", label: "Configuracion", icon: ServerCog, permissions: ["platform.view"] }, { href: "/workflows", label: "Automatizacion", icon: Zap, permissions: ["workflow.manage"] }] }
+  {
+    label: "SST",
+    icon: HeartPulse,
+    permissions: ["hr.view", "hr.manage"],
+    items: [
+      { href: "/sst/exams", label: "Examenes", icon: HeartPulse, permissions: ["hr.view", "hr.manage"] },
+      { href: "/sst/alerts", label: "Alertas", icon: Activity, permissions: ["hr.view", "hr.manage"] }
+    ]
+  },
+  { label: "BI", icon: BarChart3, permissions: ["bi.view", "analytics.view"], items: [{ href: "/bi", label: "BI", icon: BarChart3, permissions: ["bi.view", "analytics.view"] }] },
+  { label: "Auditoria", icon: FileSearch, permissions: ["audit.view"], items: [{ href: "/audit", label: "Auditoria", icon: FileSearch, permissions: ["audit.view"] }] },
+  { label: "Seguridad", icon: ShieldCheck, permissions: ["users.manage"], items: [{ href: "/security", label: "Seguridad", icon: ShieldCheck, permissions: ["users.manage"] }] },
+  { label: "Configuracion", icon: Settings, permissions: ["platform.view", "integration.manage", "webhook.manage", "signature.manage", "workflow.manage"], items: [{ href: "/settings", label: "Configuracion", icon: ServerCog, permissions: ["platform.view", "integration.manage", "webhook.manage", "signature.manage", "workflow.manage"] }] }
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => (typeof window !== "undefined" ? window.localStorage.getItem("ambar_sidebar_collapsed") === "1" : false));
   const [darkMode, setDarkMode] = useState(false);
   const [selectedArchive, setSelectedArchive] = useState("");
   const [sidebarQuery, setSidebarQuery] = useState("");
@@ -91,6 +96,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     staleTime: 60000
   });
   const permissions = currentUser.data?.permissions ?? getStoredPermissions();
+  const toggleSidebar = useCallback(() => {
+    setCollapsed((value) => {
+      const next = !value;
+      window.localStorage.setItem("ambar_sidebar_collapsed", next ? "1" : "0");
+      return next;
+    });
+  }, []);
   const visibleGroups = useMemo(() => groups
     .map((group) => ({ ...group, items: group.items.filter((item) => hasAnyPermission(permissions, item.permissions)) }))
     .filter((group) => group.items.length > 0 || hasAnyPermission(permissions, group.permissions)), [permissions]);
@@ -126,7 +138,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className={`app-shell ${collapsed ? "sidebar-collapsed" : ""}`} data-theme={darkMode ? "dark" : "light"}>
       <aside className="sidebar">
         <div className="sidebar-brand-block">
-          <button className="sidebar-toggle" type="button" onClick={() => setCollapsed((value) => !value)} title={collapsed ? "Expandir menu" : "Contraer menu"}><Menu size={17} /></button>
+          <button className="sidebar-toggle" type="button" onClick={toggleSidebar} title={collapsed ? "Expandir menu" : "Contraer menu"}><Menu size={17} /></button>
           <div><div className="brand">AMBAR</div><div className="muted">SGDEA enterprise</div></div>
         </div>
         <label className="sidebar-search" title="Buscar en menu">

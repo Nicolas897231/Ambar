@@ -175,6 +175,48 @@ def ensure_document_core_columns() -> None:
                 connection.execute(text(f"ALTER TABLE ps522_document_files ADD COLUMN {name} {definition}"))
 
 
+def ensure_trd_lifecycle_columns() -> None:
+    inspector = inspect(engine)
+    with engine.begin() as connection:
+        if "ps608_trd_dependencies" not in inspector.get_table_names():
+            connection.execute(text("""
+                CREATE TABLE ps608_trd_dependencies (
+                    idDependency INTEGER PRIMARY KEY,
+                    code VARCHAR(40) NOT NULL UNIQUE,
+                    name VARCHAR(160) NOT NULL,
+                    description TEXT,
+                    status VARCHAR(40) NOT NULL DEFAULT 'active',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    updated_at DATETIME
+                )
+            """))
+        if "ps610_trd_series" in inspector.get_table_names():
+            existing = {item["name"] for item in inspector.get_columns("ps610_trd_series")}
+            columns = {
+                "ps608IdDependency": "INTEGER",
+                "status": "VARCHAR(40) DEFAULT 'active'",
+            }
+            for name, definition in columns.items():
+                if name not in existing:
+                    connection.execute(text(f"ALTER TABLE ps610_trd_series ADD COLUMN {name} {definition}"))
+        if "ps612_trd_subseries" in inspector.get_table_names():
+            existing = {item["name"] for item in inspector.get_columns("ps612_trd_subseries")}
+            if "status" not in existing:
+                connection.execute(text("ALTER TABLE ps612_trd_subseries ADD COLUMN status VARCHAR(40) DEFAULT 'active'"))
+        if "ps614_trd_disposition" in inspector.get_table_names():
+            existing = {item["name"] for item in inspector.get_columns("ps614_trd_disposition")}
+            if "procedure" not in existing:
+                connection.execute(text("ALTER TABLE ps614_trd_disposition ADD COLUMN procedure TEXT"))
+        if "ps950_expedients" in inspector.get_table_names():
+            existing = {item["name"] for item in inspector.get_columns("ps950_expedients")}
+            if "ps608IdDependency" not in existing:
+                connection.execute(text("ALTER TABLE ps950_expedients ADD COLUMN ps608IdDependency INTEGER"))
+        if "ps526_document_types" in inspector.get_table_names():
+            existing = {item["name"] for item in inspector.get_columns("ps526_document_types")}
+            if "required_in_expedient" not in existing:
+                connection.execute(text("ALTER TABLE ps526_document_types ADD COLUMN required_in_expedient BOOLEAN DEFAULT 1"))
+
+
 def ensure_phase3_custody_columns() -> None:
     inspector = inspect(engine)
     with engine.begin() as connection:
@@ -202,6 +244,7 @@ async def lifespan(app: FastAPI):
         ensure_audit_security_columns()
         ensure_operational_notification_columns()
         ensure_document_core_columns()
+        ensure_trd_lifecycle_columns()
         ensure_phase3_custody_columns()
     if settings.seed_default_data:
         db = SessionLocal()

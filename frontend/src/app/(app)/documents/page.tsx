@@ -8,7 +8,8 @@ import { DataTable, DetailDrawer, EmptyState, LoadingSkeleton, MetricCard, Statu
 import { PageTitle } from "@/components/ui/page-title";
 
 type ArchiveItem = { idArchive: number; archive_name: string };
-type SeriesItem = { idSeries: number; code: string; name: string };
+type DependencyItem = { idDependency: number; code: string; name: string; status: string };
+type SeriesItem = { idSeries: number; dependency_id?: number; code: string; name: string };
 type SubseriesItem = { idSubseries: number; ps610IdSeries: number; name: string; retention_years: number };
 type ExpedientItem = { idExpedient: number; expedient_code: string; expedient_name: string; ps930IdArchive: number };
 type FolderItem = { idFolder: number; folder_code: string; folder_name: string; ps950IdExpedient: number };
@@ -18,7 +19,7 @@ type DocumentItem = { idDocument: number; document_name: string; document_type: 
 type FileItem = { idFile: number; original_name: string; content_type: string; checksum: string; size_bytes: number; url: string; version?: number; trace_id?: string };
 type VersionInfo = { current_version: number; history: Array<{ action: string; user: string; date: string; details: unknown }>; files: Array<{ idFile: number; version: number; original_name: string; checksum: string; uploaded_at: string; trace_id?: string }> };
 
-const steps = ["Archivo", "Serie", "Subserie", "Expediente", "Carpeta", "Documento", "Folios", "Archivo digital", "Confirmacion"];
+const steps = ["Archivo", "Dependencia", "Serie", "Subserie", "Expediente", "Carpeta", "Documento", "Folios", "Archivo digital", "Confirmacion"];
 
 function metadataLabel(value: string) {
   return value.replaceAll("_", " ");
@@ -34,6 +35,7 @@ export default function DocumentsPage() {
   const [documentName, setDocumentName] = useState("");
   const [documentType, setDocumentType] = useState("");
   const [archiveId, setArchiveId] = useState("");
+  const [dependencyId, setDependencyId] = useState("");
   const [seriesId, setSeriesId] = useState("");
   const [subseriesId, setSubseriesId] = useState("");
   const [expedientId, setExpedientId] = useState("");
@@ -47,6 +49,7 @@ export default function DocumentsPage() {
   const [message, setMessage] = useState("");
 
   const archives = useQuery({ queryKey: ["archives"], queryFn: async () => (await api.get<ArchiveItem[]>("/archives")).data });
+  const dependencies = useQuery({ queryKey: ["trd-dependencies"], queryFn: async () => (await api.get<DependencyItem[]>("/trd/dependencies")).data });
   const series = useQuery({ queryKey: ["trd-series"], queryFn: async () => (await api.get<SeriesItem[]>("/trd/series")).data });
   const subseries = useQuery({ queryKey: ["trd-subseries"], queryFn: async () => (await api.get<SubseriesItem[]>("/trd/subseries")).data });
   const documentTypes = useQuery({ queryKey: ["document-types", subseriesId], queryFn: async () => (await api.get<DocumentType[]>(`/documents/types${subseriesId ? `?subseries_id=${subseriesId}` : ""}`)).data });
@@ -56,6 +59,7 @@ export default function DocumentsPage() {
   const files = useQuery({ queryKey: ["document-files", selectedDocument?.idDocument ?? createdDocumentId], enabled: Boolean(selectedDocument?.idDocument ?? createdDocumentId), queryFn: async () => (await api.get<FileItem[]>(`/documents/${selectedDocument?.idDocument ?? createdDocumentId}/files`)).data });
   const versions = useQuery({ queryKey: ["document-versions", selectedDocument?.idDocument], enabled: Boolean(selectedDocument), queryFn: async () => (await api.get<VersionInfo>(`/documents/${selectedDocument?.idDocument}/versions`)).data });
 
+  const filteredSeries = useMemo(() => (series.data ?? []).filter((item) => !dependencyId || item.dependency_id === Number(dependencyId)), [dependencyId, series.data]);
   const filteredSubseries = useMemo(() => (subseries.data ?? []).filter((item) => !seriesId || item.ps610IdSeries === Number(seriesId)), [seriesId, subseries.data]);
   const selectedType = useMemo(() => documentTypes.data?.find((item) => item.type_code === documentType), [documentType, documentTypes.data]);
   const requiredMetadata = useMemo(() => selectedType?.required_metadata ?? [], [selectedType]);
@@ -73,7 +77,8 @@ export default function DocumentsPage() {
 
   const contextItems = [
     { label: "Archivo", value: archives.data?.find((item) => String(item.idArchive) === archiveId)?.archive_name },
-    { label: "Serie", value: series.data?.find((item) => String(item.idSeries) === seriesId)?.name },
+    { label: "Dependencia", value: dependencies.data?.find((item) => String(item.idDependency) === dependencyId)?.name },
+    { label: "Serie", value: filteredSeries.find((item) => String(item.idSeries) === seriesId)?.name },
     { label: "Subserie", value: filteredSubseries.find((item) => String(item.idSubseries) === subseriesId)?.name },
     { label: "Expediente", value: expedients.data?.find((item) => String(item.idExpedient) === expedientId)?.expedient_code },
     { label: "Carpeta", value: folders.data?.find((item) => String(item.idFolder) === folderId)?.folder_code },
@@ -81,20 +86,21 @@ export default function DocumentsPage() {
   ];
 
   const stepErrors = (() => {
-    const errors: string[][] = [[], [], [], [], [], [], [], [], []];
+    const errors: string[][] = [[], [], [], [], [], [], [], [], [], []];
     if (!archiveId) errors[0].push("Selecciona el archivo autorizado donde vive el documento.");
-    if (!seriesId) errors[1].push("Selecciona la serie TRD.");
-    if (!subseriesId) errors[2].push("Selecciona la subserie TRD.");
-    if (!expedientId) errors[3].push("Selecciona el expediente.");
-    if (!folderId) errors[4].push("Selecciona la carpeta del expediente.");
-    if (documentName.trim().length < 3) errors[5].push("Escribe un nombre documental claro.");
-    if (!documentType) errors[5].push("Selecciona una tipologia documental.");
+    if (!dependencyId) errors[1].push("Selecciona la dependencia productora documental.");
+    if (!seriesId) errors[2].push("Selecciona la serie TRD.");
+    if (!subseriesId) errors[3].push("Selecciona la subserie TRD.");
+    if (!expedientId) errors[4].push("Selecciona el expediente.");
+    if (!folderId) errors[5].push("Selecciona la carpeta del expediente.");
+    if (documentName.trim().length < 3) errors[6].push("Escribe un nombre documental claro.");
+    if (!documentType) errors[6].push("Selecciona una tipologia documental.");
     for (const key of requiredMetadata) {
-      if (!metadataValues[key]?.trim()) errors[5].push(`Completa el metadato obligatorio: ${metadataLabel(key)}.`);
+      if (!metadataValues[key]?.trim()) errors[6].push(`Completa el metadato obligatorio: ${metadataLabel(key)}.`);
     }
-    if ((folioStart && !folioCount) || (!folioStart && folioCount)) errors[6].push("Para foliar, diligencia folio inicial y cantidad de folios.");
-    if (folioStart && Number(folioStart) < 1) errors[6].push("El folio inicial debe ser mayor a cero.");
-    if (folioCount && Number(folioCount) < 1) errors[6].push("La cantidad de folios debe ser mayor a cero.");
+    if ((folioStart && !folioCount) || (!folioStart && folioCount)) errors[7].push("Para foliar, diligencia folio inicial y cantidad de folios.");
+    if (folioStart && Number(folioStart) < 1) errors[7].push("El folio inicial debe ser mayor a cero.");
+    if (folioCount && Number(folioCount) < 1) errors[7].push("La cantidad de folios debe ser mayor a cero.");
     return errors;
   })();
 
@@ -118,7 +124,7 @@ export default function DocumentsPage() {
       setCreatedDocumentId(response.data.idDocument);
       setMessage("Registro documental creado. Puedes cargar archivo digital o dejarlo como documento fisico.");
       client.invalidateQueries({ queryKey: ["documents"] });
-      setStep(7);
+      setStep(8);
     },
     onError: (error) => {
       const apiError = error as { response?: { data?: { detail?: string } } };
@@ -139,7 +145,7 @@ export default function DocumentsPage() {
       setMessage("Archivo digital cargado, versionado y disponible por URL firmada.");
       client.invalidateQueries({ queryKey: ["documents"] });
       client.invalidateQueries({ queryKey: ["document-files"] });
-      setStep(8);
+      setStep(9);
     },
     onError: () => setMessage("No fue posible cargar el archivo. Revisa formato, tamano y permisos.")
   });
@@ -174,6 +180,7 @@ export default function DocumentsPage() {
     setDocumentName("");
     setDocumentType("");
     setArchiveId("");
+    setDependencyId("");
     setSeriesId("");
     setSubseriesId("");
     setExpedientId("");
@@ -195,7 +202,15 @@ export default function DocumentsPage() {
         <section className="card document-wizard">
           <div className="wizard-steps document-steps">
             {steps.map((item, index) => (
-              <button className={`wizard-step ${step === index ? "active" : ""} ${index < step ? "done" : ""}`} type="button" key={item} onClick={() => setStep(index)}>
+              <button className={`wizard-step ${step === index ? "active" : ""} ${index < step ? "done" : ""}`} type="button" key={item} onClick={() => {
+                const firstInvalid = stepErrors.findIndex((items, stepIndex) => stepIndex < index && items.length);
+                if (firstInvalid >= 0) {
+                  setStep(firstInvalid);
+                  setMessage(stepErrors[firstInvalid][0]);
+                  return;
+                }
+                setStep(index);
+              }}>
                 <span>{index < step ? <CheckCircle2 size={16} /> : index + 1}</span><strong>{item}</strong>
               </button>
             ))}
@@ -209,11 +224,12 @@ export default function DocumentsPage() {
             {stepErrors[step].length ? <div className="validation-panel">{stepErrors[step].map((item) => <span key={item}>{item}</span>)}</div> : null}
 
             {step === 0 ? <label>Archivo<select value={archiveId} onChange={(event) => { setArchiveId(event.target.value); setExpedientId(""); setFolderId(""); }} required><option value="">Seleccionar archivo autorizado</option>{archives.data?.map((item) => <option key={item.idArchive} value={item.idArchive}>{item.archive_name}</option>)}</select></label> : null}
-            {step === 1 ? <label>Serie TRD<select value={seriesId} onChange={(event) => { setSeriesId(event.target.value); setSubseriesId(""); }} required><option value="">Seleccionar serie</option>{series.data?.map((item) => <option key={item.idSeries} value={item.idSeries}>{item.code} - {item.name}</option>)}</select></label> : null}
-            {step === 2 ? <label>Subserie TRD<select value={subseriesId} onChange={(event) => setSubseriesId(event.target.value)} required><option value="">Seleccionar subserie</option>{filteredSubseries.map((item) => <option key={item.idSubseries} value={item.idSubseries}>{item.name} / {item.retention_years} anos</option>)}</select></label> : null}
-            {step === 3 ? <label>Expediente<select value={expedientId} onChange={(event) => { setExpedientId(event.target.value); setFolderId(""); }} required><option value="">Seleccionar expediente</option>{expedients.data?.map((item) => <option key={item.idExpedient} value={item.idExpedient}>{item.expedient_code} - {item.expedient_name}</option>)}</select></label> : null}
-            {step === 4 ? <label>Carpeta<select value={folderId} onChange={(event) => setFolderId(event.target.value)} required><option value="">Seleccionar carpeta</option>{folders.data?.map((item) => <option key={item.idFolder} value={item.idFolder}>{item.folder_code} - {item.folder_name}</option>)}</select></label> : null}
-            {step === 5 ? (
+            {step === 1 ? <label>Dependencia<select value={dependencyId} onChange={(event) => { setDependencyId(event.target.value); setSeriesId(""); setSubseriesId(""); }} required><option value="">Seleccionar dependencia productora</option>{dependencies.data?.map((item) => <option key={item.idDependency} value={item.idDependency}>{item.code} - {item.name}</option>)}</select></label> : null}
+            {step === 2 ? <label>Serie TRD<select value={seriesId} onChange={(event) => { setSeriesId(event.target.value); setSubseriesId(""); }} required><option value="">Seleccionar serie</option>{filteredSeries.map((item) => <option key={item.idSeries} value={item.idSeries}>{item.code} - {item.name}</option>)}</select></label> : null}
+            {step === 3 ? <label>Subserie TRD<select value={subseriesId} onChange={(event) => setSubseriesId(event.target.value)} required><option value="">Seleccionar subserie</option>{filteredSubseries.map((item) => <option key={item.idSubseries} value={item.idSubseries}>{item.name} / {item.retention_years} anos</option>)}</select></label> : null}
+            {step === 4 ? <label>Expediente<select value={expedientId} onChange={(event) => { setExpedientId(event.target.value); setFolderId(""); }} required><option value="">Seleccionar expediente</option>{expedients.data?.map((item) => <option key={item.idExpedient} value={item.idExpedient}>{item.expedient_code} - {item.expedient_name}</option>)}</select></label> : null}
+            {step === 5 ? <label>Carpeta<select value={folderId} onChange={(event) => setFolderId(event.target.value)} required><option value="">Seleccionar carpeta</option>{folders.data?.map((item) => <option key={item.idFolder} value={item.idFolder}>{item.folder_code} - {item.folder_name}</option>)}</select></label> : null}
+            {step === 6 ? (
               <div className="form-grid">
                 <div className="form-row-2">
                   <label>Nombre documental<input value={documentName} onChange={(event) => setDocumentName(event.target.value)} placeholder="Ej: Contrato firmado Nicolas Ramirez" required /></label>
@@ -239,7 +255,7 @@ export default function DocumentsPage() {
                 ) : <p className="muted">Esta tipologia no exige metadatos. Continuemos sin llenar datos tecnicos innecesarios.</p>}
               </div>
             ) : null}
-            {step === 6 ? (
+            {step === 7 ? (
               <div className="form-grid">
                 <div className="context-help">
                   <Info size={18} />
@@ -255,7 +271,7 @@ export default function DocumentsPage() {
                 </div>
               </div>
             ) : null}
-            {step === 7 ? (
+            {step === 8 ? (
               <div className="card compact">
                 <h3>Registro documental</h3>
                 <p className="muted">Primero crea el registro. Despues puedes cargar archivo digital o dejarlo como documento fisico.</p>
@@ -266,8 +282,8 @@ export default function DocumentsPage() {
                 </form>
               </div>
             ) : null}
-            {step === 8 ? <div className="grid"><MetricCard label="Documento" value={createdDocumentId ?? selectedDocument?.idDocument ?? "-"} tone="success" /><MetricCard label="Version" value={selectedDocument?.version ?? "actualizada"} /><MetricCard label="Archivos digitales" value={files.data?.length ?? 0} tone={(files.data?.length ?? 0) ? "success" : "warning"} /><button className="ghost" type="button" onClick={resetWizard}>Nuevo flujo documental</button></div> : null}
-            {step < 7 ? <div className="wizard-actions"><button className="ghost" type="button" disabled={step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))}>Anterior</button><button type="button" onClick={nextStep}>Continuar</button></div> : null}
+            {step === 9 ? <div className="grid"><MetricCard label="Documento" value={createdDocumentId ?? selectedDocument?.idDocument ?? "-"} tone="success" /><MetricCard label="Version" value={selectedDocument?.version ?? "actualizada"} /><MetricCard label="Archivos digitales" value={files.data?.length ?? 0} tone={(files.data?.length ?? 0) ? "success" : "warning"} /><button className="ghost" type="button" onClick={resetWizard}>Nuevo flujo documental</button></div> : null}
+            {step < 8 ? <div className="wizard-actions"><button className="ghost" type="button" disabled={step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))}>Anterior</button><button type="button" onClick={nextStep}>Continuar</button></div> : null}
           </div>
         </section>
 
