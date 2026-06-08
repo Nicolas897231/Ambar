@@ -1,0 +1,64 @@
+/* ============================================================
+   AMBAR — Animaciones (máximo impacto, respetando reduce-motion)
+   ============================================================ */
+
+/* Entrance keyframes are TRANSFORM-ONLY (no opacity) so content is always
+   fully visible even if an animation is frozen mid-run (inactive tab / capture)
+   or never starts (reduced-motion). Opacity fades are reserved for transient
+   overlays that only appear on user action in an active tab. */
+@keyframes rise { from { transform: translateY(20px); } to { transform: translateY(0); } }
+@keyframes rise-sm { from { transform: translateY(11px); } to { transform: translateY(0); } }
+@keyframes fall { from { transform: translateY(-16px); } to { transform: translateY(0); } }
+@keyframes scale-in { from { transform: scale(0.965); } to { transform: scale(1); } }
+@keyframes slide-right { from { transform: translateX(-22px); } to { transform: translateX(0); } }
+@keyframes blur-in { from { transform: translateY(14px) scale(0.99); } to { transform: translateY(0) scale(1); } }
+@keyframes pop { 0% { transform: scale(0.7); } 60% { transform: scale(1.06); } 100% { transform: scale(1); } }
+@keyframes float-y { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 var(--brand-ghost); } 70% { box-shadow: 0 0 0 12px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@keyframes count-blur { from { filter: blur(6px); opacity: 0.3; } to { filter: blur(0); opacity: 1; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes grow-bar { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes sweep { from { transform: translateX(-30px) skewX(-6deg); } to { transform: translateX(0) skewX(0); } }
+@keyframes gradient-pan { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+@keyframes shine { from { transform: translateX(-120%) rotate(8deg); } to { transform: translateX(220%) rotate(8deg); } }
+
+/* entrance helpers — base state is the VISIBLE end state. Animations only run
+   once JS adds `.anim-ready` to <html> AND the user allows motion, so frozen
+   captures, print and reduced-motion always show content. */
+@media (prefers-reduced-motion: no-preference) {
+  .anim-ready .an-rise { animation: rise var(--t-slow) var(--ease-out) both; }
+  .anim-ready .an-fall { animation: fall var(--t-med) var(--ease-out) both; }
+  .anim-ready .an-scale { animation: scale-in var(--t-med) var(--ease-spring) both; }
+  .anim-ready .an-blur { animation: blur-in 0.6s var(--ease-out) both; }
+  .anim-ready .an-pop { animation: pop var(--t-med) var(--ease-spring) both; }
+  .anim-ready .an-sweep { animation: sweep var(--t-slow) var(--ease-out) both; }
+
+  /* route transition wrapper */
+  .anim-ready .route-enter { animation: blur-in 0.45s var(--ease-out) both; }
+
+  /* stagger: set --i on children */
+  .anim-ready .stagger > * { animation: rise 0.55s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 0.06s + 0.05s); }
+  .anim-ready .stagger-fast > * { animation: rise-sm 0.4s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 0.04s); }
+}
+
+/* hero gradient text */
+.grad-text { background: linear-gradient(100deg, var(--amber-600), var(--amber-400), var(--amber-700)); background-size: 200% auto; -webkit-background-clip: text; background-clip: text; color: transparent; animation: gradient-pan 6s linear infinite alternate; }
+
+/* shine pass on cards/buttons */
+.shine { position: relative; overflow: hidden; }
+.shine::before { content: ""; position: absolute; top: -50%; bottom: -50%; left: 0; width: 40%; background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.18), transparent); transform: translateX(-120%) rotate(8deg); }
+.shine:hover::before { animation: shine 0.9s var(--ease-out); }
+
+.floaty { animation: float-y 5s var(--ease-in-out) infinite; }
+.pulse { animation: pulse-ring 2.2s infinite; }
+
+/* number count flash */
+.flash-num { animation: count-blur 0.5s var(--ease-out) both; }
+
+/* parallax layers for login/portal */
+.parallax { will-change: transform; transition: transform 0.3s var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-delay: 0ms !important; transition-duration: 0.05ms !important; }
+  .floaty, .grad-text, .pulse { animation: none !important; }
+}

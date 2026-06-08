@@ -117,12 +117,15 @@ export default function TrdPage() {
   function submitSubseries(event: FormEvent) { event.preventDefault(); createSubseries.mutate(); }
   function submitRetention(event: FormEvent) { event.preventDefault(); updateRetention.mutate(); }
   function submitDisposition(event: FormEvent) { event.preventDefault(); createDisposition.mutate(); }
+  function exportTrd() {
+    window.open("/api/v1/trd/export?format=xlsx", "_blank", "noopener,noreferrer");
+  }
 
   const primaryAction = view === "dependencies" ? "dependency" : view === "series" ? "series" : view === "subseries" ? "subseries" : view === "retention" ? "retention" : "disposition";
 
   return (
     <>
-      <PageTitle title={viewCopy[view]?.title ?? "TRD"} description={viewCopy[view]?.description ?? "Series, subseries, retencion y disposicion documental."} action={<div className="toolbar"><a className="button-link ghost-link" href="/api/v1/trd/export?format=xlsx"><Download size={17} /> Exportar</a>{view !== "typologies" ? <button onClick={() => setDrawer(primaryAction)}><Plus size={17} /> Crear / actualizar</button> : null}<button className="ghost" onClick={() => { dependencies.refetch(); series.refetch(); subseries.refetch(); tree.refetch(); editor.refetch(); documentTypes.refetch(); }}><RefreshCcw size={17} /> Actualizar</button></div>} />
+      <PageTitle title={viewCopy[view]?.title ?? "TRD"} description={viewCopy[view]?.description ?? "Series, subseries, retencion y disposicion documental."} action={<div className="toolbar"><button className="ghost" onClick={exportTrd}><Download size={17} /> Exportar</button>{view !== "typologies" ? <button onClick={() => setDrawer(primaryAction)}><Plus size={17} /> Crear / actualizar</button> : null}<button className="ghost" onClick={() => { dependencies.refetch(); series.refetch(); subseries.refetch(); tree.refetch(); editor.refetch(); documentTypes.refetch(); }}><RefreshCcw size={17} /> Actualizar</button></div>} />
       <nav className="tabbar view-tabs">
         <Link className={view === "dependencies" ? "active" : ""} href="/trd?view=dependencies">Dependencias</Link>
         <Link className={view === "series" ? "active" : ""} href="/trd?view=series">Series</Link>
