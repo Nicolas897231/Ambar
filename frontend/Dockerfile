@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package.json ./
 COPY server.js ./
 COPY index.html ./
-COPY "Mapa de Pantallas.html" ./
+COPY ["Mapa de Pantallas.html", "./"]
 COPY js ./js
 COPY styles ./styles
 COPY scripts ./scripts
