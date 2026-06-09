@@ -1,24 +1,23 @@
-FROM node:24-alpine AS deps
-WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci
-
 FROM node:24-alpine AS builder
+
 WORKDIR /app
-ARG NEXT_PUBLIC_API_URL=/api/v1
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY package.json ./
+COPY server.js ./
+COPY index.html ./
+COPY "Mapa de Pantallas.html" ./
+COPY js ./js
+COPY styles ./styles
+COPY scripts ./scripts
 RUN npm run build
 
 FROM node:24-alpine AS runner
+
 WORKDIR /app
 ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV NEXT_PUBLIC_API_URL=/api/v1
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+ENV PORT=3000
+ENV API_PROXY_TARGET=http://10.10.10.240
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server.js ./server.js
+COPY --from=builder /app/package.json ./package.json
 EXPOSE 3000
 CMD ["node", "server.js"]

@@ -1,0 +1,89 @@
+﻿import { createReadStream, existsSync, statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { extname, join, normalize } from "node:path";
+import http from "node:http";
+
+const port = Number(process.env.PORT || 3000);
+const root = join(process.cwd(), existsSync(join(process.cwd(), "dist", "index.html")) ? "dist" : ".");
+const apiTarget = (process.env.API_PROXY_TARGET || process.env.AMBAR_API_ORIGIN || "http://10.10.10.240").replace(/\/$/, "");
+const mime = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".jsx": "text/babel; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".ico": "image/x-icon"
+};
+
+function send(res, status, body, headers = {}) {
+  res.writeHead(status, headers);
+  res.end(body);
+}
+
+async function proxyApi(req, res) {
+  const target = new URL(req.url, apiTarget);
+  const headers = { ...req.headers };
+  delete headers.host;
+  try {
+    const response = await fetch(target, {
+      method: req.method,
+      headers,
+      body: ["GET", "HEAD"].includes(req.method || "GET") ? undefined : req,
+      duplex: ["GET", "HEAD"].includes(req.method || "GET") ? undefined : "half",
+      redirect: "manual"
+    });
+    const responseHeaders = {};
+    response.headers.forEach((value, key) => {
+      if (!["connection", "transfer-encoding"].includes(key.toLowerCase())) responseHeaders[key] = value;
+    });
+    res.writeHead(response.status, responseHeaders);
+    if (response.body) {
+      const reader = response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(Buffer.from(value));
+      }
+    }
+    res.end();
+  } catch (error) {
+    send(res, 502, JSON.stringify({ detail: "API gateway unavailable", target: apiTarget }), { "content-type": "application/json" });
+  }
+}
+
+function safePath(urlPath) {
+  const clean = decodeURIComponent(urlPath.split("?")[0]);
+  const normalized = normalize(clean).replace(/^([/\\])+/, "");
+  if (normalized.includes("..")) return null;
+  return join(root, normalized || "index.html");
+}
+
+async function serveIndex(res) {
+  const html = await readFile(join(root, "index.html"));
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.end(html);
+}
+
+const server = http.createServer(async (req, res) => {
+  if (!req.url) return send(res, 400, "Bad request");
+  if (req.url.startsWith("/api/v1/")) return proxyApi(req, res);
+  if (req.url === "/health" || req.url === "/health/") return send(res, 200, JSON.stringify({ status: "ok", service: "ambar-web" }), { "content-type": "application/json" });
+
+  const filePath = safePath(req.url);
+  if (!filePath) return send(res, 403, "Forbidden");
+  if (existsSync(filePath) && statSync(filePath).isFile()) {
+    const type = mime[extname(filePath).toLowerCase()] || "application/octet-stream";
+    res.writeHead(200, { "content-type": type });
+    createReadStream(filePath).pipe(res);
+    return;
+  }
+  return serveIndex(res);
+});
+
+server.listen(port, "0.0.0.0", () => {
+  console.log(`AMBAR frontend running on ${port}; API proxy -> ${apiTarget}`);
+});
