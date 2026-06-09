@@ -61,7 +61,7 @@ function Root() {
   return (
     <AppShell user={user} route={route} onNavigate={navigate} onLogout={onLogout} onSwitchUser={onSwitchUser} theme={theme} toggleTheme={toggleTheme}>
       {!allowed
-        ? <Card><Empty icon="lock" title="Sin acceso a este módulo" action={<Button icon="arrow-left" onClick={() => navigate("dashboard")}>Ir al Dashboard</Button>}>Tu rol ({ROLES[user.role].name}) no tiene permisos para ver esta sección. Habla con tu administrador si crees que es un error.</Empty></Card>
+        ? <Card><Empty icon="lock" title="Sin acceso a este módulo" action={<Button icon="arrow-left" onClick={() => navigate("dashboard")}>Ir al Dashboard</Button>}>Tu rol ({roleMeta(user).name}) no tiene permisos para ver esta sección. Habla con tu administrador si crees que es un error.</Empty></Card>
         : (Page ? <Page user={user} navigate={navigate} /> : <ComingSoon route={route} />)}
     </AppShell>
   );

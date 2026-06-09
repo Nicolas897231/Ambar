@@ -21,6 +21,7 @@ const ROUTE_TITLES = {
 
 function Sidebar({ user, route, onNavigate, collapsed, setCollapsed, onOpenUserMenu }) {
   const [q, setQ] = useState("");
+  const role = roleMeta(user);
   const [open, setOpen] = useState(() => {
     const o = {}; NAV.forEach(g => o[g.label] = true); return o;
   });
@@ -69,7 +70,7 @@ function Sidebar({ user, route, onNavigate, collapsed, setCollapsed, onOpenUserM
       <div className="side-foot">
         <div className="side-user" onClick={onOpenUserMenu} data-tour="user">
           <span className="avatar" style={{ background: user.color }}>{user.initials}</span>
-          <div className="su-meta"><div className="su-name truncate">{user.name}</div><div className="su-role truncate">{ROLES[user.role].name}</div></div>
+          <div className="su-meta"><div className="su-name truncate">{user.name}</div><div className="su-role truncate">{role.name}</div></div>
           <Icon name="chevron-up" size={15} className="su-chev" style={{ color: "var(--side-muted)" }} />
         </div>
       </div>
@@ -113,13 +114,14 @@ function CommandPalette({ user, onNavigate, onClose }) {
 }
 
 function UserMenu({ user, onClose, onLogout, onSwitchUser, theme, toggleTheme }) {
+  const currentRole = roleMeta(user);
   return (
     <>
       <div className="scrim" style={{ background: "transparent", backdropFilter: "none" }} onClick={onClose} />
       <div className="usermenu an-fall">
         <div className="um-head">
           <span className="avatar lg" style={{ background: user.color }}>{user.initials}</span>
-          <div className="grow" style={{ minWidth: 0 }}><div style={{ fontWeight: 700 }}>{user.name}</div><div className="muted" style={{ fontSize: "var(--fs-xs)" }}>{user.email}</div><div style={{ marginTop: 4 }}><Badge tone="brand">{ROLES[user.role].name}</Badge></div></div>
+          <div className="grow" style={{ minWidth: 0 }}><div style={{ fontWeight: 700 }}>{user.name}</div><div className="muted" style={{ fontSize: "var(--fs-xs)" }}>{user.email}</div><div style={{ marginTop: 4 }}><Badge tone="brand">{currentRole.name}</Badge></div></div>
         </div>
         <div className="divider" />
         <div className="um-section-label">Cambiar de usuario (demo)</div>
@@ -127,7 +129,7 @@ function UserMenu({ user, onClose, onLogout, onSwitchUser, theme, toggleTheme })
           {USERS.filter(u => u.id !== user.id).map(u => (
             <button key={u.id} className="um-user" onClick={() => { onSwitchUser(u); onClose(); }}>
               <span className="avatar sm" style={{ background: u.color }}>{u.initials}</span>
-              <div className="grow" style={{ minWidth: 0, textAlign: "left" }}><div className="truncate" style={{ fontSize: "var(--fs-sm)", fontWeight: 600 }}>{u.name}</div><div className="truncate muted" style={{ fontSize: 10 }}>{ROLES[u.role].name}</div></div>
+              <div className="grow" style={{ minWidth: 0, textAlign: "left" }}><div className="truncate" style={{ fontSize: "var(--fs-sm)", fontWeight: 600 }}>{u.name}</div><div className="truncate muted" style={{ fontSize: 10 }}>{roleMeta(u).name}</div></div>
             </button>
           ))}
         </div>

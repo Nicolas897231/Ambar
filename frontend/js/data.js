@@ -62,6 +62,29 @@ window.ROLES = {
     perms: ["document.read","search.query","notification.read"] },
 };
 
+window.normalizeRoleKey = function(role) {
+  const key = String(role || "consultor").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const aliases = {
+    "super_admin": "super_admin",
+    "superadministrador": "super_admin",
+    "super_administrador": "super_admin",
+    "archive_admin": "jefe_archivo",
+    "archive_analyst": "auxiliar_archivo",
+    "archive_assistant": "auxiliar_archivo",
+    "auditor": "gerencia",
+    "viewer": "consultor",
+    "hr_manager": "gerente_rrhh",
+    "hr_analyst": "analista_rrhh"
+  };
+  return aliases[key] || key;
+};
+
+window.roleMeta = function(userOrRole) {
+  const role = typeof userOrRole === "string" ? userOrRole : userOrRole?.role;
+  const key = normalizeRoleKey(role);
+  return ROLES[key] || { name: String(role || "Usuario AMBAR").replace(/_/g, " "), color: "var(--muted)", area: "AMBAR", desc: "Rol operativo configurado en backend.", perms: [] };
+};
+
 /* ---- Usuarios demo (cualquiera entra con contraseña: ambar) ---- */
 window.USERS = [
   { id: 1, name: "Camila Restrepo", email: "admin@ambar.co", pass: "ambar", role: "super_admin", initials: "CR", color: "var(--viz-violet)", mfa: true, archive: "Todos", title: "Administradora del Sistema" },
@@ -79,7 +102,7 @@ window.permsOf = function(user){
   if (Array.isArray(user.permissions) && user.permissions.length) {
     return user.permissions.includes("*") ? ALL_PERMS.slice() : user.permissions;
   }
-  const r = ROLES[user.role];
+  const r = ROLES[normalizeRoleKey(user.role)];
   if(!r) return [];
   return r.perms === "*" ? ALL_PERMS.slice() : r.perms;
 };

@@ -6,7 +6,7 @@ const { useState: seS } = React;
 function SecurityPage({ user }) {
   const [tab, setTab] = seS("users");
   const [roleKey, setRoleKey] = seS("jefe_archivo");
-  const role = ROLES[roleKey];
+  const role = ROLES[normalizeRoleKey(roleKey)] || roleMeta(roleKey);
   const rolePerms = role.perms === "*" ? ALL_PERMS : role.perms;
   return (
     <>
@@ -21,7 +21,7 @@ function SecurityPage({ user }) {
 
       {tab === "users" && (
         <Card flush className="an-rise"><div className="table-scroll"><table className="tbl"><thead><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Área</th><th>MFA</th><th>Estado</th><th></th></tr></thead><tbody>
-          {USERS.map(u => (<tr key={u.id} className="clickable"><td><div className="t-avatar"><Avatar size="sm" name={u.name} color={u.color} /><span className="cell-strong">{u.name}</span></div></td><td className="muted mono" style={{ fontSize: "var(--fs-xs)" }}>{u.email}</td><td><Badge tone="brand">{ROLES[u.role].name}</Badge></td><td>{u.archive}</td><td>{u.mfa ? <Badge tone="success" icon="fingerprint">Activo</Badge> : <Badge tone="outline">Inactivo</Badge>}</td><td><Badge tone="success" dot>Activo</Badge></td><td><Button variant="subtle" size="sm" icon="more-horizontal" /></td></tr>))}
+          {USERS.map(u => (<tr key={u.id} className="clickable"><td><div className="t-avatar"><Avatar size="sm" name={u.name} color={u.color} /><span className="cell-strong">{u.name}</span></div></td><td className="muted mono" style={{ fontSize: "var(--fs-xs)" }}>{u.email}</td><td><Badge tone="brand">{roleMeta(u).name}</Badge></td><td>{u.archive}</td><td>{u.mfa ? <Badge tone="success" icon="fingerprint">Activo</Badge> : <Badge tone="outline">Inactivo</Badge>}</td><td><Badge tone="success" dot>Activo</Badge></td><td><Button variant="subtle" size="sm" icon="more-horizontal" /></td></tr>))}
         </tbody></table></div></Card>
       )}
 

@@ -33,8 +33,10 @@
 
   function mapUser(me) {
     const roles = me?.roles || ["super_admin"];
-    const role = roles[0] || "super_admin";
+    const rawRole = roles[0] || "super_admin";
+    const role = window.normalizeRoleKey ? window.normalizeRoleKey(rawRole) : String(rawRole).replace(/[\s-]+/g, "_");
     const name = me?.name || me?.email || "Usuario AMBAR";
+    const meta = window.roleMeta ? window.roleMeta(role) : { name: role.replace(/_/g, " ") };
     return {
       id: me?.identification || me?.email || "session",
       identification: me?.identification,
@@ -46,7 +48,7 @@
       initials: (name || "AM").split(" ").slice(0, 2).map((p) => p[0]).join("").toUpperCase(),
       color: "var(--viz-violet)",
       archive: "AMBAR",
-      title: role.replace(/_/g, " ")
+      title: meta.name
     };
   }
 
