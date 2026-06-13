@@ -70,7 +70,7 @@ function EmployeeModal({ onClose, onCreated }) {
     <Modal title="Nuevo empleado" sub="RRHH crea la persona laboral; el acceso al sistema se gestiona desde Seguridad." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear empleado</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
-        <Field label="Identificacion" required><input inputMode="numeric" maxLength={40} value={payload.identification} onChange={e => setField("identification", e.target.value.replace(/[^\w.-]/g, ""))} placeholder="1234567890" /></Field>
+        <Field label="Identificacion" required><input inputMode="numeric" maxLength={12} value={payload.identification} onChange={e => setField("identification", e.target.value.replace(/\D/g, ""))} placeholder="1234567890" /></Field>
         <Field label="Codigo empleado" required><input maxLength={40} value={payload.employee_code} onChange={e => setField("employee_code", e.target.value)} placeholder="EMP-001" /></Field>
         <Field label="Nombre completo" required><input maxLength={180} value={payload.full_name} onChange={e => setField("full_name", e.target.value.replace(/[0-9]/g, ""))} placeholder="Nombre y apellidos" /></Field>
         <Field label="Fecha ingreso" required><input type="date" value={payload.hire_date} onChange={e => setField("hire_date", e.target.value)} /></Field>

@@ -17,7 +17,7 @@ body {
 }
 ::selection { background: var(--brand-ghost); color: var(--brand-ink); }
 
-h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 700; color: var(--text-strong); margin: 0; line-height: var(--lh-tight); letter-spacing: -0.01em; }
+h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 700; color: var(--text-strong); margin: 0; line-height: var(--lh-tight); letter-spacing: 0; }
 p { margin: 0; }
 a { color: inherit; text-decoration: none; }
 small { font-size: var(--fs-xs); }

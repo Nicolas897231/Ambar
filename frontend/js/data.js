@@ -29,6 +29,35 @@ window.PERM_GROUPS = [
   { mod: "Notificaciones", perms: [["notification.read", "Recibir alertas"]] },
 ];
 
+const fixUiText = (value) => String(value || "")
+  .replaceAll("Ã¡", "á").replaceAll("Ã©", "é").replaceAll("Ã­", "í").replaceAll("Ã³", "ó").replaceAll("Ãº", "ú")
+  .replaceAll("Ã", "Á").replaceAll("Ã‰", "É").replaceAll("Ã", "Í").replaceAll("Ã“", "Ó").replaceAll("Ãš", "Ú")
+  .replaceAll("Ã±", "ñ").replaceAll("Ã‘", "Ñ").replaceAll("Ã¼", "ü").replaceAll("Ãœ", "Ü")
+  .replaceAll("Â·", "•");
+window.PERM_GROUPS = window.PERM_GROUPS.map(group => ({
+  ...group,
+  mod: fixUiText(group.mod),
+  perms: group.perms.map(([key, label]) => [key, fixUiText(label)]),
+}));
+
+window.NAV = window.NAV || [];
+const NAV_LABELS = {
+  "GestiÃ³n Documental": "Gestión Documental",
+  "DigitalizaciÃ³n": "Digitalización",
+  "TRD & RetenciÃ³n": "TRD & Retención",
+  "Archivo FÃ­sico": "Archivo Físico",
+  "PrÃ©stamos": "Préstamos",
+  "ExÃ¡menes MÃ©dicos": "Exámenes Médicos",
+  "AuditorÃ­a": "Auditoría",
+  "AdministraciÃ³n": "Administración",
+  "ConfiguraciÃ³n": "Configuración",
+};
+window.NAV = window.NAV.map(group => ({
+  ...group,
+  label: NAV_LABELS[group.label] || group.label,
+  items: group.items.map(item => ({ ...item, label: NAV_LABELS[item.label] || item.label })),
+}));
+
 window.ALL_PERMS = PERM_GROUPS.flatMap(g => g.perms.map(p => p[0]));
 window.PERM_LABEL = Object.fromEntries(PERM_GROUPS.flatMap(g => g.perms));
 
@@ -61,6 +90,12 @@ window.ROLES = {
     desc: "Solo lectura de los documentos de su área.",
     perms: ["document.read","search.query","notification.read"] },
 };
+
+Object.values(window.ROLES).forEach(role => {
+  role.name = fixUiText(role.name);
+  role.area = fixUiText(role.area);
+  role.desc = fixUiText(role.desc);
+});
 
 window.normalizeRoleKey = function(role) {
   const key = String(role || "consultor").trim().toLowerCase().replace(/[\s-]+/g, "_");
@@ -136,6 +171,23 @@ window.NAV = [
 ];
 
 /* ---- Catálogos compartidos ---- */
+const UI_LABEL_FIXES = {
+  "GestiÃ³n Documental": "Gestión Documental",
+  "DigitalizaciÃ³n": "Digitalización",
+  "TRD & RetenciÃ³n": "TRD & Retención",
+  "Archivo FÃ­sico": "Archivo Físico",
+  "PrÃ©stamos": "Préstamos",
+  "ExÃ¡menes MÃ©dicos": "Exámenes Médicos",
+  "AuditorÃ­a": "Auditoría",
+  "AdministraciÃ³n": "Administración",
+  "ConfiguraciÃ³n": "Configuración",
+};
+window.NAV = window.NAV.map(group => ({
+  ...group,
+  label: fixUiText(UI_LABEL_FIXES[group.label] || group.label),
+  items: group.items.map(item => ({ ...item, label: fixUiText(UI_LABEL_FIXES[item.label] || item.label) })),
+}));
+
 window.AREAS = [];
 window.SEDES = [];
 window.ARCHIVES = [];

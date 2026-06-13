@@ -848,6 +848,7 @@ def _label_part(label: str, value: str | None) -> str | None:
 
 def _shelf_topographic_path(shelf: Shelf) -> str:
     parts = [
+        _label_part("Piso", shelf.floor),
         _label_part("Pasillo", shelf.aisle),
         _label_part("Estanteria", shelf.shelf_code),
         _label_part("Cuerpo", shelf.module),

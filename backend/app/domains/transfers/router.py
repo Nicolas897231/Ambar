@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.deps import require_permission
+from app.core.deps import require_any_permission, require_permission
 from app.db.models import Document, DocumentTransfer, Location, Notification, TransferLog, User
 from app.db.session import get_db
 from app.services.audit import write_audit
@@ -45,10 +45,18 @@ def list_locations(db: Session = Depends(get_db), _: User = Depends(require_perm
 def create_location(
     payload: LocationCreate,
     request: Request,
-    user: User = Depends(require_permission("transfer.manage")),
+    user: User = Depends(require_any_permission("archive.manage", "transfer.manage")),
     db: Session = Depends(get_db),
 ):
-    item = Location(location_name=payload.location_name, address=payload.address, company_id=user.company_id)
+    location_name = payload.location_name.strip()
+    existing = (
+        db.query(Location)
+        .filter(Location.company_id == user.company_id, Location.location_name == location_name)
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Location already exists")
+    item = Location(location_name=location_name, address=payload.address, company_id=user.company_id)
     db.add(item)
     db.flush()
     write_audit(db, action="location_created", module="transfers", user_id=user.identification, entity="location", entity_id=item.idLocation, new_values=payload.model_dump(), request=request)

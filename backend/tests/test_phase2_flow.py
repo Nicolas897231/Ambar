@@ -63,8 +63,8 @@ def test_phase2_workflow_hr_report_flow():
         employee = client.post(
             "/api/v1/hr/employees",
             json={
-                "identification": "9001",
-                "employee_code": "EMP-9001",
+                "identification": "900100",
+                "employee_code": "EMP-900100",
                 "full_name": "Empleado Fase Dos",
                 "position": "Analista documental",
                 "department": "Archivo",
@@ -88,7 +88,7 @@ def test_phase2_workflow_hr_report_flow():
         )
         assert invalid_employee.status_code == 422
 
-        compliance = client.get("/api/v1/hr/employees/9001/compliance", headers=headers)
+        compliance = client.get("/api/v1/hr/employees/900100/compliance", headers=headers)
         assert compliance.status_code == 200
         assert "missing_files" in compliance.json()
 

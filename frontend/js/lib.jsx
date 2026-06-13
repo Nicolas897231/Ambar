@@ -14,7 +14,7 @@ function Icon({ name, size = 18, stroke = 2, className = "", style }) {
 }
 
 /* ---------- Button ---------- */
-function Button({ variant = "primary", size, icon, iconRight, children, className = "", as, href, ...rest }) {
+function Button({ variant = "primary", size, icon, iconRight, children, className = "", as, href, disabled, ...rest }) {
   const cls = `btn btn-${variant}${size ? " btn-" + size : ""}${!children ? " btn-icon" : ""} ${className}`;
   const onMove = (e) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -22,8 +22,8 @@ function Button({ variant = "primary", size, icon, iconRight, children, classNam
     e.currentTarget.style.setProperty("--my", (e.clientY - r.top) + "px");
   };
   const content = <>{icon && <Icon name={icon} size={size === "sm" ? 14 : 16} />}{children && <span>{children}</span>}{iconRight && <Icon name={iconRight} size={size === "sm" ? 14 : 16} />}</>;
-  if (as === "a") return <a className={cls} href={href} onMouseMove={onMove} {...rest}>{content}</a>;
-  return <button className={cls} onMouseMove={onMove} {...rest}>{content}</button>;
+  if (as === "a") return <a className={cls} href={disabled ? undefined : href} aria-disabled={!!disabled} onMouseMove={onMove} {...rest}>{content}</a>;
+  return <button className={cls} onMouseMove={onMove} disabled={disabled} aria-disabled={!!disabled} {...rest}>{content}</button>;
 }
 
 /* ---------- Card ---------- */

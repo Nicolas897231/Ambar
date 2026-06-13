@@ -19,7 +19,7 @@ MANDATORY_FILES = {"hoja_vida", "contrato_firmado", "arl", "examen_ingreso"}
 
 
 class EmployeeCreate(BaseModel):
-    identification: str = Field(min_length=4, max_length=40)
+    identification: str = Field(min_length=6, max_length=12)
     employee_code: str = Field(min_length=2, max_length=40)
     full_name: str = Field(min_length=3, max_length=180)
     position: str = Field(min_length=2, max_length=120)
@@ -30,8 +30,8 @@ class EmployeeCreate(BaseModel):
     @classmethod
     def validate_identification(cls, value: str) -> str:
         normalized = value.strip()
-        if not re.fullmatch(r"[A-Za-z0-9.-]+", normalized) or not re.search(r"\d", normalized):
-            raise ValueError("Identification must be a document value, not a full name")
+        if not re.fullmatch(r"\d{6,12}", normalized):
+            raise ValueError("Identification must contain only 6 to 12 digits")
         return normalized
 
     @field_validator("employee_code", "position", "department")
@@ -96,7 +96,7 @@ class CandidateCreate(BaseModel):
     @classmethod
     def validate_candidate_name(cls, value: str) -> str:
         normalized = " ".join(value.strip().split())
-        if not re.search(r"[A-Za-zÃÃ‰ÃÃ“ÃšÃœÃ‘Ã¡Ã©Ã­Ã³ÃºÃ¼Ã±]", normalized) or re.fullmatch(r"[\d\s.-]+", normalized):
+        if not re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", normalized) or re.fullmatch(r"[\d\s.-]+", normalized):
             raise ValueError("Candidate name must contain a valid person name")
         return normalized
 

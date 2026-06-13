@@ -78,6 +78,29 @@ def require_permission(permission: str) -> Callable:
     return dependency
 
 
+def require_any_permission(*permissions: str) -> Callable:
+    def dependency(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+        granted = user_permissions(db, user)
+        if "*" not in granted and not any(permission in granted for permission in permissions):
+            write_audit(
+                db,
+                action="permission_denied",
+                module="security",
+                user_id=user.identification,
+                entity="permission",
+                entity_id="|".join(permissions),
+                result="denied",
+                severity="critical",
+                new_values={"required_any_permission": list(permissions)},
+                request=request,
+            )
+            db.commit()
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permission")
+        return user
+
+    return dependency
+
+
 def validate_internal_request(x_internal_signature: str | None = Header(default=None)) -> None:
     if x_internal_signature != get_settings().internal_service_secret:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid internal signature")

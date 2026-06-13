@@ -2,6 +2,7 @@
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 
 const port = Number(process.env.PORT || 3000);
 const root = join(process.cwd(), existsSync(join(process.cwd(), "dist", "index.html")) ? "dist" : ".");
@@ -37,7 +38,9 @@ function secureHeaders(headers = {}) {
 async function proxyApi(req, res) {
   const target = new URL(req.url, apiTarget);
   const headers = { ...req.headers };
+  const requestId = req.headers["x-request-id"] || randomUUID();
   delete headers.host;
+  headers["x-request-id"] = requestId;
   try {
     const response = await fetch(target, {
       method: req.method,
@@ -72,12 +75,17 @@ async function proxyApi(req, res) {
     }
     res.end();
   } catch (error) {
-    send(res, 502, JSON.stringify({ detail: "API gateway unavailable", target: apiTarget }), { "content-type": "application/json" });
+    send(res, 502, JSON.stringify({ detail: "API gateway unavailable" }), { "content-type": "application/json" });
   }
 }
 
 function safePath(urlPath) {
-  const clean = decodeURIComponent(urlPath.split("?")[0]);
+  let clean;
+  try {
+    clean = decodeURIComponent(urlPath.split("?")[0]);
+  } catch {
+    return null;
+  }
   const normalized = normalize(clean).replace(/^([/\\])+/, "");
   if (normalized.includes("..")) return null;
   return join(root, normalized || "index.html");

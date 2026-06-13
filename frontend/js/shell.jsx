@@ -1,10 +1,10 @@
 const ROUTE_TITLES = {
-  dashboard: ["Principal", "Dashboard"], expedients: ["Gestion Documental", "Expedientes"], documents: ["Gestion Documental", "Documentos"],
-  digitization: ["Gestion Documental", "Digitalizacion"], trd: ["Gestion Documental", "TRD & Retencion"],
-  archive: ["Archivo & Custodia", "Archivo Fisico"], transfers: ["Archivo & Custodia", "Transferencias"], loans: ["Archivo & Custodia", "Prestamos"],
-  correspondence: ["Archivo & Custodia", "Correspondencia"], hr: ["Talento Humano", "Empleados"], medical: ["Talento Humano", "Examenes Medicos"],
-  recruitment: ["Talento Humano", "Reclutamiento"], reports: ["Inteligencia", "Reportes & BI"], audit: ["Inteligencia", "Auditoria"],
-  security: ["Administracion", "Seguridad"], settings: ["Administracion", "Configuracion"],
+  dashboard: ["Principal", "Dashboard"], expedients: ["Gestión Documental", "Expedientes"], documents: ["Gestión Documental", "Documentos"],
+  digitization: ["Gestión Documental", "Digitalización"], trd: ["Gestión Documental", "TRD & Retención"],
+  archive: ["Archivo & Custodia", "Archivo Físico"], transfers: ["Archivo & Custodia", "Transferencias"], loans: ["Archivo & Custodia", "Préstamos"],
+  correspondence: ["Archivo & Custodia", "Correspondencia"], hr: ["Talento Humano", "Empleados"], medical: ["Talento Humano", "Exámenes Médicos"],
+  recruitment: ["Talento Humano", "Reclutamiento"], reports: ["Inteligencia", "Reportes & BI"], audit: ["Inteligencia", "Auditoría"],
+  security: ["Administración", "Seguridad"], settings: ["Administración", "Configuración"],
 };
 
 function Sidebar({ user, route, onNavigate, collapsed, setCollapsed, onOpenUserMenu }) {
@@ -110,7 +110,7 @@ function UserMenu({ user, onClose, onLogout, theme, toggleTheme }) {
         </div>
         <div className="divider" />
         <button className="um-item" onClick={toggleTheme}><Icon name={theme === "light" ? "moon" : "sun"} size={16} /> Modo {theme === "light" ? "oscuro" : "claro"}</button>
-        <button className="um-item danger" onClick={onLogout}><Icon name="log-out" size={16} /> Cerrar sesion</button>
+        <button className="um-item danger" onClick={onLogout}><Icon name="log-out" size={16} /> Cerrar sesión</button>
       </div>
     </>
   );
@@ -118,11 +118,11 @@ function UserMenu({ user, onClose, onLogout, theme, toggleTheme }) {
 
 function Tour({ onDone }) {
   const steps = [
-    { sel: '[data-tour="nav"]', title: "Menu por permisos", body: "El backend controla tu rol y el frontend solo muestra los modulos autorizados." },
-    { sel: '[data-tour="search"]', title: "Navegacion rapida", body: "Filtra modulos sin salir de la operacion actual." },
-    { sel: '[data-tour="globalsearch"]', title: "Busqueda universal", body: "Pulsa / para abrir el buscador de modulos." },
+    { sel: '[data-tour="nav"]', title: "Menú por permisos", body: "El backend controla tu rol y el frontend solo muestra los módulos autorizados." },
+    { sel: '[data-tour="search"]', title: "Navegación rápida", body: "Filtra módulos sin salir de la operación actual." },
+    { sel: '[data-tour="globalsearch"]', title: "Búsqueda universal", body: "Pulsa / para abrir el buscador de módulos." },
     { sel: '[data-tour="notif"]', title: "Alertas accionables", body: "Las notificaciones vienen del backend y llevan al contexto real." },
-    { sel: '[data-tour="user"]', title: "Cuenta y tema", body: "Consulta tu sesion, cambia tema y cierra sesion de forma segura." },
+    { sel: '[data-tour="user"]', title: "Cuenta y tema", body: "Consulta tu sesión, cambia tema y cierra sesión de forma segura." },
   ];
   const [i, setI] = useState(0);
   const [rect, setRect] = useState(null);
