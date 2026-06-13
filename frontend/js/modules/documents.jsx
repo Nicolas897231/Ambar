@@ -138,7 +138,7 @@ function DocumentsPage({ user }) {
                   <td><Badge tone={DOC_STATES[d.state] || "neutral"} dot>{d.state}</Badge></td>
                   <td>{d.folioTotal}</td>
                   <td>{d.files}</td>
-                  <td><Button variant="subtle" size="sm" icon="chevron-right" /></td>
+                  <td><Button variant="subtle" size="sm" icon="chevron-right" onClick={(event) => { event.stopPropagation(); setDetail(d); }} /></td>
                 </tr>
               ))}</tbody>
             </table>

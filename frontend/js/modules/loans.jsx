@@ -17,6 +17,7 @@ function normalizeLoanState(state) {
 
 function mapLoans(items) {
   return window.AmbarAPI.listFrom(items).map((item, i) => ({
+    rawId: item.idLoan || item.id || item.loan_id,
     id: item.loan_code || item.code || `PRE-${i + 1}`,
     doc: item.entity_label || item.document_name || item.expedient_name || item.entity_type || "Unidad documental",
     who: item.requester_name || item.borrower_name || "Solicitante",
@@ -27,15 +28,47 @@ function mapLoans(items) {
   }));
 }
 
-function RequestLoan({ onClose }) {
+function RequestLoan({ onClose, onCreated }) {
   const toast = useToast();
+  const [payload, setPayload] = loS({ entity_type: "expedient", entity_id: "", archive_id: "", requested_by: "", requester_area: "", due_at: "", reason: "" });
+  const liveArchives = window.useLiveData(() => window.AmbarAPI.endpoints.archives().then(window.AmbarAPI.listFrom), [], []);
+  const archives = liveArchives.data;
+  const setField = (key, value) => setPayload((current) => ({ ...current, [key]: value }));
+  const submit = async () => {
+    if (!payload.entity_id || !payload.archive_id || !payload.requested_by.trim() || !payload.due_at || !payload.reason.trim()) {
+      toast("Selecciona tipo, ID de unidad, archivo, solicitante, fecha y motivo.", { tone: "danger", title: "Faltan datos" });
+      return;
+    }
+    try {
+      const created = await window.AmbarAPI.post("/archives/loans", {
+        entity_type: payload.entity_type,
+        entity_id: Number(payload.entity_id),
+        archive_id: Number(payload.archive_id),
+        requested_by: payload.requested_by.trim(),
+        requester_area: payload.requester_area.trim() || null,
+        due_at: payload.due_at ? `${payload.due_at}T23:59:00` : null,
+        reason: payload.reason.trim(),
+      });
+      toast("Prestamo registrado en backend.", { tone: "ok", title: "Prestamo creado" });
+      onCreated(created);
+      onClose();
+    } catch (err) {
+      toast(err.message || "No fue posible crear el prestamo.", { tone: "danger", title: "Error" });
+    }
+  };
   return (
     <Modal title="Solicitar prestamo documental" sub="Salida temporal controlada de documento, carpeta, expediente o caja" onClose={onClose}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="send" onClick={() => { toast("Solicitud enviada al archivo", { tone: "ok", title: "Prestamo creado" }); onClose(); }}>Enviar solicitud</Button></>}>
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="send" onClick={submit}>Enviar solicitud</Button></>}>
       <div className="col gap4">
-        <Field label="Unidad documental" required help="Busca por nombre o codigo"><div className="input-icon"><Icon name="search" size={16} /><input placeholder="Codigo o nombre de unidad documental" /></div></Field>
-        <div className="grid cols-2" style={{ gap: "var(--s3)" }}><Field label="Area solicitante"><select>{(window.AREAS || ["Archivo"]).map(a => <option key={a}>{a}</option>)}</select></Field><Field label="Fecha esperada de devolucion" required><input type="date" /></Field></div>
-        <Field label="Motivo" required><textarea placeholder="Para que se requiere la unidad documental" /></Field>
+        <div className="grid cols-2" style={{ gap: "var(--s3)" }}>
+          <Field label="Tipo de unidad" required><select value={payload.entity_type} onChange={(e) => setField("entity_type", e.target.value)}><option value="document">Documento</option><option value="folder">Carpeta</option><option value="expedient">Expediente</option><option value="box">Caja</option></select></Field>
+          <Field label="ID interno de la unidad" required><input type="number" min="1" value={payload.entity_id} onChange={(e) => setField("entity_id", e.target.value)} placeholder="Ej. 12" /></Field>
+          <Field label="Archivo custodio" required><select value={payload.archive_id} onChange={(e) => setField("archive_id", e.target.value)}><option value="">Seleccionar archivo</option>{archives.map((archive) => <option key={archive.idArchive || archive.id} value={archive.idArchive || archive.id}>{archive.name || archive.archive_name || archive.code}</option>)}</select></Field>
+          <Field label="Fecha esperada de devolucion" required><input type="date" value={payload.due_at} onChange={(e) => setField("due_at", e.target.value)} /></Field>
+          <Field label="Solicitante" required><input value={payload.requested_by} onChange={(e) => setField("requested_by", e.target.value)} placeholder="Nombre de quien solicita" maxLength={160} /></Field>
+          <Field label="Area solicitante"><input value={payload.requester_area} onChange={(e) => setField("requester_area", e.target.value)} placeholder="Dependencia o area" maxLength={120} /></Field>
+        </div>
+        <Field label="Motivo" required><textarea value={payload.reason} onChange={(e) => setField("reason", e.target.value)} placeholder="Para que se requiere la unidad documental" /></Field>
         <div className="page-intro" style={{ background: "var(--info-bg)" }}><span className="pi-ico" style={{ background: "var(--info)" }}><Icon name="info" size={16} /></span><div><h4>Flujo del prestamo</h4><p>Solicitud, aprobacion, entrega con evidencia, devolucion y cierre. AMBAR genera alertas y Kardex cuando aplica.</p></div></div>
       </div>
     </Modal>
@@ -43,6 +76,7 @@ function RequestLoan({ onClose }) {
 }
 
 function LoansPage({ user }) {
+  const toast = useToast();
   const [tab, setTab] = loS("active");
   const [req, setReq] = loS(false);
   const liveLoans = window.useLiveData(() => window.AmbarAPI.endpoints.loans().then(mapLoans), [], []);
@@ -52,6 +86,19 @@ function LoansPage({ user }) {
   const active = loans.filter(l => lower(l.state).includes("activo")).length;
   const overdue = loans.filter(l => lower(l.state).includes("venc")).length;
   const returned = loans.filter(l => lower(l.state).includes("devuelto")).length;
+  const returnLoan = async (loan) => {
+    if (!loan.rawId) {
+      toast("El prestamo no trae id interno desde backend para registrar devolucion.", { tone: "danger", title: "Falta identificador" });
+      return;
+    }
+    try {
+      const returnedLoan = await window.AmbarAPI.post(`/archives/loans/${loan.rawId}/return`, { observations: "Devolucion registrada desde la bandeja operacional." });
+      liveLoans.setData((current) => (current || []).map((item) => item.rawId === loan.rawId ? mapLoans([returnedLoan])[0] : item));
+      toast("La devolucion quedo registrada en backend.", { tone: "ok", title: "Prestamo devuelto" });
+    } catch (err) {
+      toast(err.message || "No fue posible registrar la devolucion.", { tone: "danger", title: "Error" });
+    }
+  };
 
   return (
     <>
@@ -67,11 +114,11 @@ function LoansPage({ user }) {
       <Card flush className="an-rise">
         <div className="table-scroll"><table className="tbl"><thead><tr><th>Codigo</th><th>Unidad documental</th><th>Solicitante</th><th>Area</th><th>Salida</th><th>Devolucion</th><th>Estado</th><th></th></tr></thead><tbody>
           {filtered.length === 0 && <tr><td colSpan="8"><Empty icon="package-check" title="Sin prestamos">No hay prestamos reales para este filtro.</Empty></td></tr>}
-          {filtered.map(l => (<tr key={l.id} className="clickable"><td className="cell-mono">{l.id}</td><td className="cell-strong">{l.doc}</td><td><div className="t-avatar"><Avatar size="sm" name={l.who} color="var(--viz-indigo)" />{l.who}</div></td><td>{l.area}</td><td className="muted mono" style={{ fontSize: "var(--fs-xs)" }}>{l.out}</td><td className="mono" style={{ fontSize: "var(--fs-xs)", color: lower(l.state).includes("venc") ? "var(--danger)" : "var(--muted)", fontWeight: lower(l.state).includes("venc") ? 700 : 400 }}>{l.due}</td><td><Badge tone={LOAN_STATE[l.state] || "info"} dot>{l.state}</Badge></td><td>{lower(l.state).includes("activo") || lower(l.state).includes("venc") ? <Button variant="ghost" size="sm" icon="check">Devolver</Button> : <Button variant="subtle" size="sm" icon="chevron-right" />}</td></tr>))}
+          {filtered.map(l => (<tr key={l.id}><td className="cell-mono">{l.id}</td><td className="cell-strong">{l.doc}</td><td><div className="t-avatar"><Avatar size="sm" name={l.who} color="var(--viz-indigo)" />{l.who}</div></td><td>{l.area}</td><td className="muted mono" style={{ fontSize: "var(--fs-xs)" }}>{l.out}</td><td className="mono" style={{ fontSize: "var(--fs-xs)", color: lower(l.state).includes("venc") ? "var(--danger)" : "var(--muted)", fontWeight: lower(l.state).includes("venc") ? 700 : 400 }}>{l.due}</td><td><Badge tone={LOAN_STATE[l.state] || "info"} dot>{l.state}</Badge></td><td>{lower(l.state).includes("activo") || lower(l.state).includes("venc") ? <Button variant="ghost" size="sm" icon="check" onClick={() => returnLoan(l)}>Devolver</Button> : <span className="tag-soft">Cerrado</span>}</td></tr>))}
         </tbody></table></div>
         {filtered.length === 0 && <Empty icon="package-check" title="Sin prestamos en esta vista">No hay registros que coincidan con el filtro seleccionado.</Empty>}
       </Card>
-      {req && <RequestLoan onClose={() => setReq(false)} />}
+      {req && <RequestLoan onClose={() => setReq(false)} onCreated={(created) => liveLoans.setData((current) => [mapLoans([created])[0], ...(current || [])])} />}
     </>
   );
 }

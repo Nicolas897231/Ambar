@@ -100,7 +100,7 @@
 .step.done .s-line { background: var(--ok); }
 
 /* ---------------- KANBAN ---------------- */
-.kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(264px, 1fr); gap: var(--s4); overflow-x: auto; padding-bottom: var(--s3); align-items: start; }
+.kanban { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--s4); overflow-x: hidden; padding-bottom: var(--s3); align-items: start; }
 .kcol { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-lg); display: flex; flex-direction: column; max-height: 72vh; }
 .kcol-head { display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line); position: sticky; top: 0; }
 .kcol-head .k-tag { width: 8px; height: 8px; border-radius: 50%; }
@@ -156,6 +156,9 @@
 .matrix th, .matrix td { padding: var(--s3); border: 1px solid var(--line); text-align: center; }
 .matrix th:first-child, .matrix td:first-child { text-align: left; font-weight: 600; }
 .matrix thead th { background: var(--panel-2); color: var(--muted); font-size: var(--fs-xs); }
+.matrix-wrap { max-width: 100%; overflow: auto; }
+.roles-matrix { min-width: 980px; }
+.roles-matrix .role-head { writing-mode: horizontal-tb; transform: none; min-width: 132px; max-width: 180px; height: auto; white-space: normal; line-height: 1.2; vertical-align: bottom; }
 .perm-cell { width: 22px; height: 22px; border-radius: 6px; display: inline-grid; place-items: center; cursor: pointer; transition: all var(--t-fast); }
 .perm-cell.on { background: var(--ok); color: #fff; }
 .perm-cell.off { background: var(--panel-3); color: var(--faint); }

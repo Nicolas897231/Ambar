@@ -190,6 +190,47 @@ function ToastProvider({ children }) {
 }
 const useToast = () => useContext(ToastCtx);
 
+/* ---------- Download helpers ---------- */
+function safeFilename(value, fallback = "ambar-export") {
+  return String(value || fallback)
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || fallback;
+}
+
+function downloadText(filename, text, type = "text/plain;charset=utf-8") {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvValue(value) {
+  if (value == null) return "";
+  const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+  return /[",\n;]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadCSV(filename, rows, columns) {
+  const data = Array.isArray(rows) ? rows : [];
+  const cols = columns || Array.from(data.reduce((set, row) => {
+    Object.keys(row || {}).forEach(k => set.add(k));
+    return set;
+  }, new Set()));
+  const csv = [cols.join(";"), ...data.map(row => cols.map(col => csvValue(row?.[col])).join(";"))].join("\n");
+  downloadText(`${safeFilename(filename)}.csv`, csv, "text/csv;charset=utf-8");
+}
+
+function downloadJSON(filename, data) {
+  downloadText(`${safeFilename(filename)}.json`, JSON.stringify(data || {}, null, 2), "application/json;charset=utf-8");
+}
+
 /* ---------- Stat helpers ---------- */
 function useCountUp(target, dur = 900) {
   const num = typeof target === "number" ? target : parseFloat(target) || 0;
@@ -257,5 +298,5 @@ function Stepper({ steps, current }) {
   );
 }
 
-Object.assign(window, { Icon, Button, Card, CardHead, Badge, Tabs, Segmented, Tip, HelpDot, Switch, Field, Empty, Skeleton, Avatar, Modal, Drawer, ToastProvider, useToast, Metric, Meter, Stepper, useCountUp,
+Object.assign(window, { Icon, Button, Card, CardHead, Badge, Tabs, Segmented, Tip, HelpDot, Switch, Field, Empty, Skeleton, Avatar, Modal, Drawer, ToastProvider, useToast, downloadCSV, downloadJSON, downloadText, safeFilename, Metric, Meter, Stepper, useCountUp,
   React, useState, useEffect, useRef, useMemo, useCallback, createContext, useContext });

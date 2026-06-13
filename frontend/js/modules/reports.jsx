@@ -2,13 +2,18 @@ const { useState: reS } = React;
 
 function ReportsPage() {
   const [scope, setScope] = reS("doc");
+  const toast = useToast();
   const { data: dashboard } = useLiveData(() => AmbarAPI.endpoints.dashboard(), {}, []);
   const { data: advanced } = useLiveData(() => AmbarAPI.endpoints.dashboardAdvanced(), {}, []);
   const docsByStatus = dashboard.documents_by_status || {};
   const statusItems = Object.entries(docsByStatus).map(([label, value]) => ({ label, value }));
+  const exportOperationalJson = () => {
+    downloadJSON("ambar-operacional", { generated_at: new Date().toISOString(), dashboard, advanced });
+    toast("Indicadores exportados en JSON.", { tone: "ok", title: "Descarga lista" });
+  };
   return (
     <>
-      <div className="page-head"><div><div className="eyebrow">Inteligencia</div><h1>Reportes & BI</h1><p className="lead">Indicadores conectados a la base de datos. No se muestran datos simulados.</p></div><div className="page-actions"><Button as="a" href="/api/v1/analytics/dashboard" variant="ghost" icon="download">JSON operacional</Button></div></div>
+      <div className="page-head"><div><div className="eyebrow">Inteligencia</div><h1>Reportes & BI</h1><p className="lead">Indicadores conectados a la base de datos. No se muestran datos simulados.</p></div><div className="page-actions"><Button variant="ghost" icon="download" onClick={exportOperationalJson}>JSON operacional</Button></div></div>
       <Segmented options={[{ value: "doc", label: "Gestion Documental", icon: "file-text" }, { value: "archive", label: "Archivo Fisico", icon: "warehouse" }, { value: "hr", label: "RRHH", icon: "briefcase" }]} value={scope} onChange={setScope} />
 
       {scope === "doc" && (<>

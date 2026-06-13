@@ -56,8 +56,29 @@ function TransferWizard({ onClose }) {
   );
 }
 
+function TransferDetail({ transfer, onClose }) {
+  return (
+    <Drawer title={transfer.id} sub={`${transfer.from} -> ${transfer.to}`} onClose={onClose}
+      headExtra={<Badge tone={toneForTransfer(transfer.state)} dot>{transfer.state}</Badge>}>
+      <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
+        <div className="kv"><span className="k">Archivo origen</span><span className="v">{transfer.from}</span></div>
+        <div className="kv"><span className="k">Archivo destino</span><span className="v">{transfer.to}</span></div>
+        <div className="kv"><span className="k">Items declarados</span><span className="v mono">{transfer.items}</span></div>
+        <div className="kv"><span className="k">Fecha</span><span className="v mono">{transfer.date}</span></div>
+        <div className="kv"><span className="k">Responsable</span><span className="v">{transfer.by}</span></div>
+      </div>
+      <div className="divider" />
+      <Card pad="sm" style={{ background: "var(--panel-2)" }}>
+        <CardHead title="Trazabilidad" sub="Detalle conectado al registro de transferencia disponible en backend" icon="route" />
+        <p className="muted">Abre Kardex o Recepcion para ver la validacion documental, FUID e inconsistencias asociadas.</p>
+      </Card>
+    </Drawer>
+  );
+}
+
 function TransfersPage({ user }) {
   const [wiz, setWiz] = trS(false);
+  const [detail, setDetail] = trS(null);
   const liveBatches = window.useLiveData(() => window.AmbarAPI.endpoints.transfers().then(mapTransfers), [], []);
   const batches = liveBatches.data;
   const lower = value => String(value || "").toLowerCase();
@@ -78,10 +99,11 @@ function TransfersPage({ user }) {
       <Card flush className="an-rise">
         <div className="row between" style={{ padding: "var(--s4)", borderBottom: "1px solid var(--line)" }}><b>Lotes de transferencia</b><div className="search-box"><Icon name="search" size={16} /><input placeholder="Buscar lote FUID..." /></div></div>
         <div className="table-scroll"><table className="tbl"><thead><tr><th>Lote FUID</th><th>Origen</th><th>Destino</th><th>Items</th><th>Estado</th><th>Fecha</th><th>Responsable</th><th></th></tr></thead><tbody>
-          {batches.map(b => (<tr key={b.id} className="clickable"><td className="cell-mono cell-strong">{b.id}</td><td>{b.from}</td><td className="row gap2"><Icon name="arrow-right" size={13} style={{ color: "var(--faint)" }} />{b.to}</td><td className="mono">{b.items}</td><td><Badge tone={toneForTransfer(b.state)} dot>{b.state}</Badge></td><td className="muted mono" style={{ fontSize: "var(--fs-xs)" }}>{b.date}</td><td>{b.by}</td><td><Button variant="subtle" size="sm" icon="chevron-right" /></td></tr>))}
+          {batches.map(b => (<tr key={b.id} className="clickable" onClick={() => setDetail(b)}><td className="cell-mono cell-strong">{b.id}</td><td>{b.from}</td><td className="row gap2"><Icon name="arrow-right" size={13} style={{ color: "var(--faint)" }} />{b.to}</td><td className="mono">{b.items}</td><td><Badge tone={toneForTransfer(b.state)} dot>{b.state}</Badge></td><td className="muted mono" style={{ fontSize: "var(--fs-xs)" }}>{b.date}</td><td>{b.by}</td><td><Button variant="subtle" size="sm" icon="chevron-right" onClick={(event) => { event.stopPropagation(); setDetail(b); }} /></td></tr>))}
         </tbody></table></div>
       </Card>
       {wiz && <TransferWizard onClose={() => setWiz(false)} />}
+      {detail && <TransferDetail transfer={detail} onClose={() => setDetail(null)} />}
     </>
   );
 }

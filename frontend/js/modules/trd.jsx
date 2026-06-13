@@ -3,8 +3,6 @@
    ============================================================ */
 const { useState: tdS } = React;
 
-const SERIES = [];
-
 function normalizeDisposition(value) {
   const raw = String(value || "").trim();
   const map = { CT: "Conservacion total", E: "Eliminacion", S: "Seleccion", MT: "Medio tecnologico" };
@@ -13,6 +11,7 @@ function normalizeDisposition(value) {
 
 function mapTrdRows(items) {
   return (items || []).map((item, i) => ({
+    id: item.idSeries || item.series_id || item.id || i,
     code: item.series_code || item.code || String(i + 1).padStart(3, "0"),
     name: item.series_name || item.name || item.subseries_name || "Serie documental",
     sub: Array.isArray(item.subseries)
@@ -31,8 +30,47 @@ function dispositionTone(value) {
   return "success";
 }
 
+function CreateSeriesModal({ onClose, onCreated }) {
+  const toast = useToast();
+  const [payload, setPayload] = tdS({ code: "", name: "", description: "", dependency_id: "", status: "active" });
+  const { data: depsRaw } = useLiveData(() => AmbarAPI.endpoints.trdDependencies(), [], []);
+  const dependencies = AmbarAPI.listFrom(depsRaw);
+  const setField = (key, value) => setPayload(p => ({ ...p, [key]: value }));
+  const submit = async () => {
+    const missing = [];
+    if (!payload.code.trim()) missing.push("codigo");
+    if (!payload.name.trim()) missing.push("nombre");
+    if (missing.length) {
+      toast(`Falta: ${missing.join(", ")}.`, { tone: "danger", title: "Serie incompleta" });
+      return;
+    }
+    try {
+      const body = { ...payload, dependency_id: payload.dependency_id ? Number(payload.dependency_id) : null };
+      const created = await AmbarAPI.post("/trd/series", body);
+      toast("Serie creada en la TRD.", { tone: "ok", title: "TRD actualizada" });
+      onCreated(created);
+      onClose();
+    } catch (err) {
+      toast(err.message || "No fue posible crear la serie.", { tone: "danger", title: "Error" });
+    }
+  };
+  return (
+    <Modal title="Nueva serie documental" sub="La serie queda gobernada por una dependencia TRD." onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear serie</Button></>}>
+      <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
+        <Field label="Codigo" required><input maxLength={40} value={payload.code} onChange={e => setField("code", e.target.value)} placeholder="100" /></Field>
+        <Field label="Nombre" required><input maxLength={160} value={payload.name} onChange={e => setField("name", e.target.value)} placeholder="Historias laborales" /></Field>
+        <Field label="Dependencia"><select value={payload.dependency_id} onChange={e => setField("dependency_id", e.target.value)}><option value="">Usar dependencia por defecto</option>{dependencies.map(d => <option key={d.idDependency || d.id} value={d.idDependency || d.id}>{d.name || d.code}</option>)}</select></Field>
+        <Field label="Estado"><select value={payload.status} onChange={e => setField("status", e.target.value)}><option value="active">Activa</option><option value="inactive">Inactiva</option></select></Field>
+        <div style={{ gridColumn: "1 / -1" }}><Field label="Descripcion"><textarea value={payload.description} maxLength={500} onChange={e => setField("description", e.target.value)} placeholder="Alcance documental de esta serie" /></Field></div>
+      </div>
+    </Modal>
+  );
+}
+
 function TRDPage({ user }) {
   const [tab, setTab] = tdS("series");
+  const [creating, setCreating] = tdS(false);
   const liveSeries = window.useLiveData(
     () => window.AmbarAPI.endpoints.trdEditor().then(value => mapTrdRows(window.AmbarAPI.listFrom(value, ["rows", "items", "results"]))),
     [],
@@ -48,7 +86,10 @@ function TRDPage({ user }) {
           <h1>TRD & Retencion</h1>
           <p className="lead">Tabla de Retencion Documental: define cuanto tiempo se conserva cada tipo de documento y su disposicion final.</p>
         </div>
-        <div className="page-actions">{can(user, ["trd.manage"]) && <Button icon="plus">Nueva serie</Button>}</div>
+        <div className="page-actions">
+          <Button variant="ghost" icon="download" onClick={() => downloadCSV("trd-series", series)}>Exportar CSV</Button>
+          {can(user, ["trd.manage"]) && <Button icon="plus" onClick={() => setCreating(true)}>Nueva serie</Button>}
+        </div>
       </div>
       <div className="page-intro an-rise">
         <span className="pi-ico"><Icon name="table" size={18} /></span>
@@ -110,14 +151,9 @@ function TRDPage({ user }) {
               <div className="row between"><span className="muted" style={{ fontSize: "var(--fs-xs)" }}>Series con esta disposicion</span><Badge tone={tn}>{series.filter(s => s.final === t).length}</Badge></div>
             </Card>
           ))}
-          <Card style={{ gridColumn: "1 / -1" }} className="an-rise">
-            <div className="page-intro" style={{ background: "var(--danger-bg)", border: "none" }}>
-              <span className="pi-ico" style={{ background: "var(--danger)" }}><Icon name="alert-triangle" size={16} /></span>
-              <div><h4>La disposicion final requiere trazabilidad</h4><p>La eliminacion o seleccion documental debe quedar auditada y asociada a la TRD. AMBAR nunca debe eliminar sin rastro.</p></div>
-            </div>
-          </Card>
         </div>
       )}
+      {creating && <CreateSeriesModal onClose={() => setCreating(false)} onCreated={(created) => liveSeries.setData(current => [mapTrdRows([created])[0], ...(current || [])])} />}
     </>
   );
 }

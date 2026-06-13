@@ -1,5 +1,5 @@
 /* ============================================================
-   AMBAR - Gestión Documental: Expedientes (entidad principal)
+   AMBAR - Gestion Documental: Expedientes
    ============================================================ */
 const { useState: exS } = React;
 
@@ -12,32 +12,130 @@ const EXP_TYPES = [
   { key: "Proceso", icon: "workflow", color: "var(--viz-green)" },
 ];
 
+function normalizeExpedient(item, i) {
+  return {
+    backendId: item.idExpedient || item.id,
+    id: item.expedient_code || item.code || item.idExpedient || `EXP-${i + 1}`,
+    name: item.expedient_name || item.name || item.expedient_code || "Expediente sin nombre",
+    type: item.expedient_type || item.type || "Proceso",
+    area: item.dependency_name || item.archive_name || item.department || "Archivo",
+    docs: item.documents_count || item.total_documents || 0,
+    compliance: item.compliance_percent || item.completeness || item.compliance || 0,
+    loc: item.physical_location_path || item.location_path || item.archive_name || "Digital",
+    state: item.status || "active",
+    updated: item.updated_at ? String(item.updated_at).slice(0, 10) : "-",
+    color: EXP_TYPES[i % EXP_TYPES.length].color,
+  };
+}
+
 function ExpedientDetail({ exp, onClose, navigate }) {
   const tc = EXP_TYPES.find(t => t.key === exp.type) || EXP_TYPES[0];
+  const { data: docsRaw, loading } = useLiveData(() => AmbarAPI.endpoints.documents(), [], [exp.backendId]);
+  const docs = AmbarAPI.listFrom(docsRaw).filter(d => {
+    const expId = d.expedient_id || d.ps950IdExpedient || d.idExpedient;
+    const expCode = d.expedient_code || "";
+    return String(expId || "") === String(exp.backendId || "") || String(expCode).toLowerCase() === String(exp.id).toLowerCase();
+  });
+
   return (
     <Drawer wide title={exp.name} sub={<span className="mono">{exp.id}</span>} onClose={onClose}
-      headExtra={<Badge tone={exp.state === "Abierto" ? "success" : "neutral"} dot>{exp.state}</Badge>}>
+      headExtra={<Badge tone={String(exp.state).toLowerCase().includes("active") || exp.state === "Abierto" ? "success" : "neutral"} dot>{exp.state}</Badge>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
         <Card pad="sm">
-          <div className="row gap2" style={{ marginBottom: "var(--s3)" }}><span className="m-icon" style={{ background: `color-mix(in oklab, ${tc.color} 16%, transparent)`, color: tc.color }}><Icon name={tc.icon} size={18} /></span><div><div style={{ fontWeight: 700 }}>{exp.type}</div><small className="muted">{exp.area}</small></div></div>
+          <div className="row gap2" style={{ marginBottom: "var(--s3)" }}>
+            <span className="m-icon" style={{ background: `color-mix(in oklab, ${tc.color} 16%, transparent)`, color: tc.color }}>
+              <Icon name={tc.icon} size={18} />
+            </span>
+            <div><div style={{ fontWeight: 700 }}>{exp.type}</div><small className="muted">{exp.area}</small></div>
+          </div>
           <div className="dl">
-            <dt>Documentos</dt><dd>{exp.docs}</dd>
-            <dt>Ubicación</dt><dd className="mono" style={{ fontSize: "var(--fs-xs)" }}>{exp.loc}</dd>
-            <dt>Última actualización</dt><dd>{exp.updated || "-"}</dd>
+            <dt>Documentos</dt><dd>{docs.length || exp.docs}</dd>
+            <dt>Ubicacion</dt><dd className="mono" style={{ fontSize: "var(--fs-xs)" }}>{exp.loc}</dd>
+            <dt>Ultima actualizacion</dt><dd>{exp.updated || "-"}</dd>
             <dt>Estado</dt><dd>{exp.state}</dd>
           </div>
         </Card>
         <Card pad="sm">
-          <div className="row between" style={{ marginBottom: "var(--s3)" }}><b style={{ fontSize: "var(--fs-sm)" }}>Completitud documental</b><Badge tone={exp.compliance >= 90 ? "success" : exp.compliance >= 70 ? "warning" : "danger"}>{exp.compliance}%</Badge></div>
+          <div className="row between" style={{ marginBottom: "var(--s3)" }}>
+            <b style={{ fontSize: "var(--fs-sm)" }}>Completitud documental</b>
+            <Badge tone={exp.compliance >= 90 ? "success" : exp.compliance >= 70 ? "warning" : "danger"}>{exp.compliance}%</Badge>
+          </div>
           <Meter value={exp.compliance} tone={exp.compliance >= 90 ? "ok" : exp.compliance >= 70 ? "warn" : "danger"} />
-          <p className="muted" style={{ marginTop: "var(--s3)", fontSize: "var(--fs-sm)" }}>La lista de documentos obligatorios debe venir de tipologías/TRD. No se muestran checklist ficticios.</p>
+          <p className="muted" style={{ marginTop: "var(--s3)", fontSize: "var(--fs-sm)" }}>
+            AMBAR calcula la completitud con documentos reales asociados y reglas de TRD cuando el backend las entrega.
+          </p>
         </Card>
       </div>
       <div className="grid cols-2" style={{ gap: "var(--s4)", marginTop: "var(--s4)" }}>
-        <Card><Empty icon="folder" title="Carpetas bajo demanda">Abre Documentos para consultar registros reales asociados a este expediente.</Empty><Button variant="ghost" className="btn-block" icon="file-text" onClick={() => navigate && navigate("documents")}>Ver documentos</Button></Card>
-        <Card><Empty icon="history" title="Kardex bajo demanda">El timeline debe consultarse desde Kardex cuando el backend entregue movimientos de esta entidad.</Empty><Button variant="ghost" className="btn-block" icon="route" onClick={() => navigate && navigate("archive")}>Ver custodia</Button></Card>
+        <Card>
+          <CardHead title="Documentos del expediente" sub="Registros reales asociados" icon="file-text" action={<Badge tone="outline">{docs.length}</Badge>} />
+          {loading ? <Skeleton rows={4} /> : docs.length === 0 ? <Empty icon="file-text" title="Sin documentos asociados">No hay documentos ligados a este expediente en backend.</Empty> : (
+            <div className="table-scroll">
+              <table className="tbl">
+                <thead><tr><th>Documento</th><th>Tipo</th><th>Archivos</th></tr></thead>
+                <tbody>{docs.map(d => <tr key={d.idDocument || d.id}><td className="cell-strong">{d.document_name || d.title || d.name}</td><td><span className="tag-soft">{d.document_type || d.type_name || "Sin tipologia"}</span></td><td>{d.files_count || 0}</td></tr>)}</tbody>
+              </table>
+            </div>
+          )}
+          <Button variant="ghost" className="btn-block" icon="file-text" onClick={() => navigate && navigate("documents")}>Ver documentos</Button>
+        </Card>
+        <Card>
+          <Empty icon="history" title="Trazabilidad bajo demanda">Para ver movimientos, abre Kardex o Custodia. No se muestran movimientos inventados.</Empty>
+          <Button variant="ghost" className="btn-block" icon="route" onClick={() => navigate && navigate("archive")}>Ver custodia</Button>
+        </Card>
       </div>
     </Drawer>
+  );
+}
+
+function CreateExpedientModal({ onClose, onCreated }) {
+  const toast = useToast();
+  const [payload, setPayload] = exS({ expedient_code: "", expedient_name: "", expedient_type: "administrativo", metadata: {} });
+  const { data: archivesRaw } = useLiveData(() => AmbarAPI.endpoints.archives(), [], []);
+  const { data: depsRaw } = useLiveData(() => AmbarAPI.endpoints.trdDependencies(), [], []);
+  const { data: seriesRaw } = useLiveData(() => AmbarAPI.endpoints.trdSeries(), [], []);
+  const { data: subRaw } = useLiveData(() => AmbarAPI.endpoints.trdSubseries(), [], []);
+  const archives = AmbarAPI.listFrom(archivesRaw);
+  const dependencies = AmbarAPI.listFrom(depsRaw);
+  const series = AmbarAPI.listFrom(seriesRaw);
+  const subseries = AmbarAPI.listFrom(subRaw).filter(s => !payload.series_id || Number(s.ps610IdSeries || s.series_id) === Number(payload.series_id));
+  const setField = (key, value) => setPayload(p => ({ ...p, [key]: value }));
+
+  const submit = async () => {
+    const missing = [];
+    if (!payload.expedient_code.trim()) missing.push("codigo");
+    if (!payload.expedient_name.trim()) missing.push("nombre");
+    if (!payload.archive_id) missing.push("archivo");
+    if (!payload.series_id) missing.push("serie");
+    if (!payload.subseries_id) missing.push("subserie");
+    if (missing.length) {
+      toast(`Falta: ${missing.join(", ")}.`, { tone: "danger", title: "No se puede crear" });
+      return;
+    }
+    try {
+      const created = await AmbarAPI.post("/archives/expedients", payload);
+      toast("Expediente creado y asociado a TRD.", { tone: "ok", title: "Expediente creado" });
+      onCreated(created);
+      onClose();
+    } catch (err) {
+      toast(err.message || "No fue posible crear el expediente.", { tone: "danger", title: "Error" });
+    }
+  };
+
+  return (
+    <Modal lg title="Nuevo expediente" sub="Clasifica el expediente desde TRD. El archivo y la retencion quedan trazables." onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear expediente</Button></>}>
+      <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
+        <Field label="Codigo" required><input value={payload.expedient_code} maxLength={80} placeholder="EXP-2026-0001" onChange={e => setField("expedient_code", e.target.value)} /></Field>
+        <Field label="Nombre" required><input value={payload.expedient_name} maxLength={220} placeholder="Historia laboral / proceso / contrato" onChange={e => setField("expedient_name", e.target.value)} /></Field>
+        <Field label="Tipo"><select value={payload.expedient_type} onChange={e => setField("expedient_type", e.target.value)}>{["administrativo", "laboral", "contable", "juridico", "electronico", "hibrido"].map(x => <option key={x} value={x}>{x}</option>)}</select></Field>
+        <Field label="Archivo" required><select value={payload.archive_id || ""} onChange={e => setField("archive_id", Number(e.target.value) || null)}><option value="">Seleccionar archivo</option>{archives.map(a => <option key={a.idArchive || a.id} value={a.idArchive || a.id}>{a.archive_name || a.name || a.archive_code}</option>)}</select></Field>
+        <Field label="Dependencia TRD"><select value={payload.dependency_id || ""} onChange={e => setField("dependency_id", Number(e.target.value) || null)}><option value="">Heredar de la serie</option>{dependencies.map(d => <option key={d.idDependency || d.id} value={d.idDependency || d.id}>{d.name || d.dependency_name || d.code}</option>)}</select></Field>
+        <Field label="Serie" required><select value={payload.series_id || ""} onChange={e => { setField("series_id", Number(e.target.value) || null); setField("subseries_id", null); }}><option value="">Seleccionar serie</option>{series.map(s => <option key={s.idSeries || s.id} value={s.idSeries || s.id}>{s.code ? `${s.code} - ` : ""}{s.name || s.series_name}</option>)}</select></Field>
+        <Field label="Subserie" required><select value={payload.subseries_id || ""} onChange={e => setField("subseries_id", Number(e.target.value) || null)}><option value="">Seleccionar subserie</option>{subseries.map(s => <option key={s.idSubseries || s.id} value={s.idSubseries || s.id}>{s.name || s.subseries_name}</option>)}</select></Field>
+        <Field label="Ubicacion digital"><input value={payload.digital_location || ""} maxLength={180} placeholder="Repositorio / ruta logica" onChange={e => setField("digital_location", e.target.value)} /></Field>
+      </div>
+    </Modal>
   );
 }
 
@@ -45,18 +143,9 @@ function ExpedientsPage({ user, navigate }) {
   const [type, setType] = exS("");
   const [q, setQ] = exS("");
   const [detail, setDetail] = exS(null);
+  const [creating, setCreating] = exS(false);
   const liveExpedients = window.useLiveData(
-    () => window.AmbarAPI.endpoints.expedients().then(value => window.AmbarAPI.listFrom(value).map((item, i) => ({
-      id: item.expedient_code || item.idExpedient || `EXP-${i + 1}`,
-      name: item.expedient_name || item.name || item.expedient_code || "Expediente sin nombre",
-      type: item.expedient_type || item.type || "Proceso",
-      area: item.dependency_name || item.archive_name || "Archivo",
-      docs: item.documents_count || item.total_documents || 0,
-      compliance: item.compliance_percent || item.completeness || item.compliance || 0,
-      loc: item.physical_location_path || item.location_path || item.archive_name || "Digital",
-      state: item.status || "Abierto",
-      color: EXP_TYPES[i % EXP_TYPES.length].color
-    }))),
+    () => window.AmbarAPI.endpoints.expedients().then(value => window.AmbarAPI.listFrom(value).map(normalizeExpedient)),
     [],
     []
   );
@@ -65,16 +154,16 @@ function ExpedientsPage({ user, navigate }) {
   return (
     <>
       <div className="page-head">
-        <div><div className="eyebrow">Gestión Documental</div><h1>Expedientes</h1><p className="lead">El expediente es la unidad principal de AMBAR: agrupa todos los documentos relacionados con un empleado, cliente, proveedor, contrato, proyecto o proceso.</p></div>
-        <div className="page-actions">{can(user, ["document.create"]) && <Button icon="plus">Nuevo expediente</Button>}</div>
+        <div><div className="eyebrow">Gestion Documental</div><h1>Expedientes</h1><p className="lead">El expediente es la unidad principal de AMBAR: agrupa todos los documentos relacionados con un empleado, cliente, proveedor, contrato, proyecto o proceso.</p></div>
+        <div className="page-actions">{can(user, ["document.create"]) && <Button icon="plus" onClick={() => setCreating(true)}>Nuevo expediente</Button>}</div>
       </div>
 
-      <div className="page-intro an-rise"><span className="pi-ico"><Icon name="folder-kanban" size={18} /></span><div><h4>¿Por qué expedientes?</h4><p>En lugar de buscar documentos sueltos, los agrupas por su contexto real. Así un nuevo empleado, un proveedor o un proceso jurídico tienen toda su información en un solo lugar - con control de completitud y trazabilidad.</p></div></div>
+      <div className="page-intro an-rise"><span className="pi-ico"><Icon name="folder-kanban" size={18} /></span><div><h4>Por que expedientes</h4><p>En lugar de buscar documentos sueltos, los agrupas por su contexto real. Asi un nuevo empleado, un proveedor o un proceso juridico tienen toda su informacion en un solo lugar, con control de completitud y trazabilidad.</p></div></div>
 
-      <div className="grid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+      <div className="grid exp-type-grid">
         {EXP_TYPES.map((t, i) => {
           const count = liveExpedients.data.filter(e => e.type === t.key).length;
-          return <Card key={t.key} interactive pad="sm" className={`an-scale${type === t.key ? "" : ""}`} style={{ "--i": i, borderColor: type === t.key ? t.color : "", borderWidth: type === t.key ? 2 : 1 }} onClick={() => setType(type === t.key ? "" : t.key)}>
+          return <Card key={t.key} interactive pad="sm" className="an-scale" style={{ "--i": i, borderColor: type === t.key ? t.color : "", borderWidth: type === t.key ? 2 : 1 }} onClick={() => setType(type === t.key ? "" : t.key)}>
             <span className="m-icon" style={{ background: `color-mix(in oklab, ${t.color} 16%, transparent)`, color: t.color, marginBottom: 8 }}><Icon name={t.icon} size={18} /></span>
             <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-xl)", fontWeight: 800 }}>{count}</div>
             <small className="muted">{t.key}s</small>
@@ -84,12 +173,12 @@ function ExpedientsPage({ user, navigate }) {
 
       <Card flush className="an-rise">
         <div className="row between" style={{ padding: "var(--s4)", borderBottom: "1px solid var(--line)" }}>
-          <div className="search-box"><Icon name="search" size={16} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar expediente por nombre o código..." /></div>
+          <div className="search-box"><Icon name="search" size={16} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar expediente por nombre o codigo..." /></div>
           {type && <FilterChip label={type} active onClick={() => setType("")} />}
         </div>
         <div className="table-scroll">
           <table className="tbl">
-            <thead><tr><th>Código</th><th>Nombre / Entidad</th><th>Tipo</th><th>área</th><th>Docs</th><th>Completitud</th><th>Ubicación</th><th>Estado</th><th></th></tr></thead>
+            <thead><tr><th>Codigo</th><th>Nombre / Entidad</th><th>Tipo</th><th>Area</th><th>Docs</th><th>Completitud</th><th>Ubicacion</th><th>Estado</th><th></th></tr></thead>
             <tbody>
               {rows.map(e => {
                 const tc = EXP_TYPES.find(t => t.key === e.type) || EXP_TYPES[5];
@@ -101,7 +190,7 @@ function ExpedientsPage({ user, navigate }) {
                   <td className="mono">{e.docs}</td>
                   <td style={{ minWidth: 130 }}><Meter value={e.compliance} tone={e.compliance >= 90 ? "ok" : e.compliance >= 70 ? "warn" : "danger"} showLabel /></td>
                   <td className="muted mono" style={{ fontSize: "var(--fs-xs)" }}>{e.loc}</td>
-                  <td><Badge tone={e.state === "Abierto" ? "success" : "neutral"} dot>{e.state}</Badge></td>
+                  <td><Badge tone={String(e.state).toLowerCase().includes("active") || e.state === "Abierto" ? "success" : "neutral"} dot>{e.state}</Badge></td>
                   <td onClick={ev => ev.stopPropagation()}><Button variant="subtle" size="sm" icon="chevron-right" onClick={() => setDetail(e)} /></td>
                 </tr>;
               })}
@@ -111,6 +200,7 @@ function ExpedientsPage({ user, navigate }) {
       </Card>
 
       {detail && <ExpedientDetail exp={detail} onClose={() => setDetail(null)} navigate={navigate} />}
+      {creating && <CreateExpedientModal onClose={() => setCreating(false)} onCreated={(created) => liveExpedients.setData(current => [normalizeExpedient(created, 0), ...(current || [])])} />}
     </>
   );
 }
