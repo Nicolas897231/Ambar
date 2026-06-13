@@ -36,6 +36,12 @@ function Root() {
     window.AmbarAPI.validateSession()
       .then((freshUser) => {
         if (!alive) return;
+        if (!freshUser) {
+          clearSession();
+          setUser(null);
+          if (!["empleo", "portal"].includes(getRoute())) location.hash = "";
+          return;
+        }
         setSession(freshUser);
         setUser(freshUser);
       })

@@ -85,7 +85,12 @@
       return me;
     },
     async validateSession() {
-      const me = mapUser(await request("/auth/me"));
+      const status = await request("/auth/session");
+      if (!status?.authenticated || !status.user) {
+        localStorage.removeItem(USER);
+        return null;
+      }
+      const me = mapUser(status.user);
       localStorage.setItem(USER, JSON.stringify(me));
       return me;
     },
