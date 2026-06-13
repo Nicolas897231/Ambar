@@ -1,5 +1,5 @@
 /* ============================================================
-   AMBAR â€” GestiÃ³n Documental: Expedientes (entidad principal)
+   AMBAR - Gestión Documental: Expedientes (entidad principal)
    ============================================================ */
 const { useState: exS } = React;
 
@@ -22,15 +22,15 @@ function ExpedientDetail({ exp, onClose, navigate }) {
           <div className="row gap2" style={{ marginBottom: "var(--s3)" }}><span className="m-icon" style={{ background: `color-mix(in oklab, ${tc.color} 16%, transparent)`, color: tc.color }}><Icon name={tc.icon} size={18} /></span><div><div style={{ fontWeight: 700 }}>{exp.type}</div><small className="muted">{exp.area}</small></div></div>
           <div className="dl">
             <dt>Documentos</dt><dd>{exp.docs}</dd>
-            <dt>Ubicacion</dt><dd className="mono" style={{ fontSize: "var(--fs-xs)" }}>{exp.loc}</dd>
-            <dt>Ultima actualizacion</dt><dd>{exp.updated || "-"}</dd>
+            <dt>Ubicación</dt><dd className="mono" style={{ fontSize: "var(--fs-xs)" }}>{exp.loc}</dd>
+            <dt>Última actualización</dt><dd>{exp.updated || "-"}</dd>
             <dt>Estado</dt><dd>{exp.state}</dd>
           </div>
         </Card>
         <Card pad="sm">
           <div className="row between" style={{ marginBottom: "var(--s3)" }}><b style={{ fontSize: "var(--fs-sm)" }}>Completitud documental</b><Badge tone={exp.compliance >= 90 ? "success" : exp.compliance >= 70 ? "warning" : "danger"}>{exp.compliance}%</Badge></div>
           <Meter value={exp.compliance} tone={exp.compliance >= 90 ? "ok" : exp.compliance >= 70 ? "warn" : "danger"} />
-          <p className="muted" style={{ marginTop: "var(--s3)", fontSize: "var(--fs-sm)" }}>La lista de documentos obligatorios debe venir de tipologias/TRD. No se muestran checklist ficticios.</p>
+          <p className="muted" style={{ marginTop: "var(--s3)", fontSize: "var(--fs-sm)" }}>La lista de documentos obligatorios debe venir de tipologías/TRD. No se muestran checklist ficticios.</p>
         </Card>
       </div>
       <div className="grid cols-2" style={{ gap: "var(--s4)", marginTop: "var(--s4)" }}>
@@ -65,11 +65,11 @@ function ExpedientsPage({ user, navigate }) {
   return (
     <>
       <div className="page-head">
-        <div><div className="eyebrow">GestiÃ³n Documental</div><h1>Expedientes</h1><p className="lead">El expediente es la unidad principal de AMBAR: agrupa todos los documentos relacionados con un empleado, cliente, proveedor, contrato, proyecto o proceso.</p></div>
+        <div><div className="eyebrow">Gestión Documental</div><h1>Expedientes</h1><p className="lead">El expediente es la unidad principal de AMBAR: agrupa todos los documentos relacionados con un empleado, cliente, proveedor, contrato, proyecto o proceso.</p></div>
         <div className="page-actions">{can(user, ["document.create"]) && <Button icon="plus">Nuevo expediente</Button>}</div>
       </div>
 
-      <div className="page-intro an-rise"><span className="pi-ico"><Icon name="folder-kanban" size={18} /></span><div><h4>Â¿Por quÃ© expedientes?</h4><p>En lugar de buscar documentos sueltos, los agrupas por su contexto real. AsÃ­ un nuevo empleado, un proveedor o un proceso jurÃ­dico tienen toda su informaciÃ³n en un solo lugar â€” con control de completitud y trazabilidad.</p></div></div>
+      <div className="page-intro an-rise"><span className="pi-ico"><Icon name="folder-kanban" size={18} /></span><div><h4>¿Por qué expedientes?</h4><p>En lugar de buscar documentos sueltos, los agrupas por su contexto real. Así un nuevo empleado, un proveedor o un proceso jurídico tienen toda su información en un solo lugar - con control de completitud y trazabilidad.</p></div></div>
 
       <div className="grid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
         {EXP_TYPES.map((t, i) => {
@@ -84,12 +84,12 @@ function ExpedientsPage({ user, navigate }) {
 
       <Card flush className="an-rise">
         <div className="row between" style={{ padding: "var(--s4)", borderBottom: "1px solid var(--line)" }}>
-          <div className="search-box"><Icon name="search" size={16} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar expediente por nombre o cÃ³digoâ€¦" /></div>
+          <div className="search-box"><Icon name="search" size={16} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar expediente por nombre o código..." /></div>
           {type && <FilterChip label={type} active onClick={() => setType("")} />}
         </div>
         <div className="table-scroll">
           <table className="tbl">
-            <thead><tr><th>CÃ³digo</th><th>Nombre / Entidad</th><th>Tipo</th><th>Ãrea</th><th>Docs</th><th>Completitud</th><th>UbicaciÃ³n</th><th>Estado</th><th></th></tr></thead>
+            <thead><tr><th>Código</th><th>Nombre / Entidad</th><th>Tipo</th><th>área</th><th>Docs</th><th>Completitud</th><th>Ubicación</th><th>Estado</th><th></th></tr></thead>
             <tbody>
               {rows.map(e => {
                 const tc = EXP_TYPES.find(t => t.key === e.type) || EXP_TYPES[5];

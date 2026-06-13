@@ -13,6 +13,10 @@
       try { detail = (await response.json()).detail || detail; } catch {}
       const error = new Error(detail);
       error.status = response.status;
+      if (response.status === 401 && !path.startsWith("/auth/login")) {
+        localStorage.removeItem(USER);
+        window.dispatchEvent(new CustomEvent("ambar:session-expired", { detail: { path } }));
+      }
       throw error;
     }
     if (response.status === 204) return null;
@@ -73,9 +77,14 @@
       localStorage.setItem(USER, JSON.stringify(me));
       return me;
     },
-    async me() {
+    async me(force = false) {
       const cached = localStorage.getItem(USER);
-      if (cached) return JSON.parse(cached);
+      if (cached && !force) return JSON.parse(cached);
+      const me = mapUser(await request("/auth/me"));
+      localStorage.setItem(USER, JSON.stringify(me));
+      return me;
+    },
+    async validateSession() {
       const me = mapUser(await request("/auth/me"));
       localStorage.setItem(USER, JSON.stringify(me));
       return me;
