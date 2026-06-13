@@ -16,7 +16,7 @@ FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV API_PROXY_TARGET=http://10.10.10.240
+ENV API_PROXY_TARGET=http://api:8000
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.js ./server.js
 COPY --from=builder /app/package.json ./package.json

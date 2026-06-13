@@ -26,8 +26,8 @@ function AuthBackdrop() {
 }
 
 function LoginScreen({ onAuth }) {
-  const [email, setEmail] = useState("admin@ambar.co");
-  const [pass, setPass] = useState("ChangeMe123!");
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
   const [mfa, setMfa] = useState("");
   const [needsMfa, setNeedsMfa] = useState(false);
   const [error, setError] = useState("");

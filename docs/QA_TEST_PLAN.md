@@ -14,8 +14,8 @@ Validar que Ambar funcione de punta a punta en staging antes de produccion: fron
 
 Credencial staging inicial:
 
-- Usuario: `admin@ambar.co`
-- Password: `ChangeMe123!`
+- Usuario: `<admin-email-del-ambiente>`
+- Password: `<password-rotado-del-ambiente>`
 
 ## Reglas Generales De Prueba
 
@@ -171,7 +171,7 @@ Validacion API manual:
 ```bash
 TOKEN=$(curl -s -X POST http://10.10.10.240/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@ambar.co","password":"ChangeMe123!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  -d '{"email":"<admin-email-del-ambiente>","password":"<password-rotado-del-ambiente>"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 curl -s http://10.10.10.240/api/v1/reports/jobs -H "Authorization: Bearer $TOKEN"
 curl -s -X POST http://10.10.10.240/api/v1/reports/jobs \

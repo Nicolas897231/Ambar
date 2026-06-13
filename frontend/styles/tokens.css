@@ -42,16 +42,16 @@
   --font-body: "Public Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
 
-  --fs-2xs: 11px;
-  --fs-xs: 12px;
-  --fs-sm: 13px;
-  --fs-base: 14px;
-  --fs-md: 15px;
-  --fs-lg: 17px;
-  --fs-xl: 20px;
-  --fs-2xl: 25px;
-  --fs-3xl: 32px;
-  --fs-4xl: 42px;
+  --fs-2xs: 12px;
+  --fs-xs: 13px;
+  --fs-sm: 14px;
+  --fs-base: 15px;
+  --fs-md: 16px;
+  --fs-lg: 18px;
+  --fs-xl: 22px;
+  --fs-2xl: 28px;
+  --fs-3xl: 36px;
+  --fs-4xl: 44px;
   --fs-5xl: 56px;
 
   --lh-tight: 1.1;
@@ -74,7 +74,7 @@
   --sidebar-w: 268px;
   --sidebar-collapsed-w: 76px;
   --topbar-h: 66px;
-  --content-max: 1480px;
+  --content-max: 1320px;
 
   /* ---- Transiciones ---- */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);

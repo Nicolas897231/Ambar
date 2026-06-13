@@ -3,12 +3,7 @@
    ============================================================ */
 const { useState: loS } = React;
 
-const LOANS = [
-  { id: "PRE-2026-088", doc: "Expediente Juan Perez", who: "Jorge Villa", area: "Gerencia", out: "2026-05-30", due: "2026-06-04", state: "Activo" },
-  { id: "PRE-2026-087", doc: "Contrato obra civil", who: "Maria Juridica", area: "Juridica", out: "2026-05-25", due: "2026-06-02", state: "Vencido" },
-  { id: "PRE-2026-086", doc: "Factura proveedor #4821", who: "Ana Financiera", area: "Financiera", out: "2026-05-28", due: "2026-06-08", state: "Activo" },
-  { id: "PRE-2026-085", doc: "Acta comite directivo", who: "Jorge Villa", area: "Gerencia", out: "2026-05-15", due: "2026-05-22", state: "Devuelto" },
-];
+const LOANS = [];
 const LOAN_STATE = { Activo: "info", Vencido: "danger", Devuelto: "success", Solicitado: "warning", active: "info", overdue: "danger", returned: "success", draft: "warning" };
 const LOAN_FLOW = ["Solicitud", "Aprobacion", "Entrega", "Devolucion", "Cierre"];
 
@@ -21,7 +16,7 @@ function normalizeLoanState(state) {
 }
 
 function mapLoans(items) {
-  return (items || []).map((item, i) => ({
+  return window.AmbarAPI.listFrom(items).map((item, i) => ({
     id: item.loan_code || item.code || `PRE-${i + 1}`,
     doc: item.entity_label || item.document_name || item.expedient_name || item.entity_type || "Unidad documental",
     who: item.requester_name || item.borrower_name || "Solicitante",
@@ -38,7 +33,7 @@ function RequestLoan({ onClose }) {
     <Modal title="Solicitar prestamo documental" sub="Salida temporal controlada de documento, carpeta, expediente o caja" onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="send" onClick={() => { toast("Solicitud enviada al archivo", { tone: "ok", title: "Prestamo creado" }); onClose(); }}>Enviar solicitud</Button></>}>
       <div className="col gap4">
-        <Field label="Unidad documental" required help="Busca por nombre o codigo"><div className="input-icon"><Icon name="search" size={16} /><input placeholder="Ej. Expediente Juan Perez" /></div></Field>
+        <Field label="Unidad documental" required help="Busca por nombre o codigo"><div className="input-icon"><Icon name="search" size={16} /><input placeholder="Codigo o nombre de unidad documental" /></div></Field>
         <div className="grid cols-2" style={{ gap: "var(--s3)" }}><Field label="Area solicitante"><select>{(window.AREAS || ["Archivo"]).map(a => <option key={a}>{a}</option>)}</select></Field><Field label="Fecha esperada de devolucion" required><input type="date" /></Field></div>
         <Field label="Motivo" required><textarea placeholder="Para que se requiere la unidad documental" /></Field>
         <div className="page-intro" style={{ background: "var(--info-bg)" }}><span className="pi-ico" style={{ background: "var(--info)" }}><Icon name="info" size={16} /></span><div><h4>Flujo del prestamo</h4><p>Solicitud, aprobacion, entrega con evidencia, devolucion y cierre. AMBAR genera alertas y Kardex cuando aplica.</p></div></div>
@@ -50,7 +45,7 @@ function RequestLoan({ onClose }) {
 function LoansPage({ user }) {
   const [tab, setTab] = loS("active");
   const [req, setReq] = loS(false);
-  const liveLoans = window.useLiveData(() => window.AmbarAPI.endpoints.loans().then(mapLoans), LOANS, []);
+  const liveLoans = window.useLiveData(() => window.AmbarAPI.endpoints.loans().then(mapLoans), [], []);
   const loans = liveLoans.data;
   const lower = value => String(value || "").toLowerCase();
   const filtered = loans.filter(l => tab === "active" ? lower(l.state).includes("activo") : tab === "overdue" ? lower(l.state).includes("venc") : tab === "history" ? lower(l.state).includes("devuelto") : true);
@@ -71,6 +66,7 @@ function LoansPage({ user }) {
       <Tabs value={tab} onChange={setTab} tabs={[{ key: "active", label: "Activos", icon: "package-check" }, { key: "overdue", label: "Vencidos", icon: "alert-triangle" }, { key: "history", label: "Historial", icon: "history" }, { key: "all", label: "Todos" }]} />
       <Card flush className="an-rise">
         <div className="table-scroll"><table className="tbl"><thead><tr><th>Codigo</th><th>Unidad documental</th><th>Solicitante</th><th>Area</th><th>Salida</th><th>Devolucion</th><th>Estado</th><th></th></tr></thead><tbody>
+          {filtered.length === 0 && <tr><td colSpan="8"><Empty icon="package-check" title="Sin prestamos">No hay prestamos reales para este filtro.</Empty></td></tr>}
           {filtered.map(l => (<tr key={l.id} className="clickable"><td className="cell-mono">{l.id}</td><td className="cell-strong">{l.doc}</td><td><div className="t-avatar"><Avatar size="sm" name={l.who} color="var(--viz-indigo)" />{l.who}</div></td><td>{l.area}</td><td className="muted mono" style={{ fontSize: "var(--fs-xs)" }}>{l.out}</td><td className="mono" style={{ fontSize: "var(--fs-xs)", color: lower(l.state).includes("venc") ? "var(--danger)" : "var(--muted)", fontWeight: lower(l.state).includes("venc") ? 700 : 400 }}>{l.due}</td><td><Badge tone={LOAN_STATE[l.state] || "info"} dot>{l.state}</Badge></td><td>{lower(l.state).includes("activo") || lower(l.state).includes("venc") ? <Button variant="ghost" size="sm" icon="check">Devolver</Button> : <Button variant="subtle" size="sm" icon="chevron-right" />}</td></tr>))}
         </tbody></table></div>
         {filtered.length === 0 && <Empty icon="package-check" title="Sin prestamos en esta vista">No hay registros que coincidan con el filtro seleccionado.</Empty>}

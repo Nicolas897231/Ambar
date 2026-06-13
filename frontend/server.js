@@ -5,12 +5,11 @@ import http from "node:http";
 
 const port = Number(process.env.PORT || 3000);
 const root = join(process.cwd(), existsSync(join(process.cwd(), "dist", "index.html")) ? "dist" : ".");
-const apiTarget = (process.env.API_PROXY_TARGET || process.env.AMBAR_API_ORIGIN || "http://10.10.10.240").replace(/\/$/, "");
+const apiTarget = (process.env.API_PROXY_TARGET || process.env.AMBAR_API_ORIGIN || "http://api:8000").replace(/\/$/, "");
 const mime = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
-  ".jsx": "text/babel; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
@@ -20,8 +19,19 @@ const mime = {
 };
 
 function send(res, status, body, headers = {}) {
-  res.writeHead(status, headers);
+  res.writeHead(status, secureHeaders(headers));
   res.end(body);
+}
+
+function secureHeaders(headers = {}) {
+  return {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+    ...headers,
+  };
 }
 
 async function proxyApi(req, res) {
@@ -40,7 +50,7 @@ async function proxyApi(req, res) {
     response.headers.forEach((value, key) => {
       if (!["connection", "transfer-encoding"].includes(key.toLowerCase())) responseHeaders[key] = value;
     });
-    res.writeHead(response.status, responseHeaders);
+    res.writeHead(response.status, secureHeaders(responseHeaders));
     if (response.body) {
       const reader = response.body.getReader();
       while (true) {
@@ -64,7 +74,7 @@ function safePath(urlPath) {
 
 async function serveIndex(res) {
   const html = await readFile(join(root, "index.html"));
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.writeHead(200, secureHeaders({ "content-type": "text/html; charset=utf-8" }));
   res.end(html);
 }
 
@@ -77,7 +87,8 @@ const server = http.createServer(async (req, res) => {
   if (!filePath) return send(res, 403, "Forbidden");
   if (existsSync(filePath) && statSync(filePath).isFile()) {
     const type = mime[extname(filePath).toLowerCase()] || "application/octet-stream";
-    res.writeHead(200, { "content-type": type });
+    const cache = filePath.includes(`${root}\\vendor`) || filePath.includes(`${root}/vendor`) ? { "cache-control": "public, max-age=31536000, immutable" } : {};
+    res.writeHead(200, secureHeaders({ "content-type": type, ...cache }));
     createReadStream(filePath).pipe(res);
     return;
   }

@@ -1,57 +1,47 @@
-/* ============================================================
-   AMBAR — Talento Humano: Exámenes Médicos (SST)
-   ============================================================ */
 const { useState: meS } = React;
 
-const EXAMS = [
-  { emp: "Carlos Daza", type: "Periódico", ips: "Colmédica Ocupacional", result: "Apto", date: "2025-03-10", next: "2026-03-10", state: "Vencido", color: "var(--viz-teal)" },
-  { emp: "Mariana Ruiz", type: "Ingreso", ips: "SURA SST", result: "Apto", date: "2026-06-01", next: "2027-06-01", state: "Vigente", color: "var(--viz-rose)" },
-  { emp: "Juan Pérez", type: "Periódico", ips: "Colmédica Ocupacional", result: "Apto c/ restricción", date: "2025-07-15", next: "2026-07-15", state: "Próximo", color: "var(--viz-amber)" },
-  { emp: "Sara López", type: "Ingreso", ips: "SURA SST", result: "Apto", date: "2025-01-20", next: "2026-01-20", state: "Vencido", color: "var(--viz-indigo)" },
-  { emp: "Diego Torres", type: "Reintegro", ips: "Positiva", result: "Apto c/ restricción", date: "2026-05-20", next: "—", state: "Vigente", color: "var(--viz-green)" },
-  { emp: "Andrea Niño", type: "Periódico", ips: "Colmédica Ocupacional", result: "Apto", date: "2026-02-01", next: "2027-02-01", state: "Vigente", color: "var(--viz-gold)" },
-  { emp: "Pedro Gómez", type: "Retiro", ips: "SURA SST", result: "Apto", date: "2026-04-30", next: "—", state: "Vigente", color: "var(--viz-violet)" },
-];
-const EX_STATE = { Vigente: "success", Próximo: "warning", Vencido: "danger" };
-const EX_TYPE = { Ingreso: "info", Periódico: "brand", Reintegro: "warning", Retiro: "neutral" };
+const EX_STATE = { Vigente: "success", Proximo: "warning", "Próximo": "warning", Vencido: "danger", active: "success", overdue: "danger" };
+const EX_TYPE = { Ingreso: "info", Periodico: "brand", "Periódico": "brand", Reintegro: "warning", Retiro: "neutral" };
+
+function normalizeExam(e, i) {
+  return {
+    id: e.idExam || e.id || i,
+    emp: e.employee_name || e.full_name || e.employee || "Empleado",
+    type: e.exam_type || e.type || "Examen",
+    ips: e.provider || e.ips || "-",
+    result: e.result || e.status_result || "-",
+    date: e.exam_date ? String(e.exam_date).slice(0, 10) : e.created_at ? String(e.created_at).slice(0, 10) : "-",
+    next: e.due_date ? String(e.due_date).slice(0, 10) : e.next_exam_date ? String(e.next_exam_date).slice(0, 10) : "-",
+    state: e.status_label || e.status || "Vigente",
+  };
+}
 
 function MedicalPage({ user }) {
   const [tab, setTab] = meS("Todos");
-  const rows = EXAMS.filter(e => tab === "Todos" || e.state === tab);
-  const days = Array.from({ length: 30 }, (_, i) => i + 1);
-  const examDays = { 10: 1, 15: 1, 20: 2 };
+  const { data: rawExams, loading } = useLiveData(() => AmbarAPI.endpoints.medicalExams(), [], []);
+  const { data: rawAlerts } = useLiveData(() => AmbarAPI.endpoints.sstAlerts(), [], []);
+  const exams = AmbarAPI.listFrom(rawExams).map(normalizeExam);
+  const alerts = AmbarAPI.listFrom(rawAlerts);
+  const rows = exams.filter(e => tab === "Todos" || String(e.state).toLowerCase().includes(tab.toLowerCase()));
+  const overdue = exams.filter(e => String(e.state).toLowerCase().includes("venc") || String(e.state).toLowerCase().includes("overdue")).length;
+  const next = exams.filter(e => String(e.state).toLowerCase().includes("prox") || String(e.state).toLowerCase().includes("due")).length;
   return (
     <>
-      <div className="page-head"><div><div className="eyebrow">Talento Humano · SST</div><h1>Exámenes Médicos Ocupacionales</h1><p className="lead">Controla los exámenes de ingreso, periódicos, de reintegro y retiro conforme a la normativa colombiana, con alertas automáticas 30 días antes del vencimiento.</p></div><div className="page-actions">{can(user, ["medical.manage"]) && <Button icon="plus">Programar examen</Button>}</div></div>
+      <div className="page-head"><div><div className="eyebrow">Talento Humano · SST</div><h1>Examenes Medicos Ocupacionales</h1><p className="lead">Registros SST conectados al backend. No se muestran examenes ni alertas ficticias.</p></div><div className="page-actions">{can(user, ["medical.manage"]) && <Button icon="plus">Programar examen</Button>}</div></div>
       <div className="grid cols-4 stagger">
-        <Metric label="Exámenes vigentes" value={196} icon="check-circle" tone="ok" accent />
-        <Metric label="Próximos a vencer" value={5} icon="clock" tone="warn" accent foot="30 días" />
-        <Metric label="Vencidos" value={2} icon="alert-triangle" tone="danger" accent foot="acción urgente" />
-        <Metric label="Con restricción" value={8} icon="stethoscope" tone="info" accent />
+        <Metric label="Examenes registrados" value={exams.length} icon="stethoscope" tone="ok" accent />
+        <Metric label="Proximos a vencer" value={next} icon="clock" tone="warn" accent />
+        <Metric label="Vencidos" value={overdue} icon="alert-triangle" tone="danger" accent />
+        <Metric label="Alertas activas" value={alerts.length} icon="bell" tone="info" accent />
       </div>
-      <div className="grid" style={{ gridTemplateColumns: "1fr 300px", gap: "var(--s4)" }}>
-        <div className="col gap4">
-          <Tabs value={tab} onChange={setTab} tabs={[{ key: "Todos", label: "Todos" }, { key: "Vigente", label: "Vigentes" }, { key: "Próximo", label: "Por vencer" }, { key: "Vencido", label: "Vencidos" }]} />
-          <Card flush className="an-rise"><div className="table-scroll"><table className="tbl"><thead><tr><th>Empleado</th><th>Tipo</th><th>IPS</th><th>Resultado</th><th>Realizado</th><th>Vence</th><th>Estado</th><th></th></tr></thead><tbody>
-            {rows.map((e, i) => (<tr key={i} className="clickable"><td><div className="t-avatar"><Avatar size="sm" name={e.emp} color={e.color} />{e.emp}</div></td><td><Badge tone={EX_TYPE[e.type]}>{e.type}</Badge></td><td className="muted" style={{ fontSize: "var(--fs-sm)" }}>{e.ips}</td><td>{e.result.includes("restricción") ? <Badge tone="warning" icon="alert-triangle">{e.result}</Badge> : <Badge tone="success">{e.result}</Badge>}</td><td className="muted mono" style={{ fontSize: "var(--fs-xs)" }}>{e.date}</td><td className="mono" style={{ fontSize: "var(--fs-xs)", color: e.state === "Vencido" ? "var(--danger)" : e.state === "Próximo" ? "var(--warn)" : "var(--muted)" }}>{e.next}</td><td><Badge tone={EX_STATE[e.state]} dot>{e.state}</Badge></td><td><Button variant="subtle" size="sm" icon="download" /></td></tr>))}
-          </tbody></table></div></Card>
-        </div>
-        <div className="col gap4">
-          <Card pad="sm" className="an-rise"><CardHead title="Junio 2026" sub="Exámenes programados" />
-            <div className="cal">{["L", "M", "M", "J", "V", "S", "D"].map((d, i) => <div key={i} className="ch">{d}</div>)}
-              {Array.from({ length: 0 }).map((_, i) => <div key={"e" + i} />)}
-              {days.map(d => <div key={d} className={`cd${examDays[d] ? " has" : ""}${d === 3 ? " today" : ""}`}>{d}</div>)}
-            </div>
-          </Card>
-          <Card pad="sm" className="an-rise" style={{ background: "var(--warn-bg)" }}>
-            <div className="row gap2" style={{ marginBottom: 8 }}><Icon name="bell" size={18} style={{ color: "var(--warn)" }} /><b>Alertas activas</b></div>
-            <div className="col gap2">
-              {[["Carlos Daza", "Periódico vencido"], ["Sara López", "Ingreso vencido"], ["Juan Pérez", "Vence en 12 días"]].map(([n, m], i) => (<div key={i} className="row gap2" style={{ fontSize: "var(--fs-sm)", padding: "5px 0", borderBottom: i < 2 ? "1px solid color-mix(in oklab,var(--warn) 20%, transparent)" : "" }}><Avatar size="sm" name={n} color="var(--viz-amber)" /><div className="grow"><div style={{ fontWeight: 600 }}>{n}</div><small className="muted">{m}</small></div></div>))}
-            </div>
-          </Card>
-          <Card pad="sm" className="an-rise"><CardHead title="Por tipo" /><Donut size={140} thickness={18} centerValue="211" centerLabel="exámenes" data={[{ label: "Periódico", value: 120 }, { label: "Ingreso", value: 58 }, { label: "Reintegro", value: 18 }, { label: "Retiro", value: 15 }]} /></Card>
-        </div>
-      </div>
+      <Tabs value={tab} onChange={setTab} tabs={[{ key: "Todos", label: "Todos" }, { key: "Vigente", label: "Vigentes" }, { key: "Proximo", label: "Por vencer" }, { key: "Vencido", label: "Vencidos" }]} />
+      <Card flush className="an-rise">
+        {loading ? <div style={{ padding: "var(--s5)" }}><Skeleton lines={6} /></div> : rows.length === 0 ? <Empty icon="stethoscope" title="Sin examenes">No hay examenes reales para este filtro.</Empty> : (
+          <div className="table-scroll"><table className="tbl"><thead><tr><th>Empleado</th><th>Tipo</th><th>IPS</th><th>Resultado</th><th>Realizado</th><th>Vence</th><th>Estado</th></tr></thead><tbody>
+            {rows.map((e) => (<tr key={e.id}><td><div className="t-avatar"><Avatar size="sm" name={e.emp} color="var(--viz-amber)" />{e.emp}</div></td><td><Badge tone={EX_TYPE[e.type] || "outline"}>{e.type}</Badge></td><td>{e.ips}</td><td>{e.result}</td><td className="mono" style={{ fontSize: "var(--fs-xs)" }}>{e.date}</td><td className="mono" style={{ fontSize: "var(--fs-xs)" }}>{e.next}</td><td><Badge tone={EX_STATE[e.state] || "neutral"} dot>{e.state}</Badge></td></tr>))}
+          </tbody></table></div>
+        )}
+      </Card>
     </>
   );
 }

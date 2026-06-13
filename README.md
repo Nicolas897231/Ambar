@@ -31,8 +31,8 @@ Servicios:
 
 Usuario semilla:
 
-- Email: `admin@ambar.co`
-- Password: `ChangeMe123!`
+- Se crea desde el seed del backend para desarrollo local.
+- Debe rotarse por ambiente y no debe documentarse como credencial operativa.
 
 Cambiar estas credenciales y todos los secretos antes de produccion.
 

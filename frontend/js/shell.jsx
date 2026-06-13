@@ -1,22 +1,10 @@
-/* ============================================================
-   AMBAR — App Shell (sidebar por permisos, topbar, búsqueda global, tour)
-   ============================================================ */
-
-const NOTIFS = [
-  { id: 1, icon: "file-clock", tone: "warn", title: "3 contratos por vencer", msg: "Vencen en los próximos 30 días en RRHH.", time: "Hace 12 min", route: "hr" },
-  { id: 2, icon: "stethoscope", tone: "danger", title: "Examen médico vencido", msg: "Carlos Daza — examen periódico venció ayer.", time: "Hace 1 h", route: "medical" },
-  { id: 3, icon: "package-check", tone: "info", title: "Préstamo próximo a vencer", msg: "Expediente Juan Pérez — devolución mañana.", time: "Hace 3 h", route: "loans" },
-  { id: 4, icon: "user-plus", tone: "brand", title: "5 candidatos sin revisar", msg: "Vacante Desarrollador Full Stack.", time: "Hoy 09:14", route: "recruitment" },
-  { id: 5, icon: "scan-line", tone: "warn", title: "12 documentos sin digitalizar", msg: "Cola de digitalización por encima del umbral.", time: "Ayer", route: "digitization" },
-];
-
 const ROUTE_TITLES = {
-  dashboard: ["Principal", "Dashboard"], expedients: ["Gestión Documental", "Expedientes"], documents: ["Gestión Documental", "Documentos"],
-  digitization: ["Gestión Documental", "Digitalización"], trd: ["Gestión Documental", "TRD & Retención"],
-  archive: ["Archivo & Custodia", "Archivo Físico"], transfers: ["Archivo & Custodia", "Transferencias"], loans: ["Archivo & Custodia", "Préstamos"],
-  correspondence: ["Archivo & Custodia", "Correspondencia"], hr: ["Talento Humano", "Empleados"], medical: ["Talento Humano", "Exámenes Médicos"],
-  recruitment: ["Talento Humano", "Reclutamiento"], reports: ["Inteligencia", "Reportes & BI"], audit: ["Inteligencia", "Auditoría"],
-  security: ["Administración", "Seguridad"], settings: ["Administración", "Configuración"],
+  dashboard: ["Principal", "Dashboard"], expedients: ["Gestion Documental", "Expedientes"], documents: ["Gestion Documental", "Documentos"],
+  digitization: ["Gestion Documental", "Digitalizacion"], trd: ["Gestion Documental", "TRD & Retencion"],
+  archive: ["Archivo & Custodia", "Archivo Fisico"], transfers: ["Archivo & Custodia", "Transferencias"], loans: ["Archivo & Custodia", "Prestamos"],
+  correspondence: ["Archivo & Custodia", "Correspondencia"], hr: ["Talento Humano", "Empleados"], medical: ["Talento Humano", "Examenes Medicos"],
+  recruitment: ["Talento Humano", "Reclutamiento"], reports: ["Inteligencia", "Reportes & BI"], audit: ["Inteligencia", "Auditoria"],
+  security: ["Administracion", "Seguridad"], settings: ["Administracion", "Configuracion"],
 };
 
 function Sidebar({ user, route, onNavigate, collapsed, setCollapsed, onOpenUserMenu }) {
@@ -25,7 +13,10 @@ function Sidebar({ user, route, onNavigate, collapsed, setCollapsed, onOpenUserM
   const [open, setOpen] = useState(() => {
     const o = {}; NAV.forEach(g => o[g.label] = true); return o;
   });
-  const visible = useMemo(() => NAV.map(g => ({ ...g, items: g.items.filter(it => can(user, it.perms) && (!q || (g.label + " " + it.label).toLowerCase().includes(q.toLowerCase()))) })).filter(g => g.items.length), [user, q]);
+  const visible = useMemo(() => NAV.map(g => ({
+    ...g,
+    items: g.items.filter(it => can(user, it.perms) && (!q || (g.label + " " + it.label).toLowerCase().includes(q.toLowerCase())))
+  })).filter(g => g.items.length), [user, q]);
 
   return (
     <aside className="sidebar">
@@ -36,12 +27,12 @@ function Sidebar({ user, route, onNavigate, collapsed, setCollapsed, onOpenUserM
           <div className="b-name">AMBAR</div>
           <div className="b-sub">SGDEA Enterprise</div>
         </div>
-        <button className="icon-btn" style={{ color: "var(--side-muted)" }} onClick={() => setCollapsed(c => !c)} title="Contraer menú"><Icon name="chevron-left" size={18} /></button>
+        <button className="icon-btn" style={{ color: "var(--side-muted)" }} onClick={() => setCollapsed(c => !c)} title="Contraer menu"><Icon name="chevron-left" size={18} /></button>
       </div>
 
       <div className="side-search" data-tour="search">
         <Icon name="search" size={15} />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar módulo…" />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar modulo..." />
       </div>
 
       <nav className="side-nav" data-tour="nav">
@@ -85,21 +76,15 @@ function CommandPalette({ user, onNavigate, onClose }) {
   const items = useMemo(() => {
     const list = [];
     NAV.forEach(g => g.items.forEach(it => can(user, it.perms) && list.push({ ...it, group: g.label })));
-    const extra = [
-      { key: "documents", label: "Buscar: Contrato Laboral Juan Pérez", icon: "file-text", group: "Resultados" },
-      { key: "archive", label: "Ubicación: Caja CAJ-00128", icon: "map-pin", group: "Resultados" },
-      { key: "hr", label: "Empleado: Carlos Daza", icon: "user", group: "Resultados" },
-    ];
-    const all = [...list, ...extra];
-    return q ? all.filter(i => i.label.toLowerCase().includes(q.toLowerCase())) : list;
+    return q ? list.filter(i => i.label.toLowerCase().includes(q.toLowerCase())) : list;
   }, [q, user]);
   return (
     <>
       <div className="scrim" onClick={onClose} />
       <div className="modal cmdk" role="dialog" aria-modal="true" style={{ top: "16%", transform: "translate(-50%,0)", padding: 0, width: "min(620px, calc(100vw - 32px))" }}>
-        <div className="cmdk-input"><Icon name="search" size={18} /><input ref={inputRef} value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar expediente, caja, empleado, módulo…" /><span className="kbd">esc</span></div>
+        <div className="cmdk-input"><Icon name="search" size={18} /><input ref={inputRef} value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar modulo en AMBAR..." /><span className="kbd">esc</span></div>
         <div className="cmdk-list">
-          {items.length === 0 && <div className="muted" style={{ padding: "var(--s5)", textAlign: "center" }}>Sin resultados para “{q}”.</div>}
+          {items.length === 0 && <div className="muted" style={{ padding: "var(--s5)", textAlign: "center" }}>Sin modulos para "{q}".</div>}
           {items.map((it, i) => (
             <button key={i} className="cmdk-item" onClick={() => { onNavigate(it.key); onClose(); }}>
               <Icon name={it.icon} size={17} style={{ color: "var(--muted)" }} />
@@ -113,7 +98,7 @@ function CommandPalette({ user, onNavigate, onClose }) {
   );
 }
 
-function UserMenu({ user, onClose, onLogout, onSwitchUser, theme, toggleTheme }) {
+function UserMenu({ user, onClose, onLogout, theme, toggleTheme }) {
   const currentRole = roleMeta(user);
   return (
     <>
@@ -124,18 +109,8 @@ function UserMenu({ user, onClose, onLogout, onSwitchUser, theme, toggleTheme })
           <div className="grow" style={{ minWidth: 0 }}><div style={{ fontWeight: 700 }}>{user.name}</div><div className="muted" style={{ fontSize: "var(--fs-xs)" }}>{user.email}</div><div style={{ marginTop: 4 }}><Badge tone="brand">{currentRole.name}</Badge></div></div>
         </div>
         <div className="divider" />
-        <div className="um-section-label">Cambiar de usuario (demo)</div>
-        <div className="um-users">
-          {USERS.filter(u => u.id !== user.id).map(u => (
-            <button key={u.id} className="um-user" onClick={() => { onSwitchUser(u); onClose(); }}>
-              <span className="avatar sm" style={{ background: u.color }}>{u.initials}</span>
-              <div className="grow" style={{ minWidth: 0, textAlign: "left" }}><div className="truncate" style={{ fontSize: "var(--fs-sm)", fontWeight: 600 }}>{u.name}</div><div className="truncate muted" style={{ fontSize: 10 }}>{roleMeta(u).name}</div></div>
-            </button>
-          ))}
-        </div>
-        <div className="divider" />
         <button className="um-item" onClick={toggleTheme}><Icon name={theme === "light" ? "moon" : "sun"} size={16} /> Modo {theme === "light" ? "oscuro" : "claro"}</button>
-        <button className="um-item danger" onClick={onLogout}><Icon name="log-out" size={16} /> Cerrar sesión</button>
+        <button className="um-item danger" onClick={onLogout}><Icon name="log-out" size={16} /> Cerrar sesion</button>
       </div>
     </>
   );
@@ -143,11 +118,11 @@ function UserMenu({ user, onClose, onLogout, onSwitchUser, theme, toggleTheme })
 
 function Tour({ onDone }) {
   const steps = [
-    { sel: '[data-tour="nav"]', title: "Tu menú, según tu rol", body: "Solo verás los módulos a los que tienes permiso. Cada rol tiene una vista distinta." },
-    { sel: '[data-tour="search"]', title: "Encuentra cualquier cosa", body: "Busca módulos aquí, o usa la búsqueda global del topbar para documentos, cajas y empleados." },
-    { sel: '[data-tour="globalsearch"]', title: "Búsqueda universal", body: "Pulsa “/” en cualquier momento para abrir el buscador de comandos." },
-    { sel: '[data-tour="notif"]', title: "Nunca pierdas un vencimiento", body: "Aquí llegan alertas de contratos, exámenes médicos, préstamos y más." },
-    { sel: '[data-tour="user"]', title: "Tu cuenta y temas", body: "Cambia de usuario (demo), alterna claro/oscuro y cierra sesión desde aquí." },
+    { sel: '[data-tour="nav"]', title: "Menu por permisos", body: "El backend controla tu rol y el frontend solo muestra los modulos autorizados." },
+    { sel: '[data-tour="search"]', title: "Navegacion rapida", body: "Filtra modulos sin salir de la operacion actual." },
+    { sel: '[data-tour="globalsearch"]', title: "Busqueda universal", body: "Pulsa / para abrir el buscador de modulos." },
+    { sel: '[data-tour="notif"]', title: "Alertas accionables", body: "Las notificaciones vienen del backend y llevan al contexto real." },
+    { sel: '[data-tour="user"]', title: "Cuenta y tema", body: "Consulta tu sesion, cambia tema y cierra sesion de forma segura." },
   ];
   const [i, setI] = useState(0);
   const [rect, setRect] = useState(null);
@@ -168,7 +143,7 @@ function Tour({ onDone }) {
         <div className="row between" style={{ marginTop: "var(--s4)" }}>
           <button className="auth-link" onClick={onDone} style={{ fontSize: "var(--fs-sm)" }}>Saltar</button>
           <div className="row gap2">
-            {i > 0 && <Button variant="ghost" size="sm" onClick={() => setI(i - 1)}>Atrás</Button>}
+            {i > 0 && <Button variant="ghost" size="sm" onClick={() => setI(i - 1)}>Atras</Button>}
             <Button size="sm" onClick={() => i < steps.length - 1 ? setI(i + 1) : onDone()} iconRight={i < steps.length - 1 ? "arrow-right" : "check"}>{i < steps.length - 1 ? "Siguiente" : "Entendido"}</Button>
           </div>
         </div>
@@ -177,7 +152,7 @@ function Tour({ onDone }) {
   );
 }
 
-function AppShell({ user, route, onNavigate, onLogout, onSwitchUser, theme, toggleTheme, children }) {
+function AppShell({ user, route, onNavigate, onLogout, theme, toggleTheme, children }) {
   const [collapsed, setCollapsed] = useState(false);
   const [showCmd, setShowCmd] = useState(false);
   const [showNotif, setShowNotif] = useState(false);
@@ -206,10 +181,10 @@ function AppShell({ user, route, onNavigate, onLogout, onSwitchUser, theme, togg
           </div>
           <div className="topbar-actions">
             <button className="global-search" onClick={() => setShowCmd(true)} data-tour="globalsearch">
-              <Icon name="search" size={16} /><span className="gs-text">Buscar en AMBAR…</span><span className="kbd">/</span>
+              <Icon name="search" size={16} /><span className="gs-text">Buscar en AMBAR...</span><span className="kbd">/</span>
             </button>
             <div style={{ position: "relative" }} data-tour="notif">
-              <button className="icon-btn" onClick={() => setShowNotif(s => !s)} title="Notificaciones"><Icon name="bell" size={18} /><span className="ping" /></button>
+              <button className="icon-btn" onClick={() => setShowNotif(s => !s)} title="Notificaciones"><Icon name="bell" size={18} /></button>
               {showNotif && <NotifPanel onClose={() => setShowNotif(false)} onNavigate={(r) => { onNavigate(r); setShowNotif(false); }} />}
             </div>
             <button className="icon-btn" onClick={toggleTheme} title="Cambiar tema"><Icon name={theme === "light" ? "moon" : "sun"} size={18} /></button>
@@ -221,29 +196,38 @@ function AppShell({ user, route, onNavigate, onLogout, onSwitchUser, theme, togg
       </div>
 
       {showCmd && <CommandPalette user={user} onNavigate={onNavigate} onClose={() => setShowCmd(false)} />}
-      {showUser && <UserMenu user={user} onClose={() => setShowUser(false)} onLogout={onLogout} onSwitchUser={onSwitchUser} theme={theme} toggleTheme={toggleTheme} />}
+      {showUser && <UserMenu user={user} onClose={() => setShowUser(false)} onLogout={onLogout} theme={theme} toggleTheme={toggleTheme} />}
       {tour && <Tour onDone={endTour} />}
     </div>
   );
 }
 
 function NotifPanel({ onClose, onNavigate }) {
-  const toneColors = { warn: ["var(--warn-bg)", "var(--warn)"], danger: ["var(--danger-bg)", "var(--danger)"], info: ["var(--info-bg)", "var(--info)"], brand: ["var(--brand-ghost)", "var(--brand)"] };
+  const { data, loading } = useLiveData(() => AmbarAPI.endpoints.notifications(), [], []);
+  const notifications = AmbarAPI.listFrom(data);
+  const routeFor = (n) => {
+    const url = n.action_url || "";
+    const match = url.match(/#\/?([^/?#]+)/) || url.match(/\/([^/?#]+)$/);
+    return match?.[1] || n.module || "dashboard";
+  };
   return (
     <>
       <div className="scrim" style={{ background: "transparent", backdropFilter: "none" }} onClick={onClose} />
       <div className="pop">
-        <div className="pop-head"><strong>Notificaciones</strong><Badge tone="danger">{NOTIFS.length} nuevas</Badge></div>
-        {NOTIFS.map(n => {
-          const [bg, fg] = toneColors[n.tone] || toneColors.brand;
-          return (
-            <div key={n.id} className="noti" onClick={() => onNavigate(n.route)}>
-              <span className="n-dot" style={{ background: bg, color: fg }}><Icon name={n.icon} size={17} /></span>
-              <div className="n-body"><div className="n-title">{n.title}</div><div className="n-msg">{n.msg}</div><div className="n-time">{n.time}</div></div>
+        <div className="pop-head"><strong>Notificaciones</strong><Badge tone={notifications.length ? "danger" : "ok"}>{notifications.length}</Badge></div>
+        {loading && <div style={{ padding: "var(--s4)" }}><Skeleton lines={3} /></div>}
+        {!loading && notifications.length === 0 && <Empty icon="bell" title="Sin notificaciones">Todo esta al dia para tu usuario.</Empty>}
+        {notifications.slice(0, 8).map((n) => (
+          <div key={n.id || n.idNotification || n.title} className="noti" onClick={() => onNavigate(routeFor(n))}>
+            <span className="n-dot"><Icon name="bell" size={17} /></span>
+            <div className="n-body">
+              <div className="n-title">{n.title || "Notificacion"}</div>
+              <div className="n-msg">{n.message || n.module || "Requiere revision operativa."}</div>
+              <div className="n-time">{n.created_at ? new Date(n.created_at).toLocaleString("es-CO") : ""}</div>
             </div>
-          );
-        })}
-        <button className="cmdk-item" style={{ width: "100%", justifyContent: "center", padding: "var(--s3)" }} onClick={() => onNavigate("dashboard")}>Ver todas <Icon name="arrow-right" size={14} /></button>
+          </div>
+        ))}
+        <button className="cmdk-item" style={{ width: "100%", justifyContent: "center", padding: "var(--s3)" }} onClick={() => onNavigate("dashboard")}>Ir al centro operacional <Icon name="arrow-right" size={14} /></button>
       </div>
     </>
   );

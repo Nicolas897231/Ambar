@@ -1,2 +1,4 @@
-Email: admin@ambar.co
-Password: ChangeMe123!
+No guardar credenciales reales en el repositorio.
+
+El usuario administrador inicial se crea desde el seed del backend y debe
+rotarse en cada ambiente usando variables/secretos del despliegue.

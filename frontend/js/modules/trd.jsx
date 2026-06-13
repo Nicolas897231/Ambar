@@ -3,13 +3,7 @@
    ============================================================ */
 const { useState: tdS } = React;
 
-const SERIES = [
-  { code: "100", name: "Actas", sub: ["Actas de comite directivo", "Actas de junta"], gestion: 2, central: 8, final: "Conservacion total" },
-  { code: "200", name: "Contratos", sub: ["Contratos laborales", "Contratos de prestacion", "Contratos de obra"], gestion: 5, central: 15, final: "Conservacion total" },
-  { code: "300", name: "Historias Laborales", sub: ["Hoja de vida", "Afiliaciones", "Novedades"], gestion: 5, central: 80, final: "Conservacion total" },
-  { code: "400", name: "Correspondencia", sub: ["Comunicaciones oficiales recibidas", "Comunicaciones enviadas"], gestion: 2, central: 3, final: "Eliminacion" },
-  { code: "500", name: "Informes", sub: ["Informes de gestion", "Informes financieros"], gestion: 2, central: 5, final: "Seleccion" },
-];
+const SERIES = [];
 
 function normalizeDisposition(value) {
   const raw = String(value || "").trim();
@@ -40,8 +34,8 @@ function dispositionTone(value) {
 function TRDPage({ user }) {
   const [tab, setTab] = tdS("series");
   const liveSeries = window.useLiveData(
-    () => window.AmbarAPI.endpoints.trdEditor().then(mapTrdRows),
-    SERIES,
+    () => window.AmbarAPI.endpoints.trdEditor().then(value => mapTrdRows(window.AmbarAPI.listFrom(value, ["rows", "items", "results"]))),
+    [],
     []
   );
   const series = liveSeries.data;

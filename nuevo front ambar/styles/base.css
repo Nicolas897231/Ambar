@@ -138,3 +138,8 @@ input:disabled, select:disabled, textarea:disabled { background: var(--panel-2);
 .cols-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
 @media (max-width: 1180px) { .cols-4 { grid-template-columns: repeat(2,minmax(0,1fr)); } .cols-3 { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 720px) { .cols-2, .cols-3, .cols-4 { grid-template-columns: 1fr; } }
+@media (max-width: 860px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .sidebar { position: relative; min-height: auto; max-height: none; }
+  .content { padding: var(--s5) var(--s4); }
+}
