@@ -13,6 +13,10 @@
       try { detail = (await response.json()).detail || detail; } catch {}
       const error = new Error(detail);
       error.status = response.status;
+      if (response.status === 401 && !path.startsWith("/auth/login")) {
+        localStorage.removeItem(USER);
+        window.dispatchEvent(new CustomEvent("ambar:session-expired", { detail: { path } }));
+      }
       throw error;
     }
     if (response.status === 204) return null;
@@ -69,14 +73,26 @@
     baseURL: API_BASE,
     async login(email, password, mfa_code) {
       await request("/auth/login", { method: "POST", body: JSON.stringify({ email, password, mfa_code: mfa_code || null }) });
+      const me = await this.validateSession();
+      if (!me) {
+        throw new Error("No fue posible confirmar la sesión. Revisa que el gateway conserve las cookies de autenticación.");
+      }
+      return me;
+    },
+    async me(force = false) {
+      const cached = localStorage.getItem(USER);
+      if (cached && !force) return JSON.parse(cached);
       const me = mapUser(await request("/auth/me"));
       localStorage.setItem(USER, JSON.stringify(me));
       return me;
     },
-    async me() {
-      const cached = localStorage.getItem(USER);
-      if (cached) return JSON.parse(cached);
-      const me = mapUser(await request("/auth/me"));
+    async validateSession() {
+      const status = await request("/auth/session");
+      if (!status?.authenticated || !status.user) {
+        localStorage.removeItem(USER);
+        return null;
+      }
+      const me = mapUser(status.user);
       localStorage.setItem(USER, JSON.stringify(me));
       return me;
     },

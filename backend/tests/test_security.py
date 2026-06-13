@@ -81,3 +81,22 @@ def test_login_sets_httponly_cookie_and_cookie_auth_works():
         me = client.get("/api/v1/auth/me")
         assert me.status_code == 200, me.text
         assert me.json()["email"] == "admin@ambar.co"
+
+
+def test_session_status_is_silent_without_cookie_and_reports_authenticated_user():
+    with TestClient(app) as client:
+        anonymous = client.get("/api/v1/auth/session")
+        assert anonymous.status_code == 200, anonymous.text
+        assert anonymous.json() == {"authenticated": False, "user": None}
+
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@ambar.co", "password": "ChangeMe123!"},
+        )
+        assert login.status_code == 200, login.text
+
+        session = client.get("/api/v1/auth/session")
+        assert session.status_code == 200, session.text
+        body = session.json()
+        assert body["authenticated"] is True
+        assert body["user"]["email"] == "admin@ambar.co"

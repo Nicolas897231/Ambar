@@ -22,14 +22,51 @@ function getRoute() {
 
 function Root() {
   const [user, setUser] = useState(() => getSession());
+  const [checkingSession, setCheckingSession] = useState(() => Boolean(getSession()));
   const [route, setRoute] = useState(getRoute());
   const [theme, setThemeState] = useState(getTheme());
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
   useEffect(() => {
+    let alive = true;
+    if (!window.AmbarAPI?.hasSession()) {
+      setCheckingSession(false);
+      return;
+    }
+    window.AmbarAPI.validateSession()
+      .then((freshUser) => {
+        if (!alive) return;
+        if (!freshUser) {
+          clearSession();
+          setUser(null);
+          if (!["empleo", "portal"].includes(getRoute())) location.hash = "";
+          return;
+        }
+        setSession(freshUser);
+        setUser(freshUser);
+      })
+      .catch(() => {
+        if (!alive) return;
+        clearSession();
+        setUser(null);
+        if (!["empleo", "portal"].includes(getRoute())) location.hash = "";
+      })
+      .finally(() => alive && setCheckingSession(false));
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => {
     const onHash = () => setRoute(getRoute());
+    const onExpired = () => {
+      clearSession();
+      setUser(null);
+      if (!["empleo", "portal"].includes(getRoute())) location.hash = "";
+    };
     window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    window.addEventListener("ambar:session-expired", onExpired);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("ambar:session-expired", onExpired);
+    };
   }, []);
 
   const navigate = useCallback((key) => { location.hash = "/" + key; setRoute(key); window.scrollTo(0, 0); }, []);
@@ -41,6 +78,22 @@ function Root() {
   // Public job portal lives outside the auth shell
   if (route === "empleo" || route === "portal") {
     return <JobPortal onBack={() => navigate(user ? "dashboard" : "dashboard")} loggedIn={!!user} />;
+  }
+
+  if (checkingSession) {
+    return (
+      <div className="auth-page">
+        <AuthBackdrop />
+        <div className="auth-formpanel">
+          <div className="auth-card an-scale">
+            <div className="mfa-badge pulse"><Icon name="shield-check" size={24} /></div>
+            <h2>Verificando sesión</h2>
+            <p className="muted">Estamos validando tu cookie segura antes de abrir AMBAR.</p>
+            <Skeleton lines={3} />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!user) return <LoginScreen onAuth={onAuth} />;

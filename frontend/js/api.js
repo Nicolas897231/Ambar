@@ -73,8 +73,10 @@
     baseURL: API_BASE,
     async login(email, password, mfa_code) {
       await request("/auth/login", { method: "POST", body: JSON.stringify({ email, password, mfa_code: mfa_code || null }) });
-      const me = mapUser(await request("/auth/me"));
-      localStorage.setItem(USER, JSON.stringify(me));
+      const me = await this.validateSession();
+      if (!me) {
+        throw new Error("No fue posible confirmar la sesión. Revisa que el gateway conserve las cookies de autenticación.");
+      }
       return me;
     },
     async me(force = false) {

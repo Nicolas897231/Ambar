@@ -48,8 +48,19 @@ async function proxyApi(req, res) {
     });
     const responseHeaders = {};
     response.headers.forEach((value, key) => {
-      if (!["connection", "transfer-encoding"].includes(key.toLowerCase())) responseHeaders[key] = value;
+      const normalized = key.toLowerCase();
+      if (!["connection", "transfer-encoding", "set-cookie"].includes(normalized)) {
+        responseHeaders[key] = value;
+      }
     });
+    const setCookies = typeof response.headers.getSetCookie === "function"
+      ? response.headers.getSetCookie()
+      : [];
+    if (!setCookies.length) {
+      const combined = response.headers.get("set-cookie");
+      if (combined) setCookies.push(...combined.split(/,(?=\s*[^;,]+=)/g).map((item) => item.trim()));
+    }
+    if (setCookies.length) responseHeaders["set-cookie"] = setCookies;
     res.writeHead(response.status, secureHeaders(responseHeaders));
     if (response.body) {
       const reader = response.body.getReader();

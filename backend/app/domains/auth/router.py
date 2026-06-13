@@ -39,6 +39,11 @@ class MeResponse(BaseModel):
     permissions: list[str]
 
 
+class SessionStatusResponse(BaseModel):
+    authenticated: bool
+    user: MeResponse | None = None
+
+
 def _role_names(user: User) -> list[str]:
     return [item.role.role_name for item in user.roles]
 
@@ -74,6 +79,25 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
 def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie("ambar_access_token", path="/")
     response.delete_cookie("ambar_refresh_token", path="/")
+
+
+def _optional_current_user(request: Request, db: Session) -> User | None:
+    token = request.cookies.get("ambar_access_token")
+    authorization = request.headers.get("authorization", "")
+    if not token and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        return None
+    try:
+        payload = decode_token(token)
+    except ValueError:
+        return None
+    if payload.get("type") != "access":
+        return None
+    user = db.get(User, payload.get("sub"))
+    if not user or user.status != "active":
+        return None
+    return user
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -210,4 +234,21 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)) ->
         email=user.email,
         roles=_role_names(user),
         permissions=sorted(user_permissions(db, user)),
+    )
+
+
+@router.get("/session", response_model=SessionStatusResponse)
+def session_status(request: Request, db: Session = Depends(get_db)) -> SessionStatusResponse:
+    user = _optional_current_user(request, db)
+    if not user:
+        return SessionStatusResponse(authenticated=False)
+    return SessionStatusResponse(
+        authenticated=True,
+        user=MeResponse(
+            identification=user.identification,
+            name=user.name,
+            email=user.email,
+            roles=_role_names(user),
+            permissions=sorted(user_permissions(db, user)),
+        ),
     )
