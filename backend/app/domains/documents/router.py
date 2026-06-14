@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_permission, user_permissions
@@ -544,12 +545,14 @@ def create_document(
     _sync_metadata(db, document, payload.metadata, _required_metadata_keys(document_type))
     if folio_total:
         db.add(Foliation(ps520IdDocument=document.idDocument, ps950IdExpedient=expedient.idExpedient, ps952IdFolder=folder.idFolder, folio_start=payload.folio_start or 1, folio_end=payload.folio_end or 1, folio_total=folio_total))
-        expedient.folio_count += folio_total
-        folder.folio_count += folio_total
-    expedient.document_count += 1
-    folder.document_count += 1
+        # Contadores de folio: SQL atómico para evitar race conditions bajo concurrencia
+        db.execute(update(Expedient).where(Expedient.idExpedient == expedient.idExpedient).values(folio_count=Expedient.folio_count + folio_total))
+        db.execute(update(Folder).where(Folder.idFolder == folder.idFolder).values(folio_count=Folder.folio_count + folio_total))
+    # Contadores de documentos: SQL atómico (evita lost-update race condition)
+    db.execute(update(Expedient).where(Expedient.idExpedient == expedient.idExpedient).values(document_count=Expedient.document_count + 1))
+    db.execute(update(Folder).where(Folder.idFolder == folder.idFolder).values(document_count=Folder.document_count + 1))
     archive = _require_archive_access(db, user, archive_id)
-    archive.document_count += 1
+    db.execute(update(Archive).where(Archive.idArchive == archive_id).values(document_count=Archive.document_count + 1))
     db.add(DocumentHistory(ps520IdDocument=document.idDocument, action="created", ps405Identification=user.identification, details=payload.model_dump()))
     movement = KardexMovement(movement_type="document_created", entity_type="document", entity_id=document.idDocument, ps930DestinationArchiveId=archive_id, ps405ActorIdentification=user.identification, status="accepted", observations="Documento creado en expediente/carpeta/TRD")
     db.add(movement)
@@ -582,7 +585,8 @@ def update_document(document_id: int, payload: DocumentUpdate, request: Request,
         raise HTTPException(status_code=422, detail="Invalid document status")
     if payload.physical_location is not None:
         raise HTTPException(status_code=422, detail="La ubicacion fisica del documento se hereda desde carpeta/caja. Mueve la carpeta o la caja.")
-    if payload.archive_id or payload.expedient_id or payload.folder_id:
+    location_changed = bool(payload.archive_id or payload.expedient_id or payload.folder_id)
+    if location_changed:
         archive_id, expedient, folder = _resolve_archival_context(db, user, payload)
         document.ps930IdArchive = archive_id
         document.ps950IdExpedient = expedient.idExpedient
@@ -611,13 +615,38 @@ def update_document(document_id: int, payload: DocumentUpdate, request: Request,
         if subseries:
             _bind_document_type_to_trd(document_type, subseries)
     if payload.folio_start is not None or payload.folio_end is not None:
-        total = _folio_total(payload.folio_start, payload.folio_end)
+        old_folio_total = document.folio_total or 0
+        new_folio_total = _folio_total(payload.folio_start, payload.folio_end) or 0
+        diff = new_folio_total - old_folio_total
         document.folio_start = payload.folio_start
         document.folio_end = payload.folio_end
-        document.folio_total = total
+        document.folio_total = new_folio_total or None
+        # Sincronizar contadores de folio de forma atómica
+        if diff != 0 and document.ps950IdExpedient and document.ps952IdFolder:
+            db.execute(update(Expedient).where(Expedient.idExpedient == document.ps950IdExpedient).values(folio_count=Expedient.folio_count + diff))
+            db.execute(update(Folder).where(Folder.idFolder == document.ps952IdFolder).values(folio_count=Folder.folio_count + diff))
     document.version += 1
     db.add(DocumentHistory(ps520IdDocument=document.idDocument, action="updated", ps405Identification=user.identification, details=payload.model_dump(exclude_unset=True)))
-    write_audit(db, action="document_updated", module="documents", user_id=user.identification, archive_id=document.ps930IdArchive, entity="document", entity_id=document.idDocument, entity_label=document.document_name, old_values=old_values, new_values=payload.model_dump(exclude_unset=True), request=request)
+    # Registrar cambio de custodia si el documento fue reubicado
+    if location_changed:
+        _record_document_custody(db, document, user.identification)
+    write_audit(
+        db,
+        action="document_updated",
+        event="update",
+        module="documents",
+        user_id=user.identification,
+        archive_id=document.ps930IdArchive,
+        entity="document",
+        entity_id=document.idDocument,
+        entity_label=document.document_name,
+        auditable_type="Document",
+        auditable_id=document.idDocument,
+        old_values=old_values,
+        new_values=payload.model_dump(exclude_unset=True),
+        tags=["documental"],
+        request=request,
+    )
     db.commit()
     delete_pattern("analytics:*")
     index_document(_document_out(document).model_dump())
@@ -658,11 +687,59 @@ async def upload_file(document_id: int, request: Request, file: UploadFile = Fil
 
 
 @router.get("/{document_id}/files", response_model=list[FileOut])
-def list_files(document_id: int, user: User = Depends(require_permission("document.read")), db: Session = Depends(get_db)) -> list[FileOut]:
+def list_files(document_id: int, request: Request, user: User = Depends(require_permission("document.read")), db: Session = Depends(get_db)) -> list[FileOut]:
     document = _scoped_query(db, user).filter(Document.idDocument == document_id).one_or_none()
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
+    # Auditar acceso a archivos (trazabilidad de consultas)
+    write_audit(
+        db,
+        action="document_files_listed",
+        event="download",
+        module="documents",
+        user_id=user.identification,
+        archive_id=document.ps930IdArchive,
+        entity="document",
+        entity_id=document.idDocument,
+        entity_label=document.document_name,
+        auditable_type="Document",
+        auditable_id=document.idDocument,
+        tags=["documental", "access"],
+        request=request,
+    )
+    db.commit()
     return [FileOut(idFile=item.idFile, original_name=item.original_name, content_type=item.content_type, checksum=item.checksum, size_bytes=item.size_bytes, url=presigned_url(item.file_path), version=item.version, trace_id=item.trace_id) for item in document.files]
+
+
+@router.get("/{document_id}/files/{file_id}/download")
+def download_file(document_id: int, file_id: int, request: Request, user: User = Depends(require_permission("document.download")), db: Session = Depends(get_db)) -> dict:
+    """Genera URL presignada de descarga y registra evento de descarga en auditoría."""
+    document = _scoped_query(db, user).filter(Document.idDocument == document_id).one_or_none()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    file_obj = db.query(DocumentFile).filter(DocumentFile.idFile == file_id, DocumentFile.ps520IdDocument == document_id).one_or_none()
+    if not file_obj:
+        raise HTTPException(status_code=404, detail="File not found")
+    url = presigned_url(file_obj.file_path)
+    write_audit(
+        db,
+        action="document_downloaded",
+        event="download",
+        module="documents",
+        user_id=user.identification,
+        archive_id=document.ps930IdArchive,
+        entity="document",
+        entity_id=document.idDocument,
+        entity_label=document.document_name,
+        auditable_type="Document",
+        auditable_id=document.idDocument,
+        new_values={"file_id": file_id, "original_name": file_obj.original_name, "checksum": file_obj.checksum},
+        tags=["documental", "download"],
+        severity="info",
+        request=request,
+    )
+    db.commit()
+    return {"url": url, "original_name": file_obj.original_name, "checksum": file_obj.checksum}
 
 
 @router.get("/{document_id}/versions")

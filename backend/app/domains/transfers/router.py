@@ -37,8 +37,9 @@ class TransferStatusUpdate(BaseModel):
 
 
 @router.get("/locations")
-def list_locations(db: Session = Depends(get_db), _: User = Depends(require_permission("document.read"))):
-    return db.query(Location).order_by(Location.location_name.asc()).all()
+def list_locations(db: Session = Depends(get_db), user: User = Depends(require_permission("document.read"))):
+    # Filtrar ubicaciones por empresa del usuario (previene IDOR cross-company)
+    return db.query(Location).filter(Location.company_id == user.company_id).order_by(Location.location_name.asc()).all()
 
 
 @router.post("/locations", status_code=status.HTTP_201_CREATED)
@@ -59,15 +60,35 @@ def create_location(
     item = Location(location_name=location_name, address=payload.address, company_id=user.company_id)
     db.add(item)
     db.flush()
-    write_audit(db, action="location_created", module="transfers", user_id=user.identification, entity="location", entity_id=item.idLocation, new_values=payload.model_dump(), request=request)
+    write_audit(
+        db,
+        action="location_created",
+        event="create",
+        module="transfers",
+        user_id=user.identification,
+        entity="location",
+        entity_id=item.idLocation,
+        auditable_type="Location",
+        auditable_id=item.idLocation,
+        new_values=payload.model_dump(),
+        tags=["logistica"],
+        request=request,
+    )
     db.commit()
     db.refresh(item)
     return item
 
 
 @router.get("")
-def list_transfers(db: Session = Depends(get_db), _: User = Depends(require_permission("document.read"))):
-    return db.query(DocumentTransfer).order_by(DocumentTransfer.transfer_date.desc()).all()
+def list_transfers(db: Session = Depends(get_db), user: User = Depends(require_permission("document.read"))):
+    # JOIN con Document para filtrar por company_id del usuario (previene IDOR cross-company)
+    return (
+        db.query(DocumentTransfer)
+        .join(Document, Document.idDocument == DocumentTransfer.ps520IdDocument)
+        .filter(Document.company_id == user.company_id)
+        .order_by(DocumentTransfer.transfer_date.desc())
+        .all()
+    )
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -80,7 +101,10 @@ def create_transfer(
     document = db.get(Document, payload.document_id)
     if not document or document.company_id != user.company_id:
         raise HTTPException(status_code=404, detail="Document not found")
-    if not db.get(Location, payload.origin_location) or not db.get(Location, payload.destination_location):
+    # Verificar que las ubicaciones pertenezcan a la empresa del usuario
+    origin = db.query(Location).filter(Location.idLocation == payload.origin_location, Location.company_id == user.company_id).one_or_none()
+    destination = db.query(Location).filter(Location.idLocation == payload.destination_location, Location.company_id == user.company_id).one_or_none()
+    if not origin or not destination:
         raise HTTPException(status_code=422, detail="Invalid location")
     transfer = DocumentTransfer(
         ps520IdDocument=payload.document_id,
@@ -93,7 +117,20 @@ def create_transfer(
     db.flush()
     db.add(TransferLog(ps702IdTransfer=transfer.idTransfer, action="pending", ps405Identification=user.identification, notes=payload.notes))
     db.add(Notification(ps405Identification=user.identification, message=f"Transferencia pendiente para {document.document_name}", type="in_app", action_url=f"/kardex?transfer={transfer.idTransfer}"))
-    write_audit(db, action="transfer_created", module="transfers", user_id=user.identification, entity="transfer", entity_id=transfer.idTransfer, new_values=payload.model_dump(), request=request)
+    write_audit(
+        db,
+        action="transfer_created",
+        event="create",
+        module="transfers",
+        user_id=user.identification,
+        entity="transfer",
+        entity_id=transfer.idTransfer,
+        auditable_type="DocumentTransfer",
+        auditable_id=transfer.idTransfer,
+        new_values=payload.model_dump(),
+        tags=["logistica", "documental"],
+        request=request,
+    )
     db.commit()
     publish_event("transfer.created", {"transfer_id": transfer.idTransfer, "document_id": document.idDocument})
     db.refresh(transfer)
@@ -108,7 +145,13 @@ def update_transfer_status(
     user: User = Depends(require_permission("transfer.manage")),
     db: Session = Depends(get_db),
 ):
-    transfer = db.get(DocumentTransfer, transfer_id)
+    # Verificar que la transferencia pertenece a un documento de la empresa del usuario
+    transfer = (
+        db.query(DocumentTransfer)
+        .join(Document, Document.idDocument == DocumentTransfer.ps520IdDocument)
+        .filter(DocumentTransfer.idTransfer == transfer_id, Document.company_id == user.company_id)
+        .one_or_none()
+    )
     if not transfer:
         raise HTTPException(status_code=404, detail="Transfer not found")
     if payload.status not in VALID_TRANSITIONS.get(transfer.status, set()):
@@ -121,7 +164,21 @@ def update_transfer_status(
             document.location_id = transfer.destination_location
             document.status = "custody"
     db.add(TransferLog(ps702IdTransfer=transfer.idTransfer, action=payload.status, ps405Identification=user.identification, notes=payload.notes))
-    write_audit(db, action="transfer_status_updated", module="transfers", user_id=user.identification, entity="transfer", entity_id=transfer.idTransfer, old_values={"status": old_status}, new_values=payload.model_dump(), request=request)
+    write_audit(
+        db,
+        action="transfer_status_updated",
+        event="update",
+        module="transfers",
+        user_id=user.identification,
+        entity="transfer",
+        entity_id=transfer.idTransfer,
+        auditable_type="DocumentTransfer",
+        auditable_id=transfer.idTransfer,
+        old_values={"status": old_status},
+        new_values=payload.model_dump(),
+        tags=["logistica"],
+        request=request,
+    )
     db.commit()
     publish_event("transfer.status_updated", {"transfer_id": transfer.idTransfer, "status": payload.status})
     db.refresh(transfer)
@@ -129,5 +186,14 @@ def update_transfer_status(
 
 
 @router.get("/{transfer_id}/log")
-def transfer_log(transfer_id: int, db: Session = Depends(get_db), _: User = Depends(require_permission("document.read"))):
+def transfer_log(transfer_id: int, db: Session = Depends(get_db), user: User = Depends(require_permission("document.read"))):
+    # Verificar acceso a la transferencia por empresa
+    transfer = (
+        db.query(DocumentTransfer)
+        .join(Document, Document.idDocument == DocumentTransfer.ps520IdDocument)
+        .filter(DocumentTransfer.idTransfer == transfer_id, Document.company_id == user.company_id)
+        .one_or_none()
+    )
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Transfer not found")
     return db.query(TransferLog).filter(TransferLog.ps702IdTransfer == transfer_id).order_by(TransferLog.action_date.asc()).all()

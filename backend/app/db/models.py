@@ -256,16 +256,26 @@ class TransferLog(Base):
 
 
 class AuditLog(Base):
+    """Registro de auditoría inmutable — equivalente a Laravel Auditing.
+
+    Columnas estándar: event, auditable_type, auditable_id, url, tags
+    permiten trazabilidad completa compatible con dashboards externos y SIEM.
+    """
     __tablename__ = "ps820_audit_log"
 
     idAudit: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ps405Identification: Mapped[str | None] = mapped_column(String(40), index=True)
     ps930IdArchive: Mapped[int | None] = mapped_column(ForeignKey("ps930_archives.idArchive"), index=True)
     action: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
+    # event: vocabulario normalizado — create/update/delete/restore/login/logout/download/export/permission_change/failed_login/access_denied
+    event: Mapped[str | None] = mapped_column(String(80), index=True)
     module: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
     entity: Mapped[str | None] = mapped_column(String(120))
     entity_id: Mapped[str | None] = mapped_column(String(80))
     entity_label: Mapped[str | None] = mapped_column(String(255))
+    # Campos Laravel Auditing: modelo afectado y su ID
+    auditable_type: Mapped[str | None] = mapped_column(String(120), index=True)
+    auditable_id: Mapped[str | None] = mapped_column(String(80), index=True)
     result: Mapped[str] = mapped_column(String(40), default="success", index=True)
     severity: Mapped[str] = mapped_column(String(40), default="info", index=True)
     old_values: Mapped[dict | None] = mapped_column(JSON)
@@ -273,6 +283,10 @@ class AuditLog(Base):
     ip_address: Mapped[str | None] = mapped_column(String(80))
     user_agent: Mapped[str | None] = mapped_column(String(255))
     request_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    # URL de la solicitud que originó el evento
+    url: Mapped[str | None] = mapped_column(String(500))
+    # Tags para clasificación temática: ["documental", "rrhh", "seguridad", "auditoria"]
+    tags: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -362,9 +376,13 @@ class Employee(Base):
 
 class HRPosition(Base):
     __tablename__ = "ps1008_hr_positions"
+    __table_args__ = (
+        UniqueConstraint("position_code", "company_id", name="uq_hr_positions_code_company"),
+    )
 
     idPosition: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    position_code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    company_id: Mapped[str] = mapped_column(String(40), default="default", index=True)
+    position_code: Mapped[str] = mapped_column(String(40), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     level: Mapped[str] = mapped_column(String(80), default="operativo")
     department: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -377,9 +395,13 @@ class HRPosition(Base):
 
 class HRDepartment(Base, TimestampMixin):
     __tablename__ = "ps1006_hr_departments"
+    __table_args__ = (
+        UniqueConstraint("department_code", "company_id", name="uq_hr_departments_code_company"),
+    )
 
     idDepartment: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    department_code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    company_id: Mapped[str] = mapped_column(String(40), default="default", index=True)
+    department_code: Mapped[str] = mapped_column(String(40), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("ps1006_hr_departments.idDepartment"))
     responsible_identification: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
@@ -388,11 +410,15 @@ class HRDepartment(Base, TimestampMixin):
 
 class HRCandidate(Base, TimestampMixin):
     __tablename__ = "ps1004_hr_candidates"
+    __table_args__ = (
+        UniqueConstraint("candidate_code", "company_id", name="uq_hr_candidates_code_company"),
+    )
 
     idCandidate: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    candidate_code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    company_id: Mapped[str] = mapped_column(String(40), default="default", index=True)
+    candidate_code: Mapped[str] = mapped_column(String(40), nullable=False)
     full_name: Mapped[str] = mapped_column(String(180), nullable=False)
-    email: Mapped[str | None] = mapped_column(String(255), index=True)
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
     phone: Mapped[str | None] = mapped_column(String(80))
     position_applied: Mapped[str] = mapped_column(String(120), nullable=False)
     department: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -408,10 +434,12 @@ class HRVacancy(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_ps1005_hr_vacancies_status_department", "status", "department"),
         Index("ix_ps1005_hr_vacancies_position", "ps1008IdPosition"),
+        UniqueConstraint("vacancy_code", "company_id", name="uq_hr_vacancies_code_company"),
     )
 
     idVacancy: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    vacancy_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    company_id: Mapped[str] = mapped_column(String(40), default="default", index=True)
+    vacancy_code: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     department: Mapped[str] = mapped_column(String(120), nullable=False)
     ps1008IdPosition: Mapped[int | None] = mapped_column(ForeignKey("ps1008_hr_positions.idPosition"))

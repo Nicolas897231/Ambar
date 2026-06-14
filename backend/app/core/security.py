@@ -13,6 +13,10 @@ from jose import JWTError, jwt
 
 from app.core.config import get_settings
 
+# Hash dummy precalculado para ejecutar bcrypt incluso cuando el usuario no existe,
+# nivelando el tiempo de respuesta y previniendo enumeración de usuarios por timing.
+_DUMMY_HASH = bcrypt.hashpw(b"ambar-timing-guard-dummy", bcrypt.gensalt(rounds=12)).decode("utf-8")
+
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
@@ -23,6 +27,15 @@ def verify_password(password: str, password_hash: str) -> bool:
         return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
     except ValueError:
         return False
+
+
+def verify_password_timing_safe(password: str, password_hash: str | None) -> bool:
+    """Siempre ejecuta bcrypt aunque el hash sea None, evitando timing attacks
+    que permitan enumerar usuarios válidos por diferencia de tiempo de respuesta."""
+    if password_hash is None:
+        bcrypt.checkpw(password.encode("utf-8"), _DUMMY_HASH.encode("utf-8"))
+        return False
+    return verify_password(password, password_hash)
 
 
 def create_token(subject: str, token_type: str, minutes: int | None = None, days: int | None = None, **claims: Any) -> str:

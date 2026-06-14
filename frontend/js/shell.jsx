@@ -21,18 +21,18 @@ function Sidebar({ user, route, onNavigate, collapsed, setCollapsed, onOpenUserM
   return (
     <aside className="sidebar">
       <div className="side-brand">
-        <button className="icon-btn" style={{ color: "var(--side-muted)", display: collapsed ? "grid" : "none" }} onClick={() => setCollapsed(false)}><Icon name="menu" size={18} /></button>
+        <button className="icon-btn" style={{ color: "var(--side-muted)", display: collapsed ? "grid" : "none" }} onClick={() => setCollapsed(false)} aria-label="Expandir menú lateral"><Icon name="menu" size={18} /></button>
         <div className="side-logo" onClick={() => onNavigate("dashboard")} style={{ cursor: "pointer" }}><Icon name="folder-kanban" size={22} /></div>
         <div className="b-text grow">
           <div className="b-name">AMBAR</div>
           <div className="b-sub">SGDEA Enterprise</div>
         </div>
-        <button className="icon-btn" style={{ color: "var(--side-muted)" }} onClick={() => setCollapsed(c => !c)} title="Contraer menu"><Icon name="chevron-left" size={18} /></button>
+        <button className="icon-btn" style={{ color: "var(--side-muted)" }} onClick={() => setCollapsed(c => !c)} title="Contraer menu" aria-label="Contraer menú lateral"><Icon name="chevron-left" size={18} /></button>
       </div>
 
       <div className="side-search" data-tour="search">
         <Icon name="search" size={15} />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar modulo..." />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar modulo..." aria-label="Buscar módulo en menú lateral" />
       </div>
 
       <nav className="side-nav" data-tour="nav">
@@ -82,7 +82,7 @@ function CommandPalette({ user, onNavigate, onClose }) {
     <>
       <div className="scrim" onClick={onClose} />
       <div className="modal cmdk" role="dialog" aria-modal="true" style={{ top: "16%", transform: "translate(-50%,0)", padding: 0, width: "min(620px, calc(100vw - 32px))" }}>
-        <div className="cmdk-input"><Icon name="search" size={18} /><input ref={inputRef} value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar modulo en AMBAR..." /><span className="kbd">esc</span></div>
+        <div className="cmdk-input"><Icon name="search" size={18} /><input ref={inputRef} value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar modulo en AMBAR..." aria-label="Buscar en AMBAR" /><span className="kbd">esc</span></div>
         <div className="cmdk-list">
           {items.length === 0 && <div className="muted" style={{ padding: "var(--s5)", textAlign: "center" }}>Sin modulos para "{q}".</div>}
           {items.map((it, i) => (
@@ -137,7 +137,7 @@ function Tour({ onDone }) {
     <div className="tour-layer">
       {rect && <div className="tour-spot" style={{ top: rect.top - 6, left: rect.left - 6, width: rect.width + 12, height: rect.height + 12 }} />}
       <div className="tour-pop an-scale" style={pos}>
-        <div className="row between" style={{ marginBottom: 6 }}><Badge tone="brand">{i + 1} / {steps.length}</Badge><button className="icon-btn btn-sm" onClick={onDone}><Icon name="x" size={15} /></button></div>
+        <div className="row between" style={{ marginBottom: 6 }}><Badge tone="brand">{i + 1} / {steps.length}</Badge><button className="icon-btn btn-sm" onClick={onDone} aria-label="Cerrar tour guiado"><Icon name="x" size={15} /></button></div>
         <h3 style={{ fontSize: "var(--fs-md)" }}>{s.title}</h3>
         <p className="muted" style={{ fontSize: "var(--fs-sm)", marginTop: 4 }}>{s.body}</p>
         <div className="row between" style={{ marginTop: "var(--s4)" }}>
@@ -184,15 +184,15 @@ function AppShell({ user, route, onNavigate, onLogout, theme, toggleTheme, child
               <Icon name="search" size={16} /><span className="gs-text">Buscar en AMBAR...</span><span className="kbd">/</span>
             </button>
             <div style={{ position: "relative" }} data-tour="notif">
-              <button className="icon-btn" onClick={() => setShowNotif(s => !s)} title="Notificaciones"><Icon name="bell" size={18} /></button>
+              <button className="icon-btn" onClick={() => setShowNotif(s => !s)} title="Notificaciones" aria-label="Abrir notificaciones"><Icon name="bell" size={18} /></button>
               {showNotif && <NotifPanel onClose={() => setShowNotif(false)} onNavigate={(r) => { onNavigate(r); setShowNotif(false); }} />}
             </div>
-            <button className="icon-btn" onClick={toggleTheme} title="Cambiar tema"><Icon name={theme === "light" ? "moon" : "sun"} size={18} /></button>
-            <button className="icon-btn" onClick={() => setTour(true)} title="Tour guiado"><Icon name="circle-help" size={18} /></button>
+            <button className="icon-btn" onClick={toggleTheme} title="Cambiar tema" aria-label={theme === "light" ? "Activar modo oscuro" : "Activar modo claro"}><Icon name={theme === "light" ? "moon" : "sun"} size={18} /></button>
+            <button className="icon-btn" onClick={() => setTour(true)} title="Tour guiado" aria-label="Iniciar tour guiado"><Icon name="circle-help" size={18} /></button>
             <button className="avatar" style={{ background: user.color, marginLeft: 4, cursor: "pointer", border: "none" }} onClick={() => setShowUser(true)} title={user.name}>{user.initials}</button>
           </div>
         </header>
-        <div className="content route-enter" key={route}>{children}</div>
+        <div id="main-content" className="content route-enter" key={route}>{children}</div>
       </div>
 
       {showCmd && <CommandPalette user={user} onNavigate={onNavigate} onClose={() => setShowCmd(false)} />}

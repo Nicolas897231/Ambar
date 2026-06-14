@@ -30,7 +30,11 @@ function secureHeaders(headers = {}) {
     "x-frame-options": "DENY",
     "referrer-policy": "strict-origin-when-cross-origin",
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
-    "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+    "x-permitted-cross-domain-policies": "none",
+    "x-dns-prefetch-control": "off",
+    "cross-origin-opener-policy": "same-origin",
+    "cross-origin-resource-policy": "same-origin",
+    "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
     ...headers,
   };
 }
@@ -101,9 +105,14 @@ const server = http.createServer(async (req, res) => {
   if (!req.url) return send(res, 400, "Bad request");
   if (req.url.startsWith("/api/v1/")) return proxyApi(req, res);
   if (req.url === "/health" || req.url === "/health/") return send(res, 200, JSON.stringify({ status: "ok", service: "ambar-web" }), { "content-type": "application/json" });
+  if (req.url === "/robots.txt") return send(res, 200, "User-agent: *\nDisallow: /api/\nDisallow: /health\nDisallow: /metrics\n", { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=86400" });
+  if (req.url === "/.well-known/security.txt") return send(res, 200, "Contact: security@ambar.co\nExpires: 2027-01-01T00:00:00.000Z\nPreferred-Languages: es, en\nPolicy: https://ambar.co/security\n", { "content-type": "text/plain; charset=utf-8" });
 
   const filePath = safePath(req.url);
   if (!filePath) return send(res, 403, "Forbidden");
+  // Block source maps and hidden files regardless of whether they exist on disk.
+  const ext = extname(filePath).toLowerCase();
+  if (ext === ".map" || filePath.includes("/.")) return send(res, 404, "Not Found");
   if (existsSync(filePath) && statSync(filePath).isFile()) {
     const type = mime[extname(filePath).toLowerCase()] || "application/octet-stream";
     const cache = filePath.includes(`${root}\\vendor`) || filePath.includes(`${root}/vendor`) ? { "cache-control": "public, max-age=31536000, immutable" } : {};

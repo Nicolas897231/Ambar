@@ -114,7 +114,7 @@ function Root() {
     <AppShell user={user} route={route} onNavigate={navigate} onLogout={onLogout} theme={theme} toggleTheme={toggleTheme}>
       {!allowed
         ? <Card><Empty icon="lock" title="Sin acceso a este módulo" action={<Button icon="arrow-left" onClick={() => navigate("dashboard")}>Ir al Dashboard</Button>}>Tu rol ({roleMeta(user).name}) no tiene permisos para ver esta sección. Habla con tu administrador si crees que es un error.</Empty></Card>
-        : (Page ? <Page user={user} navigate={navigate} /> : <ComingSoon route={route} />)}
+        : (Page ? <ErrorBoundary key={route}><Page user={user} navigate={navigate} /></ErrorBoundary> : <ComingSoon route={route} />)}
     </AppShell>
   );
 }
@@ -125,7 +125,7 @@ if (!window.JobPortal) window.JobPortal = function ({ onBack }) { return <div cl
 Object.assign(window, { Root, ComingSoon });
 
 const _root = ReactDOM.createRoot(document.getElementById("root"));
-_root.render(<ToastProvider><Root /></ToastProvider>);
+_root.render(<ToastProvider><ErrorBoundary><Root /></ErrorBoundary></ToastProvider>);
 
 // Enable entrance animations only after first paint (kept off in frozen/print
 // contexts so content is always visible by default).

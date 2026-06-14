@@ -274,10 +274,10 @@ def update_role(
 @router.get("", response_model=list[UserOut])
 def list_users(
     include_inactive: bool = Query(default=False),
-    _: User = Depends(require_permission("users.manage")),
+    actor: User = Depends(require_permission("users.manage")),
     db: Session = Depends(get_db),
 ) -> list[UserOut]:
-    query = db.query(User)
+    query = db.query(User).filter(User.company_id == actor.company_id)
     if not include_inactive:
         query = query.filter(User.status == "active")
     return [_out(user, db) for user in query.order_by(User.created_at.desc()).all()]

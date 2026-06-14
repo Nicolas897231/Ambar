@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_permission, user_permissions
@@ -126,16 +126,32 @@ def list_audit_logs(
 
 @router.get("/summary")
 def audit_summary(user: User = Depends(require_permission("audit.view")), db: Session = Depends(get_db)):
+    """Resumen mediante SQL aggregates — sin cargar filas en memoria (OOM fix)."""
     since = datetime.now(UTC) - timedelta(days=30)
-    query = _audit_query(db, user, date_from=since)
-    rows = query.all()
+    base_query = _audit_query(db, user, date_from=since)
+
+    # Agregados en SQL — O(1) en memoria independiente del volumen de registros
+    agg = base_query.with_entities(
+        func.count(AuditLog.idAudit).label("total"),
+        func.sum(case((AuditLog.severity == "critical", 1), else_=0)).label("critical"),
+        func.sum(case((AuditLog.severity == "warning", 1), else_=0)).label("warning"),
+        func.sum(case((AuditLog.result == "denied", 1), else_=0)).label("denied"),
+        func.sum(case((AuditLog.result == "failed", 1), else_=0)).label("failed"),
+    ).one()
+
+    by_module = dict(
+        base_query.with_entities(AuditLog.module, func.count(AuditLog.idAudit))
+        .group_by(AuditLog.module)
+        .all()
+    )
+
     return {
-        "total": len(rows),
-        "critical": sum(1 for item in rows if item.severity == "critical"),
-        "warning": sum(1 for item in rows if item.severity == "warning"),
-        "denied": sum(1 for item in rows if item.result == "denied"),
-        "failed": sum(1 for item in rows if item.result == "failed"),
-        "by_module": dict(query.with_entities(AuditLog.module, func.count(AuditLog.idAudit)).group_by(AuditLog.module).all()),
+        "total": agg.total or 0,
+        "critical": int(agg.critical or 0),
+        "warning": int(agg.warning or 0),
+        "denied": int(agg.denied or 0),
+        "failed": int(agg.failed or 0),
+        "by_module": by_module,
     }
 
 
@@ -171,9 +187,9 @@ def export_audit_logs(
     if not date_from:
         date_from = datetime.now(UTC) - timedelta(days=30)
     query = _audit_query(db, user, module=module, action=action, user_id=user_id, archive_id=archive_id, entity=entity, entity_id=entity_id, severity=severity, result=result, date_from=date_from, date_to=date_to)
-    rows = query.order_by(AuditLog.created_at.desc()).limit(2000).all()
-    lines = ["created_at,user,archive_id,module,action,entity,entity_id,result,severity,ip_address"]
-    for row in rows:
+    # Streaming con yield_per para no cargar 2000 filas completas en RAM
+    lines = ["created_at,user,archive_id,module,action,entity,entity_id,result,severity,ip_address,event,auditable_type,auditable_id"]
+    for row in query.order_by(AuditLog.created_at.desc()).limit(2000).yield_per(200):
         lines.append(",".join([
             str(row.created_at),
             row.ps405Identification or "",
@@ -185,8 +201,11 @@ def export_audit_logs(
             row.result or "success",
             row.severity or "info",
             row.ip_address or "",
+            getattr(row, "event", "") or "",
+            getattr(row, "auditable_type", "") or "",
+            getattr(row, "auditable_id", "") or "",
         ]))
-    write_audit(db, action="audit_exported", module="audit", user_id=user.identification, archive_id=archive_id, entity="audit", result="success", severity="critical", new_values={"format": format, "rows": len(rows)}, request=request)
+    write_audit(db, action="audit_exported", event="export", module="audit", user_id=user.identification, archive_id=archive_id, entity="audit", auditable_type="AuditLog", result="success", severity="critical", tags=["auditoria", "export"], new_values={"format": format, "rows": len(lines) - 1}, request=request)
     db.commit()
     content = "\n".join(lines)
     if format == "xlsx":

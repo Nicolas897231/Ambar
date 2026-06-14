@@ -1,5 +1,8 @@
+import ipaddress
+import socket
 from datetime import UTC, datetime
 import json
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field, HttpUrl
@@ -14,6 +17,44 @@ from app.services.crypto import decrypt_text, encrypt_text, new_token, sign_payl
 from app.services.events import publish_event
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+# Rangos RFC-1918 y loopback que no deben ser alcanzables como destinos de webhook (SSRF)
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local / AWS metadata
+    ipaddress.ip_network("::1/128"),          # loopback IPv6
+    ipaddress.ip_network("fc00::/7"),         # ULA IPv6
+]
+
+
+def _validate_webhook_url(url: str) -> None:
+    """Rechaza URLs que apuntan a rangos privados RFC-1918, loopback o metadata cloud."""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"https", "http"}:
+        raise HTTPException(status_code=422, detail="Webhook URL must use http or https")
+    hostname = parsed.hostname
+    if not hostname:
+        raise HTTPException(status_code=422, detail="Invalid webhook URL hostname")
+    # Bloquear hostnames literales como localhost
+    if hostname.lower() in {"localhost", "localhost.localdomain"}:
+        raise HTTPException(status_code=422, detail="Webhook URL cannot point to internal hosts")
+    try:
+        resolved = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
+        for _, _, _, _, sockaddr in resolved:
+            ip = ipaddress.ip_address(sockaddr[0])
+            for network in _BLOCKED_NETWORKS:
+                if ip in network:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Webhook URL cannot point to private or reserved IP ranges",
+                    )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=422, detail="Could not resolve webhook URL hostname")
 
 
 class WebhookEndpointCreate(BaseModel):
@@ -47,6 +88,7 @@ def create_endpoint(
     user: User = Depends(require_permission("webhook.manage")),
     db: Session = Depends(get_db),
 ):
+    _validate_webhook_url(str(payload.target_url))
     secret = new_token()
     item = WebhookEndpoint(
         endpoint_name=payload.endpoint_name,
@@ -60,11 +102,15 @@ def create_endpoint(
     write_audit(
         db,
         action="webhook_endpoint_created",
+        event="create",
         module="webhooks",
         user_id=user.identification,
         entity="webhook_endpoint",
         entity_id=item.idEndpoint,
+        auditable_type="WebhookEndpoint",
+        auditable_id=item.idEndpoint,
         new_values={"name": item.endpoint_name, "event_type": item.event_type},
+        tags=["integraciones"],
         request=request,
     )
     db.commit()

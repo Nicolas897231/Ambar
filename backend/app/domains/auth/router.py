@@ -6,10 +6,17 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.deps import get_current_user, user_permissions
-from app.core.security import create_token, decode_token, verify_password, verify_totp
+from app.core.security import create_token, decode_token, verify_password_timing_safe, verify_totp
 from app.db.models import RefreshSession, User
 from app.db.session import get_db
 from app.services.audit import write_audit
+from app.services.cache import (
+    blacklist_token,
+    clear_failed_logins,
+    is_account_locked,
+    mark_totp_used,
+    record_failed_login,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -102,31 +109,72 @@ def _optional_current_user(request: Request, db: Session) -> User | None:
 
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)) -> TokenResponse:
-    user = db.query(User).filter(User.email == payload.email).one_or_none()
-    if not user or not verify_password(payload.password, user.password_hash) or user.status != "active":
+    ip = request.client.host if request.client else "unknown"
+
+    # Verificar lockout antes de consultar la BD (previene enumeración por timing)
+    if is_account_locked(payload.email) or is_account_locked(ip):
         write_audit(
             db,
             action="login_failed",
+            event="failed_login",
+            module="auth",
+            new_values={"email": payload.email, "reason": "account_locked"},
+            result="failed",
+            severity="critical",
+            tags=["security", "lockout"],
+            request=request,
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Account temporarily locked due to multiple failed login attempts",
+            headers={"Retry-After": "900"},
+        )
+
+    user = db.query(User).filter(User.email == payload.email).one_or_none()
+
+    # verify_password_timing_safe siempre ejecuta bcrypt aunque user sea None
+    password_ok = verify_password_timing_safe(payload.password, user.password_hash if user else None)
+
+    if not user or not password_ok or user.status != "active":
+        attempts = record_failed_login(payload.email)
+        record_failed_login(ip)
+        write_audit(
+            db,
+            action="login_failed",
+            event="failed_login",
             module="auth",
             user_id=user.identification if user else None,
-            new_values={"email": payload.email},
+            new_values={"email": payload.email, "attempts": attempts},
             result="failed",
             severity="warning",
+            tags=["security", "authentication"],
             request=request,
         )
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
     if user.mfa_enabled:
         if not user.mfa_secret:
-            write_audit(db, action="login_failed_mfa_not_configured", module="auth", user_id=user.identification, result="failed", severity="warning", request=request)
+            write_audit(db, action="login_failed_mfa_not_configured", event="failed_login", module="auth", user_id=user.identification, result="failed", severity="warning", tags=["mfa"], request=request)
             db.commit()
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MFA is enabled but not configured")
         if not payload.mfa_code:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MFA code required")
         if not verify_totp(user.mfa_secret, payload.mfa_code):
-            write_audit(db, action="login_failed_mfa", module="auth", user_id=user.identification, result="failed", severity="warning", request=request)
+            record_failed_login(user.identification)
+            write_audit(db, action="login_failed_mfa", event="failed_login", module="auth", user_id=user.identification, result="failed", severity="warning", tags=["mfa", "security"], request=request)
             db.commit()
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid MFA code")
+        # Protección anti-replay de TOTP
+        if not mark_totp_used(user.identification, payload.mfa_code):
+            write_audit(db, action="login_failed_totp_replay", event="failed_login", module="auth", user_id=user.identification, result="failed", severity="critical", tags=["mfa", "replay"], request=request)
+            db.commit()
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MFA code already used")
+
+    # Login exitoso — limpiar contadores
+    clear_failed_logins(payload.email)
+    clear_failed_logins(ip)
 
     permissions = sorted(user_permissions(db, user))
     roles = _role_names(user)
@@ -156,7 +204,17 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
             expires_at=datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days),
         )
     )
-    write_audit(db, action="login_success", module="auth", user_id=user.identification, request=request)
+    write_audit(
+        db,
+        action="login_success",
+        event="login",
+        module="auth",
+        user_id=user.identification,
+        auditable_type="User",
+        auditable_id=user.identification,
+        tags=["authentication"],
+        request=request,
+    )
     db.commit()
     _set_auth_cookies(response, access_token, refresh_token)
     return TokenResponse(
@@ -196,7 +254,7 @@ def refresh(payload: RefreshRequest, request: Request, response: Response, db: S
         company_id=user.company_id,
         location_id=user.location_id,
     )
-    write_audit(db, action="token_refreshed", module="auth", user_id=user.identification, request=request)
+    write_audit(db, action="token_refreshed", event="login", module="auth", user_id=user.identification, tags=["authentication"], request=request)
     db.commit()
     _set_auth_cookies(response, access_token, refresh_token)
     return TokenResponse(
@@ -208,6 +266,25 @@ def refresh(payload: RefreshRequest, request: Request, response: Response, db: S
 
 @router.post("/logout")
 def logout(payload: RefreshRequest, request: Request, response: Response, db: Session = Depends(get_db)) -> dict:
+    # Revocar access token activo añadiéndolo a blacklist
+    access_token = request.cookies.get("ambar_access_token")
+    if not access_token:
+        authorization = request.headers.get("authorization", "")
+        if authorization.lower().startswith("bearer "):
+            access_token = authorization.split(" ", 1)[1].strip()
+
+    if access_token:
+        try:
+            at_payload = decode_token(access_token)
+            jti = at_payload.get("jti")
+            exp = at_payload.get("exp", 0)
+            if jti and exp:
+                from datetime import UTC as _UTC
+                ttl = max(int(exp - datetime.now(_UTC).timestamp()), 0) + 60
+                blacklist_token(jti, ttl)
+        except Exception:
+            pass
+
     refresh_token = payload.refresh_token or request.cookies.get("ambar_refresh_token")
     if not refresh_token:
         _clear_auth_cookies(response)
@@ -220,7 +297,17 @@ def logout(payload: RefreshRequest, request: Request, response: Response, db: Se
     session = db.query(RefreshSession).filter(RefreshSession.refresh_jti == token_payload.get("jti")).one_or_none()
     if session:
         session.revoked = True
-        write_audit(db, action="logout", module="auth", user_id=session.ps405Identification, request=request)
+        write_audit(
+            db,
+            action="logout",
+            event="logout",
+            module="auth",
+            user_id=session.ps405Identification,
+            auditable_type="User",
+            auditable_id=session.ps405Identification,
+            tags=["authentication"],
+            request=request,
+        )
         db.commit()
     _clear_auth_cookies(response)
     return {"ok": True}

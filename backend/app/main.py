@@ -1,8 +1,10 @@
+import hmac
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.v1.router import api_router
@@ -217,6 +219,47 @@ def ensure_trd_lifecycle_columns() -> None:
                 connection.execute(text("ALTER TABLE ps526_document_types ADD COLUMN required_in_expedient BOOLEAN DEFAULT 1"))
 
 
+def ensure_audit_enhanced_columns() -> None:
+    """Agrega columnas Laravel-Auditing-style al log de auditoría si no existen."""
+    inspector = inspect(engine)
+    if "ps820_audit_log" not in inspector.get_table_names():
+        return
+    existing = {item["name"] for item in inspector.get_columns("ps820_audit_log")}
+    columns = {
+        "event": "VARCHAR(80)",
+        "auditable_type": "VARCHAR(120)",
+        "auditable_id": "VARCHAR(80)",
+        "url": "VARCHAR(500)",
+        "tags": "JSON",
+    }
+    with engine.begin() as connection:
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE ps820_audit_log ADD COLUMN {name} {definition}"))
+
+
+def ensure_hr_company_isolation() -> None:
+    inspector = inspect(engine)
+    hr_tables = [
+        "ps1008_hr_positions",
+        "ps1006_hr_departments",
+        "ps1004_hr_candidates",
+        "ps1005_hr_vacancies",
+    ]
+    for table in hr_tables:
+        if table not in inspector.get_table_names():
+            continue
+        existing = {c["name"] for c in inspector.get_columns(table)}
+        if "company_id" in existing:
+            continue
+        existing_idx = {idx["name"] for idx in inspector.get_indexes(table)}
+        idx_name = f"ix_{table}_company_id"
+        with engine.begin() as conn:
+            conn.execute(text(f"ALTER TABLE `{table}` ADD COLUMN company_id VARCHAR(40) NOT NULL DEFAULT 'default'"))
+            if idx_name not in existing_idx:
+                conn.execute(text(f"ALTER TABLE `{table}` ADD INDEX `{idx_name}` (company_id)"))
+
+
 def ensure_phase3_custody_columns() -> None:
     inspector = inspect(engine)
     with engine.begin() as connection:
@@ -242,10 +285,12 @@ async def lifespan(app: FastAPI):
         ensure_transfer_batch_item_reception_columns()
         ensure_deep_kardex_columns()
         ensure_audit_security_columns()
+        ensure_audit_enhanced_columns()
         ensure_operational_notification_columns()
         ensure_document_core_columns()
         ensure_trd_lifecycle_columns()
         ensure_phase3_custody_columns()
+        ensure_hr_company_isolation()
     if settings.seed_default_data:
         db = SessionLocal()
         try:
@@ -266,6 +311,7 @@ def create_app() -> FastAPI:
         redoc_url=None if settings.is_production else "/redoc",
         openapi_url=None if settings.is_production else "/openapi.json",
     )
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(MetricsMiddleware)
@@ -311,7 +357,13 @@ def create_app() -> FastAPI:
         return {"status": status, "checks": checks, "node": settings.cluster_node_id}
 
     @app.get("/metrics", tags=["system"])
-    def metrics() -> Response:
+    def metrics(request: Request) -> Response:
+        # Requires X-Internal-Signature header to prevent metrics disclosure to unauthenticated clients.
+        # Prometheus scrapers must be configured with this header.
+        expected = settings.internal_service_secret
+        provided = request.headers.get("X-Internal-Signature", "")
+        if not provided or not hmac.compare_digest(provided.encode(), expected.encode()):
+            return Response(status_code=401, content="Unauthorized")
         return Response(metrics_registry.render_prometheus(), media_type="text/plain; version=0.0.4")
 
     app.include_router(api_router)

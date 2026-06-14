@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -9,6 +10,7 @@ from app.core.security import decode_token
 from app.db.models import Permission, RolePermission, User, UserRole
 from app.db.session import get_db
 from app.services.audit import write_audit
+from app.services.cache import is_token_blacklisted
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -33,9 +35,24 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("type") != "access":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+
+    # Verificar token blacklist (logout explícito o revocación de sesión)
+    jti = payload.get("jti")
+    if jti and is_token_blacklisted(jti):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked")
+
     user = db.get(User, payload.get("sub"))
     if not user or user.status != "active":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user")
+
+    # Verificar acceso temporal expirado
+    if user.access_expires_at is not None:
+        expires = user.access_expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=UTC)
+        if expires < datetime.now(UTC):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User access has expired")
+
     return user
 
 
@@ -61,11 +78,13 @@ def require_permission(permission: str) -> Callable:
         if "*" not in permissions and permission not in permissions:
             write_audit(
                 db,
-                action="permission_denied",
+                action="access_denied",
+                event="access_denied",
                 module="security",
                 user_id=user.identification,
                 entity="permission",
                 entity_id=permission,
+                auditable_type="Permission",
                 result="denied",
                 severity="critical",
                 new_values={"required_permission": permission},
@@ -84,11 +103,13 @@ def require_any_permission(*permissions: str) -> Callable:
         if "*" not in granted and not any(permission in granted for permission in permissions):
             write_audit(
                 db,
-                action="permission_denied",
+                action="access_denied",
+                event="access_denied",
                 module="security",
                 user_id=user.identification,
                 entity="permission",
                 entity_id="|".join(permissions),
+                auditable_type="Permission",
                 result="denied",
                 severity="critical",
                 new_values={"required_any_permission": list(permissions)},

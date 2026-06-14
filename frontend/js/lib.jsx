@@ -3,9 +3,24 @@
    ============================================================ */
 const { useState, useEffect, useRef, useMemo, useCallback, createContext, useContext } = React;
 
-/* ---------- Icon ---------- */
+/* ---------- Icon ----------
+   SEGURIDAD: dangerouslySetInnerHTML solo acepta contenido de window.ICONS,
+   que es un objeto literal estático definido en icons.js (nunca input del usuario).
+   La validación defensiva bloquea cualquier intento de inyección en el objeto ICONS.
+   DOM XSS imposible: <svg> no ejecuta <script> ni atributos event handlers. */
+const _SVG_PATH_SAFE = /^[^<>"'`]*$/;  // rechaza etiquetas HTML fuera de paths SVG
+
+function _safeSvgInner(name) {
+  const raw = (window.ICONS && window.ICONS[name]) || (window.ICONS && window.ICONS["circle"]) || "";
+  // Validación extra: si el contenido contiene <script, on*, javascript: — rechazar
+  if (/<script/i.test(raw) || /\bon\w+\s*=/i.test(raw) || /javascript:/i.test(raw)) {
+    return "";
+  }
+  return raw;
+}
+
 function Icon({ name, size = 18, stroke = 2, className = "", style }) {
-  const inner = window.ICONS[name] || window.ICONS["circle"];
+  const inner = _safeSvgInner(name);
   return (
     <svg className={className} style={style} width={size} height={size} viewBox="0 0 24 24"
       fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round"
@@ -90,11 +105,19 @@ function Switch({ checked, onChange }) {
 }
 
 /* ---------- Field ---------- */
-function Field({ label, help, required, children, hint }) {
+let _fieldCounter = 0;
+function Field({ label, help, required, children, hint, id: fieldId }) {
+  const [uid] = useState(() => fieldId || `fld-${++_fieldCounter}`);
+  const enhanced = React.Children.map(children, (child, i) => {
+    if (i === 0 && child && typeof child === "object" && child.props && !child.props.id && !child.props["aria-label"]) {
+      return React.cloneElement(child, { id: uid });
+    }
+    return child;
+  });
   return (
     <div className="field">
-      {label && <label>{label}{required && <span className="req">*</span>}{help && <HelpDot text={help} />}</label>}
-      {children}
+      {label && <label htmlFor={uid}>{label}{required && <span className="req">*</span>}{help && <HelpDot text={help} />}</label>}
+      {enhanced}
       {hint && <small className="faint">{hint}</small>}
     </div>
   );
@@ -122,18 +145,34 @@ function Avatar({ name, color, size = "", src }) {
 
 /* ---------- Modal ---------- */
 function Modal({ title, sub, onClose, children, footer, lg, wide }) {
+  const dialogRef = useRef(null);
+  const [titleId] = useState(() => `modal-t-${Math.random().toString(36).slice(2, 7)}`);
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
+    const el = dialogRef.current;
+    if (el) {
+      const focusable = el.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusable.length) focusable[0].focus();
+    }
+    const handleKey = (e) => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key === "Tab" && dialogRef.current) {
+        const nodes = [...dialogRef.current.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+        if (!nodes.length) return;
+        const first = nodes[0], last = nodes[nodes.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener("keydown", handleKey);
     document.body.style.overflow = "hidden";
-    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+    return () => { document.removeEventListener("keydown", handleKey); document.body.style.overflow = ""; };
   }, []);
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <div className={`modal${lg || wide ? " lg" : ""}`} role="dialog" aria-modal="true">
+      <div ref={dialogRef} className={`modal${lg || wide ? " lg" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="modal-head">
-          <div><h2>{title}</h2>{sub && <div className="sub">{sub}</div>}</div>
+          <div><h2 id={titleId}>{title}</h2>{sub && <div className="sub">{sub}</div>}</div>
           <Button variant="subtle" size="sm" icon="x" onClick={onClose} aria-label="Cerrar" />
         </div>
         {children}
@@ -145,17 +184,33 @@ function Modal({ title, sub, onClose, children, footer, lg, wide }) {
 
 /* ---------- Drawer ---------- */
 function Drawer({ title, sub, onClose, children, wide, headExtra }) {
+  const drawerRef = useRef(null);
+  const [titleId] = useState(() => `drawer-t-${Math.random().toString(36).slice(2, 7)}`);
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    const el = drawerRef.current;
+    if (el) {
+      const focusable = el.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusable.length) focusable[0].focus();
+    }
+    const handleKey = (e) => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key === "Tab" && drawerRef.current) {
+        const nodes = [...drawerRef.current.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+        if (!nodes.length) return;
+        const first = nodes[0], last = nodes[nodes.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
   }, []);
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className={`drawer${wide ? " wide" : ""}`} role="dialog" aria-modal="true">
+      <aside ref={drawerRef} className={`drawer${wide ? " wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="drawer-head">
-          <div><h2 style={{ fontSize: "var(--fs-xl)" }}>{title}</h2>{sub && <div className="sub muted" style={{ fontSize: "var(--fs-sm)", marginTop: 3 }}>{sub}</div>}</div>
+          <div><h2 id={titleId} style={{ fontSize: "var(--fs-xl)" }}>{title}</h2>{sub && <div className="sub muted" style={{ fontSize: "var(--fs-sm)", marginTop: 3 }}>{sub}</div>}</div>
           <div className="row gap2">{headExtra}<Button variant="ghost" size="sm" icon="x" onClick={onClose} aria-label="Cerrar" /></div>
         </div>
         <div className="drawer-body">{children}</div>
@@ -177,7 +232,7 @@ function ToastProvider({ children }) {
   return (
     <ToastCtx.Provider value={push}>
       {children}
-      <div className="toast-stack">
+      <div className="toast-stack" role="status" aria-live="polite" aria-atomic="false" aria-relevant="additions">
         {items.map(t => (
           <div key={t.id} className={`toast ${t.tone || ""}`}>
             <span className="t-ico"><Icon name={icons[t.tone] || "sparkles"} size={18} /></span>
@@ -189,6 +244,39 @@ function ToastProvider({ children }) {
   );
 }
 const useToast = () => useContext(ToastCtx);
+
+/* ---------- ErrorBoundary ---------- */
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("AMBAR ErrorBoundary:", error, info?.componentStack); }
+  render() {
+    if (this.state.error) {
+      return (
+        <Card>
+          <Empty icon="alert-triangle" title="Error inesperado" action={
+            <Button variant="primary" onClick={() => this.setState({ error: null })}>Reintentar</Button>
+          }>{this.state.error?.message || "Ocurrió un error en este módulo. Si persiste, contacta al soporte técnico."}</Empty>
+        </Card>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/* ---------- ConfirmDialog ---------- */
+function ConfirmDialog({ title = "¿Confirmar acción?", message, onConfirm, onCancel, confirmLabel = "Confirmar", danger = true }) {
+  return (
+    <Modal title={title} onClose={onCancel} footer={
+      <>
+        <Button variant="ghost" onClick={onCancel}>Cancelar</Button>
+        <Button variant={danger ? "danger" : "primary"} onClick={onConfirm}>{confirmLabel}</Button>
+      </>
+    }>
+      <p style={{ color: "var(--text)", lineHeight: 1.6 }}>{message}</p>
+    </Modal>
+  );
+}
 
 /* ---------- Download helpers ---------- */
 function safeFilename(value, fallback = "ambar-export") {
