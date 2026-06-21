@@ -44,7 +44,9 @@ async function proxyApi(req, res) {
   const headers = { ...req.headers };
   const requestId = req.headers["x-request-id"] || randomUUID();
   delete headers.host;
+  delete headers["accept-encoding"];
   headers["x-request-id"] = requestId;
+  headers["accept-encoding"] = "identity";
   try {
     const response = await fetch(target, {
       method: req.method,
@@ -56,7 +58,7 @@ async function proxyApi(req, res) {
     const responseHeaders = {};
     response.headers.forEach((value, key) => {
       const normalized = key.toLowerCase();
-      if (!["connection", "transfer-encoding", "set-cookie"].includes(normalized)) {
+      if (!["connection", "transfer-encoding", "set-cookie", "content-encoding", "content-length"].includes(normalized)) {
         responseHeaders[key] = value;
       }
     });
