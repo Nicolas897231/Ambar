@@ -240,6 +240,7 @@ def ensure_audit_enhanced_columns() -> None:
 
 def ensure_hr_company_isolation() -> None:
     inspector = inspect(engine)
+    dialect = engine.dialect.name
     hr_tables = [
         "ps1008_hr_positions",
         "ps1006_hr_departments",
@@ -257,7 +258,10 @@ def ensure_hr_company_isolation() -> None:
         with engine.begin() as conn:
             conn.execute(text(f"ALTER TABLE `{table}` ADD COLUMN company_id VARCHAR(40) NOT NULL DEFAULT 'default'"))
             if idx_name not in existing_idx:
-                conn.execute(text(f"ALTER TABLE `{table}` ADD INDEX `{idx_name}` (company_id)"))
+                if dialect == "sqlite":
+                    conn.execute(text(f'CREATE INDEX IF NOT EXISTS "{idx_name}" ON "{table}" (company_id)'))
+                else:
+                    conn.execute(text(f"ALTER TABLE `{table}` ADD INDEX `{idx_name}` (company_id)"))
 
 
 def ensure_phase3_custody_columns() -> None:

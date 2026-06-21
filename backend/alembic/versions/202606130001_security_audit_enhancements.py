@@ -52,7 +52,7 @@ def upgrade() -> None:
         ("auditable_type", sa.Column("auditable_type", sa.String(120), nullable=True)),
         ("auditable_id",   sa.Column("auditable_id", sa.String(80), nullable=True)),
         ("url",            sa.Column("url", sa.String(500), nullable=True)),
-        ("tags",           sa.Column("tags", sa.JSON(), nullable=True, server_default="[]")),
+        ("tags",           sa.Column("tags", sa.JSON(), nullable=True)),
     ]
     for col_name, col_def in audit_columns:
         if not _has_column("ps820_audit_log", col_name):
