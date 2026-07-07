@@ -124,6 +124,16 @@ class BoxCreate(BaseModel):
     capacity_folders: int = 0
 
 
+class PhysicalStructureBulkCreate(BaseModel):
+    archive_id: int
+    floors: list[str] = Field(default_factory=lambda: ["Piso 1"], max_length=20)
+    aisles: list[str] = Field(min_length=1, max_length=100)
+    shelves: list[str] = Field(min_length=1, max_length=100)
+    bodies: list[str] = Field(default_factory=lambda: ["A"], min_length=1, max_length=50)
+    levels: list[str] = Field(default_factory=lambda: ["1"], min_length=1, max_length=50)
+    capacity_boxes: int = Field(default=20, ge=0, le=10000)
+
+
 class ShelfUpdate(BaseModel):
     shelf_name: str | None = Field(default=None, min_length=2, max_length=160)
     aisle: str | None = None
@@ -855,6 +865,29 @@ def _shelf_topographic_path(shelf: Shelf) -> str:
         _label_part("Nivel", shelf.bay),
     ]
     return " / ".join(part for part in parts if part)
+
+
+def _clean_location_part(value: str | None) -> str:
+    cleaned = " ".join(str(value or "").strip().split())
+    if not cleaned:
+        raise HTTPException(status_code=422, detail="Physical structure value cannot be empty")
+    return cleaned[:80]
+
+
+def _physical_code(prefix: str, value: str) -> str:
+    normalized = normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    token = "".join(ch.upper() if ch.isalnum() else "-" for ch in normalized).strip("-")
+    token = "-".join(part for part in token.split("-") if part)
+    return f"{prefix}-{token or 'SIN-CODIGO'}"[:60]
+
+
+def _shelf_code_for_parts(aisle: str, shelf: str, body: str, level: str) -> str:
+    return "-".join([
+        _physical_code("P", aisle).replace("P-", "P", 1),
+        _physical_code("E", shelf).replace("E-", "E", 1),
+        _physical_code("C", body).replace("C-", "C", 1),
+        _physical_code("N", level).replace("N-", "N", 1),
+    ])[:60]
 
 
 def _shelf_out(db: Session, shelf: Shelf) -> dict:
@@ -1885,6 +1918,62 @@ def list_shelves(archive_id: int | None = None, user: User = Depends(require_per
         _require_archive_access(db, user, archive_id)
         query = query.filter(Shelf.ps930IdArchive == archive_id)
     return [_shelf_out(db, item) for item in query.order_by(Shelf.shelf_code.asc()).all()]
+
+
+@router.get("/physical-structure/options")
+def physical_structure_options(archive_id: int, user: User = Depends(require_permission("document.read")), db: Session = Depends(get_db)) -> dict:
+    _require_archive_access(db, user, archive_id)
+    shelves = db.query(Shelf).filter(Shelf.ps930IdArchive == archive_id).order_by(Shelf.aisle.asc(), Shelf.shelf_code.asc()).all()
+    boxes = db.query(PhysicalBox).filter(PhysicalBox.ps930IdArchive == archive_id).order_by(PhysicalBox.box_code.asc()).all()
+    return {
+        "floors": sorted({item.floor for item in shelves if item.floor}),
+        "aisles": sorted({item.aisle for item in shelves if item.aisle}),
+        "shelves": sorted({item.shelf_code for item in shelves if item.shelf_code}),
+        "bodies": sorted({item.module for item in shelves if item.module}),
+        "levels": sorted({item.bay for item in shelves if item.bay}),
+        "locations": [_shelf_out(db, item) for item in shelves],
+        "boxes": [_box_out(db, item) for item in boxes],
+    }
+
+
+@router.post("/physical-structure/bulk", status_code=status.HTTP_201_CREATED)
+def create_physical_structure_bulk(payload: PhysicalStructureBulkCreate, request: Request, user: User = Depends(require_permission("archive.manage")), db: Session = Depends(get_db)) -> dict:
+    _require_archive_access(db, user, payload.archive_id, {"admin"})
+    floors = [_clean_location_part(item) for item in payload.floors or ["Piso 1"]]
+    aisles = [_clean_location_part(item) for item in payload.aisles]
+    shelves = [_clean_location_part(item) for item in payload.shelves]
+    bodies = [_clean_location_part(item) for item in payload.bodies or ["A"]]
+    levels = [_clean_location_part(item) for item in payload.levels or ["1"]]
+    created: list[dict] = []
+    skipped: list[str] = []
+    for floor in floors:
+        for aisle in aisles:
+            for shelf_value in shelves:
+                for body in bodies:
+                    for level in levels:
+                        code = _shelf_code_for_parts(aisle, shelf_value, body, level)
+                        existing = db.query(Shelf).filter(Shelf.ps930IdArchive == payload.archive_id, Shelf.shelf_code == code).one_or_none()
+                        if existing:
+                            skipped.append(code)
+                            continue
+                        item = Shelf(
+                            ps930IdArchive=payload.archive_id,
+                            shelf_code=code,
+                            shelf_name=f"Pasillo {aisle} - Estanteria {shelf_value} - Cuerpo {body} - Nivel {level}",
+                            aisle=aisle,
+                            floor=floor,
+                            module=body,
+                            bay=level,
+                            capacity_boxes=payload.capacity_boxes,
+                        )
+                        item.physical_location = _shelf_topographic_path(item)
+                        db.add(item)
+                        db.flush()
+                        _location_movement(db, request, user, movement_type="shelf.created", entity_type="box", entity_id=0, archive_id=payload.archive_id, previous=None, current=item.physical_location, observation=f"Ubicacion creada por estructura masiva: {code}")
+                        created.append(_shelf_out(db, item))
+    write_audit(db, action="physical_structure_bulk_created", module="archives", user_id=user.identification, entity="shelf", entity_id=0, new_values={"archive_id": payload.archive_id, "created": len(created), "skipped": len(skipped)}, request=request)
+    db.commit()
+    return {"created": created, "created_count": len(created), "skipped": skipped, "skipped_count": len(skipped)}
 
 
 @router.get("/shelves/{shelf_id}")

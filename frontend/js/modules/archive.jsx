@@ -13,6 +13,18 @@ function shelfLabel(shelf) {
     .join(" / ") || shelf.shelf_name || shelf.shelf_code || "Ubicación sin ruta";
 }
 
+function parseLocationList(value, fallback = []) {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  const range = text.match(/^(\d+)\s*-\s*(\d+)$/);
+  if (range) {
+    const start = Number(range[1]);
+    const end = Number(range[2]);
+    if (end >= start && end - start <= 100) return Array.from({ length: end - start + 1 }, (_, index) => String(start + index));
+  }
+  return text.split(/[,\n;]/).map((part) => part.trim()).filter(Boolean).slice(0, 100);
+}
+
 function QuickSearch() {
   const [q, setQ] = arS("");
   const [result, setResult] = arS(null);
@@ -154,7 +166,7 @@ function BoxDetail({ box, onClose }) {
       headExtra={<Badge tone={pathTone(box.occupancy_percent)}>{box.occupancy_percent || 0}%</Badge>}>
       <Card pad="sm">
         <CardHead title="Contenido de caja" sub="Carpetas y documentos heredando esta ubicación" icon="boxes" action={<Badge tone="outline">{folders.length} carpetas</Badge>} />
-        {loading ? <Skeleton rows={5} /> : folders.length === 0 ? <Empty icon="folder" title="Caja vacia">No hay carpetas asignadas a esta caja.</Empty> : (
+        {loading ? <Skeleton rows={5} /> : folders.length === 0 ? <Empty icon="folder" title="Caja vacía">No hay carpetas asignadas a esta caja.</Empty> : (
           <div className="table-scroll">
             <table className="tbl">
               <thead><tr><th>Carpeta</th><th>Documentos</th><th>Folios</th><th>Ruta heredada</th></tr></thead>
@@ -219,7 +231,21 @@ function MovementsView() {
 function CreatePhysicalModal({ mode, onClose, onCreated }) {
   const toast = useToast();
   const [kind, setKind] = arS(mode || "box");
-  const [payload, setPayload] = arS({ archive_id: "", location_id: "", shelf_id: "", archive_type: "central", capacity_units: 0, capacity_boxes: 20, capacity_folders: 30, status: "active" });
+  const [payload, setPayload] = arS({
+    archive_id: "",
+    location_id: "",
+    shelf_id: "",
+    archive_type: "central",
+    capacity_units: 0,
+    capacity_boxes: 20,
+    capacity_folders: 30,
+    status: "active",
+    floors: "Piso 1",
+    aisles: "1-3",
+    shelves: "1-5",
+    bodies: "A,B",
+    levels: "1-4",
+  });
   const { data: locationsRaw } = useLiveData(() => AmbarAPI.endpoints.locations(), [], []);
   const { data: archivesRaw } = useLiveData(() => AmbarAPI.endpoints.archives(), [], []);
   const { data: shelvesRaw } = useLiveData(() => AmbarAPI.endpoints.shelves(), [], []);
@@ -249,6 +275,26 @@ function CreatePhysicalModal({ mode, onClose, onCreated }) {
           capacity_units: Number(payload.capacity_units || 0),
           description: payload.description || null,
           metadata: {},
+        });
+      }
+      if (kind === "bulk") {
+        if (!payload.archive_id) return toast("Selecciona el archivo que recibirá la topografía.", { tone: "danger", title: "Infraestructura incompleta" });
+        const aisles = parseLocationList(payload.aisles);
+        const shelvesBulk = parseLocationList(payload.shelves);
+        const bodies = parseLocationList(payload.bodies, ["A"]);
+        const levels = parseLocationList(payload.levels, ["1"]);
+        const floors = parseLocationList(payload.floors, ["Piso 1"]);
+        if (!aisles.length || !shelvesBulk.length || !bodies.length || !levels.length) {
+          return toast("Completa pasillos, estanterías, cuerpos y niveles.", { tone: "danger", title: "Topografía incompleta" });
+        }
+        created = await AmbarAPI.post("/archives/physical-structure/bulk", {
+          archive_id: Number(payload.archive_id),
+          floors,
+          aisles,
+          shelves: shelvesBulk,
+          bodies,
+          levels,
+          capacity_boxes: Number(payload.capacity_boxes || 0),
         });
       }
       if (kind === "shelf") {
@@ -294,6 +340,7 @@ function CreatePhysicalModal({ mode, onClose, onCreated }) {
       <Segmented value={kind} onChange={setKind} options={[
         { value: "site", label: "Sede", icon: "map-pin" },
         { value: "archive", label: "Archivo", icon: "warehouse" },
+        { value: "bulk", label: "Topografía masiva", icon: "layers" },
         { value: "shelf", label: "Ubicación", icon: "table" },
         { value: "box", label: "Caja", icon: "boxes" },
       ]} />
@@ -305,6 +352,17 @@ function CreatePhysicalModal({ mode, onClose, onCreated }) {
         <Field label="Codigo" required><input value={payload.archive_code || ""} onChange={e => setField("archive_code", e.target.value)} placeholder="ARCH-CALI-CENTRAL" /></Field>
         <Field label="Nombre" required><input value={payload.archive_name || ""} onChange={e => setField("archive_name", e.target.value)} placeholder="Archivo Central Cali" /></Field>
         <Field label="Capacidad cajas"><input type="number" min="0" value={payload.capacity_units || 0} onChange={e => setField("capacity_units", e.target.value)} /></Field>
+      </div>}      {kind === "bulk" && <div className="grid cols-2">
+        <Field label="Archivo" required><select value={payload.archive_id || ""} onChange={e => setField("archive_id", e.target.value)}><option value="">Seleccionar archivo</option>{archives.map(a => <option key={a.idArchive || a.id} value={a.idArchive || a.id}>{a.archive_name}</option>)}</select></Field>
+        <Field label="Pisos"><input value={payload.floors || ""} onChange={e => setField("floors", e.target.value)} placeholder="Piso 1" /></Field>
+        <Field label="Pasillos" required hint="Puedes escribir 1-5 o A,B,C. Solo parametriza el catálogo."><input value={payload.aisles || ""} onChange={e => setField("aisles", e.target.value)} placeholder="1-5" /></Field>
+        <Field label="Estanterías" required><input value={payload.shelves || ""} onChange={e => setField("shelves", e.target.value)} placeholder="1-10" /></Field>
+        <Field label="Cuerpos / módulos" required><input value={payload.bodies || ""} onChange={e => setField("bodies", e.target.value)} placeholder="A,B" /></Field>
+        <Field label="Niveles / entrepaños" required><input value={payload.levels || ""} onChange={e => setField("levels", e.target.value)} placeholder="1-6" /></Field>
+        <Field label="Capacidad por nivel"><input type="number" min="0" value={payload.capacity_boxes || 0} onChange={e => setField("capacity_boxes", e.target.value)} /></Field>
+        <Card pad="sm" style={{ background: "var(--panel-2)" }}>
+          <CardHead title="Creación controlada" sub="AMBAR crea ubicaciones seleccionables. Después las cajas se asignan a estas rutas y las carpetas heredan ubicación." icon="shield-check" />
+        </Card>
       </div>}
       {kind === "shelf" && <div className="grid cols-2">
         <Field label="Archivo" required><select value={payload.archive_id || ""} onChange={e => setField("archive_id", e.target.value)}><option value="">Seleccionar archivo</option>{archives.map(a => <option key={a.idArchive || a.id} value={a.idArchive || a.id}>{a.archive_name}</option>)}</select></Field>

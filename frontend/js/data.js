@@ -29,35 +29,6 @@ window.PERM_GROUPS = [
   { mod: "Notificaciones", perms: [["notification.read", "Recibir alertas"]] },
 ];
 
-const fixUiText = (value) => String(value || "")
-  .replaceAll("Ã¡", "á").replaceAll("Ã©", "é").replaceAll("Ã­", "í").replaceAll("Ã³", "ó").replaceAll("Ãº", "ú")
-  .replaceAll("Ã", "Á").replaceAll("Ã‰", "É").replaceAll("Ã", "Í").replaceAll("Ã“", "Ó").replaceAll("Ãš", "Ú")
-  .replaceAll("Ã±", "ñ").replaceAll("Ã‘", "Ñ").replaceAll("Ã¼", "ü").replaceAll("Ãœ", "Ü")
-  .replaceAll("Â·", "•");
-window.PERM_GROUPS = window.PERM_GROUPS.map(group => ({
-  ...group,
-  mod: fixUiText(group.mod),
-  perms: group.perms.map(([key, label]) => [key, fixUiText(label)]),
-}));
-
-window.NAV = window.NAV || [];
-const NAV_LABELS = {
-  "GestiÃ³n Documental": "Gestión Documental",
-  "DigitalizaciÃ³n": "Digitalización",
-  "TRD & RetenciÃ³n": "TRD & Retención",
-  "Archivo FÃ­sico": "Archivo Físico",
-  "PrÃ©stamos": "Préstamos",
-  "ExÃ¡menes MÃ©dicos": "Exámenes Médicos",
-  "AuditorÃ­a": "Auditoría",
-  "AdministraciÃ³n": "Administración",
-  "ConfiguraciÃ³n": "Configuración",
-};
-window.NAV = window.NAV.map(group => ({
-  ...group,
-  label: NAV_LABELS[group.label] || group.label,
-  items: group.items.map(item => ({ ...item, label: NAV_LABELS[item.label] || item.label })),
-}));
-
 window.ALL_PERMS = PERM_GROUPS.flatMap(g => g.perms.map(p => p[0]));
 window.PERM_LABEL = Object.fromEntries(PERM_GROUPS.flatMap(g => g.perms));
 
@@ -91,11 +62,6 @@ window.ROLES = {
     perms: ["document.read","search.query","notification.read"] },
 };
 
-Object.values(window.ROLES).forEach(role => {
-  role.name = fixUiText(role.name);
-  role.area = fixUiText(role.area);
-  role.desc = fixUiText(role.desc);
-});
 
 window.normalizeRoleKey = function(role) {
   const key = String(role || "consultor").trim().toLowerCase().replace(/[\s-]+/g, "_");
@@ -154,7 +120,11 @@ window.NAV = [
   ]},
   { label: "Archivo & Custodia", icon: "warehouse", items: [
     { key: "archive", label: "Archivo Físico", icon: "warehouse", perms: ["archive.manage","document.read"] },
+    { key: "inventory", label: "Inventarios", icon: "boxes", perms: ["document.read","archive.manage"] },
+    { key: "kardex", label: "Kardex", icon: "history", perms: ["document.read","audit.view"] },
     { key: "transfers", label: "Transferencias", icon: "route", perms: ["transfer.batch_manage","document.transfer"] },
+    { key: "reception", label: "Recepción", icon: "package-check", perms: ["transfer.batch_manage","document.transfer"] },
+    { key: "fuid", label: "FUID", icon: "clipboard", perms: ["document.read","document.transfer"] },
     { key: "loans", label: "Préstamos", icon: "package-check", perms: ["document.transfer","transfer.manage"] },
     { key: "correspondence", label: "Correspondencia", icon: "mail", perms: ["mail.view","mail.manage"] },
   ]},
@@ -174,45 +144,6 @@ window.NAV = [
 ];
 
 /* ---- Catálogos compartidos ---- */
-const UI_LABEL_FIXES = {
-  "GestiÃ³n Documental": "Gestión Documental",
-  "DigitalizaciÃ³n": "Digitalización",
-  "TRD & RetenciÃ³n": "TRD & Retención",
-  "Archivo FÃ­sico": "Archivo Físico",
-  "PrÃ©stamos": "Préstamos",
-  "ExÃ¡menes MÃ©dicos": "Exámenes Médicos",
-  "AuditorÃ­a": "Auditoría",
-  "AdministraciÃ³n": "Administración",
-  "ConfiguraciÃ³n": "Configuración",
-};
-window.NAV = window.NAV.map(group => ({
-  ...group,
-  label: fixUiText(UI_LABEL_FIXES[group.label] || group.label),
-  items: group.items.map(item => ({ ...item, label: fixUiText(UI_LABEL_FIXES[item.label] || item.label) })),
-}));
-
-const cleanSpanishText = (value) => String(value || "")
-  .replaceAll("GestiÃ³n", "Gestión").replaceAll("DigitalizaciÃ³n", "Digitalización")
-  .replaceAll("RetenciÃ³n", "Retención").replaceAll("FÃ­sico", "Físico")
-  .replaceAll("PrÃ©stamos", "Préstamos").replaceAll("ExÃ¡menes", "Exámenes")
-  .replaceAll("MÃ©dicos", "Médicos").replaceAll("AuditorÃ­a", "Auditoría")
-  .replaceAll("AdministraciÃ³n", "Administración").replaceAll("ConfiguraciÃ³n", "Configuración")
-  .replaceAll("BÃºsqueda", "Búsqueda").replaceAll("FoliaciÃ³n", "Foliación")
-  .replaceAll("mÃ³dulo", "módulo").replaceAll("menÃº", "menú").replaceAll("Ã¡rea", "área")
-  .replaceAll("recepciÃ³n", "recepción").replaceAll("digitalizaciÃ³n", "digitalización")
-  .replaceAll("AuditorÃ­a", "Auditoría").replaceAll("sesiÃ³n", "sesión")
-  .replaceAll("Â·", "-");
-window.NAV = window.NAV.map(group => ({
-  ...group,
-  label: cleanSpanishText(group.label),
-  items: group.items.map(item => ({ ...item, label: cleanSpanishText(item.label) })),
-}));
-window.PERM_GROUPS = window.PERM_GROUPS.map(group => ({
-  ...group,
-  mod: cleanSpanishText(group.mod),
-  perms: group.perms.map(([key, label]) => [key, cleanSpanishText(label)]),
-}));
-
 window.AREAS = [];
 window.SEDES = [];
 window.ARCHIVES = [];

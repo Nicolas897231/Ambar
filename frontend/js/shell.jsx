@@ -12,23 +12,6 @@ Object.assign(ROUTE_TITLES, {
   documentSearch: ["Gestión Documental", "Búsqueda documental"],
 });
 
-function cleanShellText(value) {
-  return String(value || "")
-    .replaceAll("GestiÃ³n", "Gestión").replaceAll("DigitalizaciÃ³n", "Digitalización")
-    .replaceAll("RetenciÃ³n", "Retención").replaceAll("FÃ­sico", "Físico")
-    .replaceAll("PrÃ©stamos", "Préstamos").replaceAll("ExÃ¡menes", "Exámenes")
-    .replaceAll("MÃ©dicos", "Médicos").replaceAll("AuditorÃ­a", "Auditoría")
-    .replaceAll("AdministraciÃ³n", "Administración").replaceAll("ConfiguraciÃ³n", "Configuración")
-    .replaceAll("BÃºsqueda", "Búsqueda").replaceAll("FoliaciÃ³n", "Foliación")
-    .replaceAll("menÃº", "menú").replaceAll("mÃ³dulo", "módulo").replaceAll("sesiÃ³n", "sesión")
-    .replaceAll("NavegaciÃ³n", "Navegación").replaceAll("rÃ¡pida", "rápida")
-    .replaceAll("MenÃº", "Menú").replaceAll("mÃ³dulos", "módulos")
-    .replaceAll("operaciÃ³n", "operación").replaceAll("AtrÃ¡s", "Atrás");
-}
-
-Object.keys(ROUTE_TITLES).forEach(key => {
-  ROUTE_TITLES[key] = ROUTE_TITLES[key].map(cleanShellText);
-});
 
 function Sidebar({ user, route, onNavigate, collapsed, setCollapsed, onOpenUserMenu }) {
   const [q, setQ] = useState("");
