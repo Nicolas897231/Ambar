@@ -21,16 +21,36 @@ function normalizeOcrJob(j, i) {
 }
 
 function DigitizationPage({ user }) {
+  const toast = useToast();
   const [tab, setTab] = dgS("queue");
-  const { data: rawJobs, loading } = useLiveData(() => AmbarAPI.endpoints.ocrJobs(), [], []);
+  const [ocrPayload, setOcrPayload] = dgS({ document_id: "", engine: "tesseract-compatible" });
+  const jobsLive = useLiveData(() => AmbarAPI.endpoints.ocrJobs(), [], []);
+  const { data: rawJobs, loading } = jobsLive;
+  const { data: docsRaw } = useLiveData(() => AmbarAPI.endpoints.documents(), [], []);
   const jobs = AmbarAPI.listFrom(rawJobs).map(normalizeOcrJob);
+  const documents = AmbarAPI.listFrom(docsRaw);
   const total = jobs.length;
   const today = jobs.filter(j => j.created_at && String(j.created_at).startsWith(new Date().toISOString().slice(0, 10))).length;
   const avg = total ? Math.round(jobs.reduce((a, b) => a + (b.confidence || 0), 0) / total) : 0;
+  const submitOcr = async () => {
+    if (!ocrPayload.document_id) {
+      toast("Selecciona un documento registrado para enviar a OCR.", { tone: "danger", title: "Falta documento" });
+      return;
+    }
+    try {
+      await AmbarAPI.post("/ocr/jobs", { document_id: Number(ocrPayload.document_id), engine: ocrPayload.engine });
+      toast("Trabajo OCR creado y procesado por backend.", { tone: "ok", title: "OCR registrado" });
+      jobsLive.setData(await AmbarAPI.endpoints.ocrJobs());
+      setTab("queue");
+      setOcrPayload({ document_id: "", engine: "tesseract-compatible" });
+    } catch (err) {
+      toast(err.message || "No fue posible crear el trabajo OCR.", { tone: "danger", title: "OCR bloqueado" });
+    }
+  };
   return (
     <>
       <div className="page-head">
-        <div><div className="eyebrow">Gestion Documental</div><h1>Digitalizacion y OCR</h1><p className="lead">Cola OCR conectada a backend. Los resultados se muestran solo si existen trabajos reales.</p></div>
+        <div><div className="eyebrow">Gestion Documental</div><h1>Digitalizacion y OCR</h1><p className="lead">Cola OCR conectada al backend. Los resultados se muestran solo cuando existen trabajos reales.</p></div>
         <div className="page-actions"><Button icon="scan-line" onClick={() => setTab("scan")}>Nuevo escaneo</Button></div>
       </div>
       <div className="statstrip an-rise">
@@ -39,7 +59,7 @@ function DigitizationPage({ user }) {
         <div><div className="ss-n">{avg}%</div><div className="ss-l">Confianza OCR media</div></div>
         <div><div className="ss-n">{total}</div><div className="ss-l">Trabajos totales</div></div>
       </div>
-      <Tabs value={tab} onChange={setTab} tabs={[{ key: "queue", label: "Cola de digitalizacion", icon: "list-checks" }, { key: "scan", label: "Escaneo", icon: "scan-line" }]} />
+      <Tabs value={tab} onChange={setTab} tabs={[{ key: "queue", label: "Cola de digitalizacion", icon: "list-checks" }, { key: "scan", label: "Nuevo OCR", icon: "scan-line" }]} />
       {tab === "queue" && (loading ? <Skeleton lines={8} /> : (
         <div className="kanban an-rise">
           {DG_COLS.map(col => {
@@ -56,7 +76,7 @@ function DigitizationPage({ user }) {
                       {it.confidence > 0 && <div style={{ marginTop: 8 }}><Meter value={it.confidence} /></div>}
                     </div>
                   ))}
-                  {items.length === 0 && <div className="muted" style={{ textAlign: "center", padding: "var(--s5)", fontSize: "var(--fs-xs)" }}>Sin documentos</div>}
+                  {items.length === 0 && <div className="muted" style={{ textAlign: "center", padding: "var(--s5)", fontSize: "var(--fs-xs)" }}>Sin trabajos en este estado</div>}
                 </div>
               </div>
             );
@@ -65,8 +85,25 @@ function DigitizationPage({ user }) {
       ))}
       {tab === "scan" && (
         <Card className="an-rise">
-          <CardHead title="Subida OCR" sub="La carga real debe pasar por el servicio documental/MinIO." icon="upload-cloud" />
-          <div className="uploader" style={{ padding: "var(--s9)" }}><Icon name="upload-cloud" size={36} /><div style={{ marginTop: 10, fontWeight: 700, fontSize: "var(--fs-md)" }}>Selecciona archivos para enviar al backend</div><small className="faint">Sin datos precargados. El trabajo se registrara cuando exista endpoint de procesamiento OCR.</small></div>
+          <CardHead title="Nuevo trabajo OCR" sub="Selecciona un documento ya registrado. La carga del archivo digital se hace desde Documentos/Repositorio." icon="scan-line" />
+          <div className="grid cols-2">
+            <Field label="Documento" required>
+              <select value={ocrPayload.document_id} onChange={e => setOcrPayload(p => ({ ...p, document_id: e.target.value }))}>
+                <option value="">Seleccionar documento</option>
+                {documents.map(doc => <option key={doc.idDocument || doc.id} value={doc.idDocument || doc.id}>{doc.document_name || doc.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Motor OCR">
+              <select value={ocrPayload.engine} onChange={e => setOcrPayload(p => ({ ...p, engine: e.target.value }))}>
+                <option value="tesseract-compatible">Tesseract compatible</option>
+                <option value="metadata-index">Índice por metadatos</option>
+              </select>
+            </Field>
+          </div>
+          <div className="page-actions" style={{ marginTop: "var(--s5)" }}>
+            <Button variant="ghost" onClick={() => setTab("queue")}>Cancelar</Button>
+            <Button icon="scan-line" onClick={submitOcr} disabled={!can(user, ["ocr.manage"])}>Crear trabajo OCR</Button>
+          </div>
         </Card>
       )}
     </>

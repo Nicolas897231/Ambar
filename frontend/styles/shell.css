@@ -100,7 +100,7 @@
 .step.done .s-line { background: var(--ok); }
 
 /* ---------------- KANBAN ---------------- */
-.kanban { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--s4); overflow-x: hidden; padding-bottom: var(--s3); align-items: start; }
+.kanban { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--s4); max-width: 100%; overflow-x: auto; overflow-y: hidden; padding-bottom: var(--s3); align-items: start; scrollbar-gutter: stable; }
 .kcol { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-lg); display: flex; flex-direction: column; max-height: 72vh; }
 .kcol-head { display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line); position: sticky; top: 0; }
 .kcol-head .k-tag { width: 8px; height: 8px; border-radius: 50%; }

@@ -4,20 +4,24 @@
 const { useState: exS } = React;
 
 const EXP_TYPES = [
-  { key: "Empleado", icon: "briefcase", color: "var(--viz-rose)" },
-  { key: "Cliente", icon: "user", color: "var(--viz-teal)" },
-  { key: "Proveedor", icon: "building", color: "var(--viz-amber)" },
-  { key: "Contrato", icon: "file-text", color: "var(--viz-indigo)" },
-  { key: "Proyecto", icon: "folder-kanban", color: "var(--viz-violet)" },
-  { key: "Proceso", icon: "workflow", color: "var(--viz-green)" },
+  { key: "laboral", label: "Laborales", icon: "briefcase", color: "var(--viz-rose)" },
+  { key: "administrativo", label: "Administrativos", icon: "folder-kanban", color: "var(--viz-teal)" },
+  { key: "contable", label: "Contables", icon: "building", color: "var(--viz-amber)" },
+  { key: "juridico", label: "Jurídicos", icon: "file-text", color: "var(--viz-indigo)" },
+  { key: "electronico", label: "Electrónicos", icon: "database", color: "var(--viz-violet)" },
+  { key: "hibrido", label: "Híbridos", icon: "workflow", color: "var(--viz-green)" },
 ];
+
+function normalizeExpedientType(value) {
+  return String(value || "administrativo").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
 
 function normalizeExpedient(item, i) {
   return {
     backendId: item.idExpedient || item.id,
     id: item.expedient_code || item.code || item.idExpedient || `EXP-${i + 1}`,
     name: item.expedient_name || item.name || item.expedient_code || "Expediente sin nombre",
-    type: item.expedient_type || item.type || "Proceso",
+    type: normalizeExpedientType(item.expedient_type || item.type || "administrativo"),
     area: item.dependency_name || item.archive_name || item.department || "Archivo",
     docs: item.documents_count || item.total_documents || 0,
     compliance: item.compliance_percent || item.completeness || item.compliance || 0,
@@ -29,13 +33,35 @@ function normalizeExpedient(item, i) {
 }
 
 function ExpedientDetail({ exp, onClose, navigate }) {
-  const tc = EXP_TYPES.find(t => t.key === exp.type) || EXP_TYPES[0];
+  const toast = useToast();
+  const [folderDraft, setFolderDraft] = exS({ folder_code: "", folder_name: "" });
+  const [creatingFolder, setCreatingFolder] = exS(false);
+  const tc = EXP_TYPES.find(t => t.key === exp.type) || EXP_TYPES[1];
   const { data: docsRaw, loading } = useLiveData(() => AmbarAPI.endpoints.documents(), [], [exp.backendId]);
+  const foldersLive = useLiveData(() => exp.backendId ? AmbarAPI.endpoints.folders(exp.backendId) : Promise.resolve([]), [], [exp.backendId]);
   const docs = AmbarAPI.listFrom(docsRaw).filter(d => {
     const expId = d.expedient_id || d.ps950IdExpedient || d.idExpedient;
     const expCode = d.expedient_code || "";
     return String(expId || "") === String(exp.backendId || "") || String(expCode).toLowerCase() === String(exp.id).toLowerCase();
   });
+  const folders = AmbarAPI.listFrom(foldersLive.data);
+  const createFolder = async () => {
+    if (!folderDraft.folder_code.trim() || !folderDraft.folder_name.trim()) {
+      toast("Código y nombre de carpeta son obligatorios.", { tone: "danger", title: "Faltan datos" });
+      return;
+    }
+    setCreatingFolder(true);
+    try {
+      await AmbarAPI.post("/archives/folders", { ...folderDraft, expedient_id: Number(exp.backendId), metadata: {} });
+      toast("Carpeta creada dentro del expediente.", { tone: "ok", title: "Carpeta lista" });
+      setFolderDraft({ folder_code: "", folder_name: "" });
+      foldersLive.setData(await AmbarAPI.endpoints.folders(exp.backendId));
+    } catch (err) {
+      toast(err.message || "No fue posible crear la carpeta.", { tone: "danger", title: "Error" });
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
 
   return (
     <Drawer wide title={exp.name} sub={<span className="mono">{exp.id}</span>} onClose={onClose}
@@ -46,7 +72,7 @@ function ExpedientDetail({ exp, onClose, navigate }) {
             <span className="m-icon" style={{ background: `color-mix(in oklab, ${tc.color} 16%, transparent)`, color: tc.color }}>
               <Icon name={tc.icon} size={18} />
             </span>
-            <div><div style={{ fontWeight: 700 }}>{exp.type}</div><small className="muted">{exp.area}</small></div>
+            <div><div style={{ fontWeight: 700 }}>{tc.label || exp.type}</div><small className="muted">{exp.area}</small></div>
           </div>
           <div className="dl">
             <dt>Documentos</dt><dd>{docs.length || exp.docs}</dd>
@@ -73,17 +99,29 @@ function ExpedientDetail({ exp, onClose, navigate }) {
             <div className="table-scroll">
               <table className="tbl">
                 <thead><tr><th>Documento</th><th>Tipo</th><th>Archivos</th></tr></thead>
-                <tbody>{docs.map(d => <tr key={d.idDocument || d.id}><td className="cell-strong">{d.document_name || d.title || d.name}</td><td><span className="tag-soft">{d.document_type || d.type_name || "Sin tipologia"}</span></td><td>{d.files_count || 0}</td></tr>)}</tbody>
+                <tbody>{docs.map(d => <tr key={d.idDocument || d.id}><td className="cell-strong">{d.document_name || d.title || d.name}</td><td><span className="tag-soft">{d.document_type || d.type_name || "Sin tipología"}</span></td><td>{d.files_count || d.digital_files_count || 0}</td></tr>)}</tbody>
               </table>
             </div>
           )}
           <Button variant="ghost" className="btn-block" icon="file-text" onClick={() => navigate && navigate("documents")}>Ver documentos</Button>
         </Card>
         <Card>
-          <Empty icon="history" title="Trazabilidad bajo demanda">Para ver movimientos, abre Kardex o Custodia. No se muestran movimientos inventados.</Empty>
-          <Button variant="ghost" className="btn-block" icon="route" onClick={() => navigate && navigate("archive")}>Ver custodia</Button>
+          <CardHead title="Carpetas del expediente" sub="Unidad de conservación para clasificar documentos" icon="folders" action={<Badge tone="outline">{folders.length}</Badge>} />
+          {foldersLive.loading ? <Skeleton rows={3} /> : folders.length === 0 ? <Empty icon="folders" title="Sin carpetas">Crea la primera carpeta para poder registrar documentos completos.</Empty> : (
+            <div className="col gap2">{folders.slice(0, 5).map(folder => <div key={folder.idFolder || folder.id} className="row between" style={{ padding: "var(--s3)", border: "1px solid var(--line)", borderRadius: "var(--r-md)" }}><span className="cell-strong">{folder.folder_code || folder.code}</span><span className="muted">{folder.folder_name || folder.name}</span></div>)}</div>
+          )}
+          <div className="divider" />
+          <div className="grid cols-2">
+            <Field label="Código"><input value={folderDraft.folder_code} onChange={e => setFolderDraft(p => ({ ...p, folder_code: e.target.value }))} placeholder="CAR-001" maxLength={80} /></Field>
+            <Field label="Nombre"><input value={folderDraft.folder_name} onChange={e => setFolderDraft(p => ({ ...p, folder_name: e.target.value }))} placeholder="Contratos 2026" maxLength={160} /></Field>
+          </div>
+          <Button variant="ghost" className="btn-block" icon="plus" onClick={createFolder} disabled={creatingFolder}>{creatingFolder ? "Creando..." : "Crear carpeta"}</Button>
         </Card>
       </div>
+      <Card>
+        <Empty icon="history" title="Trazabilidad bajo demanda">Para ver movimientos de custodia y ubicación abre el módulo de Archivo Físico o Kardex. No se muestran movimientos inventados.</Empty>
+        <Button variant="ghost" className="btn-block" icon="route" onClick={() => navigate && navigate("archive")}>Ver custodia</Button>
+      </Card>
     </Drawer>
   );
 }
@@ -154,11 +192,11 @@ function ExpedientsPage({ user, navigate }) {
   return (
     <>
       <div className="page-head">
-        <div><div className="eyebrow">Gestion Documental</div><h1>Expedientes</h1><p className="lead">El expediente es la unidad principal de AMBAR: agrupa todos los documentos relacionados con un empleado, cliente, proveedor, contrato, proyecto o proceso.</p></div>
+        <div><div className="eyebrow">Gestión Documental</div><h1>Expedientes</h1><p className="lead">El expediente es la unidad principal de AMBAR: agrupa documentos, carpetas, folios, custodia y trazabilidad de un proceso documental.</p></div>
         <div className="page-actions">{can(user, ["document.create"]) && <Button icon="plus" onClick={() => setCreating(true)}>Nuevo expediente</Button>}</div>
       </div>
 
-      <div className="page-intro an-rise"><span className="pi-ico"><Icon name="folder-kanban" size={18} /></span><div><h4>Por que expedientes</h4><p>En lugar de buscar documentos sueltos, los agrupas por su contexto real. Asi un nuevo empleado, un proveedor o un proceso juridico tienen toda su informacion en un solo lugar, con control de completitud y trazabilidad.</p></div></div>
+      <div className="page-intro an-rise"><span className="pi-ico"><Icon name="folder-kanban" size={18} /></span><div><h4>Por qué expedientes</h4><p>En lugar de buscar documentos sueltos, los agrupas por su contexto real. Así un empleado, un proveedor o un proceso jurídico tienen toda su información en un solo lugar, con completitud y trazabilidad.</p></div></div>
 
       <div className="grid exp-type-grid">
         {EXP_TYPES.map((t, i) => {
@@ -166,7 +204,7 @@ function ExpedientsPage({ user, navigate }) {
           return <Card key={t.key} interactive pad="sm" className="an-scale" style={{ "--i": i, borderColor: type === t.key ? t.color : "", borderWidth: type === t.key ? 2 : 1 }} onClick={() => setType(type === t.key ? "" : t.key)}>
             <span className="m-icon" style={{ background: `color-mix(in oklab, ${t.color} 16%, transparent)`, color: t.color, marginBottom: 8 }}><Icon name={t.icon} size={18} /></span>
             <div style={{ fontFamily: "var(--font-display)", fontSize: "var(--fs-xl)", fontWeight: 800 }}>{count}</div>
-            <small className="muted">{t.key}s</small>
+            <small className="muted">{t.label}</small>
           </Card>;
         })}
       </div>
@@ -178,14 +216,14 @@ function ExpedientsPage({ user, navigate }) {
         </div>
         <div className="table-scroll">
           <table className="tbl">
-            <thead><tr><th>Codigo</th><th>Nombre / Entidad</th><th>Tipo</th><th>Area</th><th>Docs</th><th>Completitud</th><th>Ubicacion</th><th>Estado</th><th></th></tr></thead>
+            <thead><tr><th>Código</th><th>Nombre / Entidad</th><th>Tipo</th><th>Área</th><th>Docs</th><th>Completitud</th><th>Ubicación</th><th>Estado</th><th></th></tr></thead>
             <tbody>
               {rows.map(e => {
-                const tc = EXP_TYPES.find(t => t.key === e.type) || EXP_TYPES[5];
+                const tc = EXP_TYPES.find(t => t.key === e.type) || EXP_TYPES[1];
                 return <tr key={e.id} className="clickable" onClick={() => setDetail(e)}>
                   <td className="cell-mono">{e.id}</td>
                   <td><div className="t-avatar"><span className="avatar sm" style={{ background: tc.color }}><Icon name={tc.icon} size={13} /></span><span className="cell-strong">{e.name}</span></div></td>
-                  <td><span className="tag-soft">{e.type}</span></td>
+                  <td><span className="tag-soft">{tc.label || e.type}</span></td>
                   <td>{e.area}</td>
                   <td className="mono">{e.docs}</td>
                   <td style={{ minWidth: 130 }}><Meter value={e.compliance} tone={e.compliance >= 90 ? "ok" : e.compliance >= 70 ? "warn" : "danger"} showLabel /></td>

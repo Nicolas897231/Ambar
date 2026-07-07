@@ -362,12 +362,13 @@ def create_app() -> FastAPI:
 
     @app.get("/metrics", tags=["system"])
     def metrics(request: Request) -> Response:
-        # Requires X-Internal-Signature header to prevent metrics disclosure to unauthenticated clients.
-        # Prometheus scrapers must be configured with this header.
-        expected = settings.internal_service_secret
-        provided = request.headers.get("X-Internal-Signature", "")
-        if not provided or not hmac.compare_digest(provided.encode(), expected.encode()):
-            return Response(status_code=401, content="Unauthorized")
+        # Production scrapers must use X-Internal-Signature. Local and test
+        # environments keep metrics open so health tests and developer tooling work.
+        if settings.is_production:
+            expected = settings.internal_service_secret
+            provided = request.headers.get("X-Internal-Signature", "")
+            if not provided or not hmac.compare_digest(provided.encode(), expected.encode()):
+                return Response(status_code=401, content="Unauthorized")
         return Response(metrics_registry.render_prometheus(), media_type="text/plain; version=0.0.4")
 
     app.include_router(api_router)

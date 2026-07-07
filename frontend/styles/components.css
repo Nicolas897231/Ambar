@@ -75,8 +75,8 @@
 
 /* ---------------- TABLE ---------------- */
 .table-wrap { border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: var(--panel); box-shadow: var(--shadow-sm); }
-.table-scroll { overflow-x: auto; }
-table.tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.table-scroll { max-width: 100%; overflow-x: auto; overflow-y: hidden; }
+table.tbl { width: 100%; min-width: 760px; border-collapse: collapse; font-size: var(--fs-sm); }
 .tbl thead th { position: sticky; top: 0; background: var(--panel-2); color: var(--muted); font-weight: 700; font-size: var(--fs-xs); text-align: left; padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line); white-space: nowrap; letter-spacing: 0.02em; cursor: default; z-index: 1; }
 .tbl thead th.sortable { cursor: pointer; user-select: none; }
 .tbl thead th.sortable:hover { color: var(--text); }
@@ -131,7 +131,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
 .modal.lg { width: min(820px, calc(100vw - 32px)); }
 @keyframes modal-in { from { opacity: 0; transform: translate(-50%, -46%) scale(0.96); } to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
 .drawer { position: fixed; z-index: 81; top: 0; right: 0; bottom: 0; width: min(560px, 96vw); background: var(--panel); border-left: 1px solid var(--line); box-shadow: var(--shadow-xl); overflow: auto; animation: drawer-in var(--t-med) var(--ease-out); }
-.drawer.wide { width: min(760px, 96vw); }
+.drawer.wide { width: min(920px, 96vw); }
 @keyframes drawer-in { from { transform: translateX(40px); opacity: 0.4; } to { transform: translateX(0); opacity: 1; } }
 .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s4); margin-bottom: var(--s5); }
 .modal-head h2 { font-size: var(--fs-xl); }

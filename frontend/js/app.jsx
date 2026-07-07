@@ -100,6 +100,7 @@ function Root() {
 
   const PAGES = {
     dashboard: window.DashboardPage, expedients: window.ExpedientsPage, documents: window.DocumentsPage,
+    repository: window.RepositoryPage, foliation: window.FoliationPage, documentSearch: window.DocumentSearchPage,
     digitization: window.DigitizationPage, trd: window.TRDPage, archive: window.ArchivePage,
     transfers: window.TransfersPage, loans: window.LoansPage, correspondence: window.CorrespondencePage,
     hr: window.HRPage, medical: window.MedicalPage, recruitment: window.RecruitmentPage,

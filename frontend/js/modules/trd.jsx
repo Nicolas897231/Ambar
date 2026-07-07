@@ -36,6 +36,7 @@ function CreateSeriesModal({ onClose, onCreated }) {
   const { data: depsRaw } = useLiveData(() => AmbarAPI.endpoints.trdDependencies(), [], []);
   const dependencies = AmbarAPI.listFrom(depsRaw);
   const setField = (key, value) => setPayload(p => ({ ...p, [key]: value }));
+
   const submit = async () => {
     const missing = [];
     if (!payload.code.trim()) missing.push("codigo");
@@ -54,6 +55,7 @@ function CreateSeriesModal({ onClose, onCreated }) {
       toast(err.message || "No fue posible crear la serie.", { tone: "danger", title: "Error" });
     }
   };
+
   return (
     <Modal title="Nueva serie documental" sub="La serie queda gobernada por una dependencia TRD." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear serie</Button></>}>
@@ -68,15 +70,51 @@ function CreateSeriesModal({ onClose, onCreated }) {
   );
 }
 
+function CreateDependencyModal({ onClose, onCreated }) {
+  const toast = useToast();
+  const [payload, setPayload] = tdS({ code: "", name: "", description: "", status: "active" });
+  const setField = (key, value) => setPayload(p => ({ ...p, [key]: value }));
+
+  const submit = async () => {
+    if (!payload.code.trim() || !payload.name.trim()) {
+      toast("Codigo y nombre son obligatorios.", { tone: "danger", title: "Dependencia incompleta" });
+      return;
+    }
+    try {
+      const created = await AmbarAPI.post("/trd/dependencies", payload);
+      toast("Dependencia creada para gobernar series documentales.", { tone: "ok", title: "TRD actualizada" });
+      onCreated(created);
+      onClose();
+    } catch (err) {
+      toast(err.message || "No fue posible crear la dependencia.", { tone: "danger", title: "Error" });
+    }
+  };
+
+  return (
+    <Modal title="Nueva dependencia" sub="Toda serie debe pertenecer a una dependencia funcional." onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear dependencia</Button></>}>
+      <div className="grid cols-2">
+        <Field label="Codigo" required><input value={payload.code} maxLength={40} onChange={e => setField("code", e.target.value)} placeholder="TH" /></Field>
+        <Field label="Nombre" required><input value={payload.name} maxLength={160} onChange={e => setField("name", e.target.value)} placeholder="Talento Humano" /></Field>
+        <Field label="Estado"><select value={payload.status} onChange={e => setField("status", e.target.value)}><option value="active">Activa</option><option value="inactive">Inactiva</option></select></Field>
+        <div style={{ gridColumn: "1 / -1" }}><Field label="Descripcion"><textarea value={payload.description} maxLength={500} onChange={e => setField("description", e.target.value)} placeholder="Funcion documental de la dependencia" /></Field></div>
+      </div>
+    </Modal>
+  );
+}
+
 function TRDPage({ user }) {
   const [tab, setTab] = tdS("series");
   const [creating, setCreating] = tdS(false);
+  const [creatingDep, setCreatingDep] = tdS(false);
   const liveSeries = window.useLiveData(
     () => window.AmbarAPI.endpoints.trdEditor().then(value => mapTrdRows(window.AmbarAPI.listFrom(value, ["rows", "items", "results"]))),
     [],
     []
   );
+  const liveDependencies = window.useLiveData(() => window.AmbarAPI.endpoints.trdDependencies(), [], []);
   const series = liveSeries.data;
+  const dependencies = window.AmbarAPI.listFrom(liveDependencies.data);
 
   return (
     <>
@@ -87,7 +125,8 @@ function TRDPage({ user }) {
           <p className="lead">Tabla de Retencion Documental: define cuanto tiempo se conserva cada tipo de documento y su disposicion final.</p>
         </div>
         <div className="page-actions">
-          <Button variant="ghost" icon="download" onClick={() => downloadCSV("trd-series", series)}>Exportar CSV</Button>
+          <Button variant="ghost" icon="download" onClick={() => AmbarAPI.download("/trd/export?format=csv", "TRD_AMBAR.csv")}>Exportar TRD</Button>
+          {can(user, ["trd.manage"]) && <Button variant="ghost" icon="building" onClick={() => setCreatingDep(true)}>Nueva dependencia</Button>}
           {can(user, ["trd.manage"]) && <Button icon="plus" onClick={() => setCreating(true)}>Nueva serie</Button>}
         </div>
       </div>
@@ -98,7 +137,26 @@ function TRDPage({ user }) {
           <p>Es el instrumento que organiza dependencias, series, subseries y tipologias. AMBAR la usa como motor para clasificar documentos, calcular retencion y preparar transferencias.</p>
         </div>
       </div>
-      <Tabs value={tab} onChange={setTab} tabs={[{ key: "series", label: "Series & Subseries", icon: "table" }, { key: "retention", label: "Retencion", icon: "clock" }, { key: "disposition", label: "Disposicion final", icon: "package-check" }]} />
+      <Tabs value={tab} onChange={setTab} tabs={[{ key: "dependencies", label: "Dependencias", icon: "building" }, { key: "series", label: "Series y subseries", icon: "table" }, { key: "retention", label: "Retencion", icon: "clock" }, { key: "disposition", label: "Disposicion final", icon: "package-check" }]} />
+
+      {tab === "dependencies" && (
+        <Card flush className="an-rise">
+          {liveDependencies.loading ? <div style={{ padding: "var(--s5)" }}><Skeleton rows={5} /></div> : dependencies.length === 0 ? <Empty icon="building" title="Sin dependencias">Crea dependencias antes de estructurar series documentales.</Empty> : (
+            <div className="table-scroll">
+              <table className="tbl">
+                <thead><tr><th>Codigo</th><th>Dependencia</th><th>Estado</th><th>Descripcion</th></tr></thead>
+                <tbody>{dependencies.map(dep => <tr key={dep.idDependency || dep.id}>
+                  <td className="cell-mono cell-strong">{dep.code}</td>
+                  <td className="cell-strong">{dep.name}</td>
+                  <td><Badge tone={dep.status === "active" ? "success" : "neutral"}>{dep.status}</Badge></td>
+                  <td className="muted">{dep.description || "-"}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
       {tab === "series" && (
         <Card flush className="an-rise">
           <div className="table-scroll">
@@ -118,6 +176,7 @@ function TRDPage({ user }) {
           </div>
         </Card>
       )}
+
       {tab === "retention" && (
         <Card flush className="an-rise">
           <div className="table-scroll">
@@ -138,6 +197,7 @@ function TRDPage({ user }) {
           </div>
         </Card>
       )}
+
       {tab === "disposition" && (
         <div className="grid cols-3 stagger">
           {[["Conservacion total", "success", "shield-check", "Documentos con valor historico que se conservan permanentemente."], ["Seleccion", "warning", "filter", "Se conserva una muestra representativa; el resto se elimina."], ["Eliminacion", "danger", "trash", "Documentos sin valor secundario, eliminables tras su retencion legal."]].map(([t, tn, ic, d], i) => (
@@ -153,7 +213,9 @@ function TRDPage({ user }) {
           ))}
         </div>
       )}
+
       {creating && <CreateSeriesModal onClose={() => setCreating(false)} onCreated={(created) => liveSeries.setData(current => [mapTrdRows([created])[0], ...(current || [])])} />}
+      {creatingDep && <CreateDependencyModal onClose={() => setCreatingDep(false)} onCreated={(created) => liveDependencies.setData(current => [created, ...(current || [])])} />}
     </>
   );
 }

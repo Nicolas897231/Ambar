@@ -31,6 +31,35 @@
     return response.json().catch(() => null);
   }
 
+  async function download(path, filename) {
+    const response = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+    if (!response.ok) {
+      let detail = response.statusText;
+      try { detail = (await response.json()).detail || detail; } catch {}
+      throw new Error(detail);
+    }
+    const type = response.headers.get("content-type") || "";
+    if (type.includes("application/json")) {
+      const payload = await response.json();
+      if (payload.download_url || payload.url) {
+        window.open(payload.download_url || payload.url, "_blank", "noopener,noreferrer");
+        return payload;
+      }
+      downloadText(filename || "ambar-export.json", JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+      return payload;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "ambar-descarga";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return true;
+  }
+
   function listFrom(value, keys) {
     if (Array.isArray(value)) return value;
     const candidates = keys || ["items", "results", "data", "logs", "tasks", "users", "vacancies", "candidates", "employees", "archives", "documents", "expedients", "notifications", "jobs"];
@@ -105,6 +134,7 @@
     get: request,
     post(path, payload) { return request(path, { method: "POST", body: JSON.stringify(payload || {}) }); },
     patch(path, payload) { return request(path, { method: "PATCH", body: JSON.stringify(payload || {}) }); },
+    download,
     form,
     listFrom,
     firstNumber,
@@ -113,7 +143,23 @@
       dashboardAdvanced: () => request("/analytics/advanced"),
       documents: () => request("/documents?limit=100"),
       documentTypes: () => request("/documents/types"),
+      documentFiles: (documentId) => request(`/documents/${documentId}/files`),
+      documentVersions: (documentId) => request(`/documents/${documentId}/versions`),
+      documentMetadata: (documentId) => request(`/documents/${documentId}/metadata`),
       expedients: () => request("/archives/expedients"),
+      expedientDetail: (id) => request(`/archives/expedients/${id}/detail`),
+      expedientTree: (id) => request(`/archives/expedients/${id}/tree`),
+      expedientCompliance: (id) => request(`/archives/expedients/${id}/compliance`),
+      expedientClosure: (id) => request(`/archives/expedients/${id}/closure-check`),
+      expedientFoliation: (id) => request(`/archives/expedients/${id}/foliation`),
+      expedientMissingDocuments: (id) => request(`/archives/expedients/${id}/missing-documents`),
+      expedientLocations: (id) => request(`/archives/expedients/${id}/locations`),
+      expedientTransfers: (id) => request(`/archives/expedients/${id}/related-transfers`),
+      expedientLoans: (id) => request(`/archives/expedients/${id}/related-loans`),
+      expedientAudit: (id) => request(`/archives/expedients/${id}/audit`),
+      folders: (expedientId) => request(`/archives/folders${expedientId ? `?expedient_id=${encodeURIComponent(expedientId)}` : ""}`),
+      repository: () => request("/archives/repository"),
+      searchDocuments: (payload) => request("/search/documents", { method: "POST", body: JSON.stringify(payload || {}) }),
       archives: () => request("/archives"),
       archiveDashboard: () => request("/archives/dashboard"),
       boxes: () => request("/archives/boxes"),

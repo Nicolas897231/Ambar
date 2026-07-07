@@ -146,6 +146,9 @@ window.NAV = [
   { label: "Gestión Documental", icon: "file-text", items: [
     { key: "expedients", label: "Expedientes", icon: "folder-kanban", perms: ["document.read","document.create"] },
     { key: "documents", label: "Documentos", icon: "file-text", perms: ["document.read","document.read_all","document.create"] },
+    { key: "repository", label: "Repositorio", icon: "database", perms: ["document.read","document.read_all"] },
+    { key: "documentSearch", label: "Búsqueda documental", icon: "search", perms: ["search.query","document.read"] },
+    { key: "foliation", label: "Foliación", icon: "list-checks", perms: ["document.read","document.update"] },
     { key: "digitization", label: "Digitalización", icon: "scan-line", perms: ["ocr.manage"] },
     { key: "trd", label: "TRD & Retención", icon: "table", perms: ["trd.manage"] },
   ]},
@@ -186,6 +189,28 @@ window.NAV = window.NAV.map(group => ({
   ...group,
   label: fixUiText(UI_LABEL_FIXES[group.label] || group.label),
   items: group.items.map(item => ({ ...item, label: fixUiText(UI_LABEL_FIXES[item.label] || item.label) })),
+}));
+
+const cleanSpanishText = (value) => String(value || "")
+  .replaceAll("GestiÃ³n", "Gestión").replaceAll("DigitalizaciÃ³n", "Digitalización")
+  .replaceAll("RetenciÃ³n", "Retención").replaceAll("FÃ­sico", "Físico")
+  .replaceAll("PrÃ©stamos", "Préstamos").replaceAll("ExÃ¡menes", "Exámenes")
+  .replaceAll("MÃ©dicos", "Médicos").replaceAll("AuditorÃ­a", "Auditoría")
+  .replaceAll("AdministraciÃ³n", "Administración").replaceAll("ConfiguraciÃ³n", "Configuración")
+  .replaceAll("BÃºsqueda", "Búsqueda").replaceAll("FoliaciÃ³n", "Foliación")
+  .replaceAll("mÃ³dulo", "módulo").replaceAll("menÃº", "menú").replaceAll("Ã¡rea", "área")
+  .replaceAll("recepciÃ³n", "recepción").replaceAll("digitalizaciÃ³n", "digitalización")
+  .replaceAll("AuditorÃ­a", "Auditoría").replaceAll("sesiÃ³n", "sesión")
+  .replaceAll("Â·", "-");
+window.NAV = window.NAV.map(group => ({
+  ...group,
+  label: cleanSpanishText(group.label),
+  items: group.items.map(item => ({ ...item, label: cleanSpanishText(item.label) })),
+}));
+window.PERM_GROUPS = window.PERM_GROUPS.map(group => ({
+  ...group,
+  mod: cleanSpanishText(group.mod),
+  perms: group.perms.map(([key, label]) => [key, cleanSpanishText(label)]),
 }));
 
 window.AREAS = [];
