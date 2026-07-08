@@ -123,6 +123,18 @@ def test_public_job_portal_uses_real_vacancies_and_creates_candidate():
         assert application.status_code == 201, application.text
         assert application.json()["status"] == "received"
 
+        closed = client.patch(
+            f"/api/v1/hr/vacancies/{vacancy.json()['idVacancy']}",
+            json={"status": "closed"},
+            headers=headers,
+        )
+        assert closed.status_code == 200, closed.text
+        assert closed.json()["status"] == "closed"
+
+        public_after_close = client.get("/api/v1/hr/public/vacancies")
+        assert public_after_close.status_code == 200, public_after_close.text
+        assert not any(item["vacancy_code"] == f"VAC-{suffix}" for item in public_after_close.json())
+
 
 def test_document_type_dynamic_metadata_and_search_by_business_metadata():
     suffix = uuid4().hex[:8]

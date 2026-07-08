@@ -43,7 +43,7 @@ class EmployeeCreate(BaseModel):
     @classmethod
     def validate_full_name(cls, value: str) -> str:
         normalized = " ".join(value.strip().split())
-        if not re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", normalized) or re.fullmatch(r"[\d\s.-]+", normalized):
+        if not any(char.isalpha() for char in normalized) or any(char.isdigit() for char in normalized):
             raise ValueError("Full name must contain a valid person name")
         return normalized
 
@@ -96,7 +96,7 @@ class CandidateCreate(BaseModel):
     @classmethod
     def validate_candidate_name(cls, value: str) -> str:
         normalized = " ".join(value.strip().split())
-        if not re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", normalized) or re.fullmatch(r"[\d\s.-]+", normalized):
+        if not any(char.isalpha() for char in normalized) or any(char.isdigit() for char in normalized):
             raise ValueError("Candidate name must contain a valid person name")
         return normalized
 
@@ -110,7 +110,7 @@ class VacancyCreate(BaseModel):
     requirements: list[str] = Field(default_factory=list)
     contract_type: str | None = None
     location: str | None = None
-    status: str = Field(default="open", pattern="^(open|paused|closed)$")
+    status: str = Field(default="open", pattern="^(open|paused|closed|cancelled)$")
     closes_at: datetime | None = None
 
     @field_validator("title", "department", "vacancy_code")
@@ -122,6 +122,34 @@ class VacancyCreate(BaseModel):
 class CandidateStatusUpdate(BaseModel):
     status: str = Field(pattern="^(postulado|entrevista|validacion|aprobado|rechazado|contratado)$")
     observation: str | None = None
+
+
+class VacancyUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=3, max_length=160)
+    department: str | None = Field(default=None, min_length=2, max_length=120)
+    description: str | None = None
+    requirements: list[str] | None = None
+    contract_type: str | None = None
+    location: str | None = None
+    status: str | None = Field(default=None, pattern="^(open|paused|closed|cancelled)$")
+    closes_at: datetime | None = None
+
+
+class PositionUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    level: str | None = Field(default=None, min_length=2, max_length=80)
+    department: str | None = Field(default=None, min_length=2, max_length=120)
+    description: str | None = None
+    suggested_permissions: list[str] | None = None
+    required_documents: list[str] | None = None
+    status: str | None = Field(default=None, pattern="^(active|inactive)$")
+
+
+class DepartmentUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    parent_id: int | None = None
+    responsible_identification: str | None = None
+    status: str | None = Field(default=None, pattern="^(active|inactive)$")
 
 
 class CandidateHire(BaseModel):
@@ -200,7 +228,7 @@ def _department_node(department: HRDepartment, children_by_parent: dict[int | No
 def _required_documents_for_employee(db: Session, employee: Employee) -> set[str]:
     position = (
         db.query(HRPosition)
-        .filter(HRPosition.name == employee.position, HRPosition.status == "active")
+        .filter(HRPosition.name == employee.position, HRPosition.company_id == employee.company_id, HRPosition.status == "active")
         .order_by(HRPosition.idPosition.desc())
         .first()
     )
@@ -241,14 +269,14 @@ async def public_apply_vacancy(
     normalized_email = email.strip().lower()
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", normalized_email):
         raise HTTPException(status_code=422, detail="Email format is invalid")
-    existing = db.query(HRCandidate).filter(HRCandidate.email == normalized_email, HRCandidate.status != "rechazado").first()
+    existing = db.query(HRCandidate).filter(HRCandidate.email == normalized_email, HRCandidate.company_id == vacancy.company_id, HRCandidate.status != "rechazado").first()
     if existing:
         raise HTTPException(status_code=409, detail="Candidate email already exists")
     resume_payload = None
     if resume:
         content = await resume.read()
         try:
-            resume_payload = store_file(company_id="public", module="job-applications", file=resume, content=content)
+            resume_payload = store_file(company_id=vacancy.company_id, module="job-applications", file=resume, content=content)
         except ValueError as exc:
             raise HTTPException(status_code=415, detail=str(exc)) from exc
     candidate = HRCandidate(
@@ -260,11 +288,12 @@ async def public_apply_vacancy(
         department=vacancy.department,
         observations={"items": [item for item in [observation] if item], "source": "portal_empleo", "vacancy_id": vacancy.idVacancy, "resume": resume_payload},
         created_by=None,
+        company_id=vacancy.company_id,
         status="postulado",
     )
     db.add(candidate)
     db.flush()
-    owner = db.query(User).filter(User.status == "active").order_by(User.identification.asc()).first()
+    owner = db.query(User).filter(User.status == "active", User.company_id == vacancy.company_id).order_by(User.identification.asc()).first()
     if owner:
         db.add(
             AdvancedNotification(
@@ -308,7 +337,7 @@ def list_departments(db: Session = Depends(get_db), user: User = Depends(require
 def create_department(payload: DepartmentCreate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
     if db.query(HRDepartment).filter(HRDepartment.department_code == payload.department_code, HRDepartment.company_id == user.company_id).first():
         raise HTTPException(status_code=409, detail="Department code already exists")
-    if payload.parent_id and not db.get(HRDepartment, payload.parent_id):
+    if payload.parent_id and not db.query(HRDepartment).filter(HRDepartment.idDepartment == payload.parent_id, HRDepartment.company_id == user.company_id).first():
         raise HTTPException(status_code=404, detail="Parent department not found")
     department = HRDepartment(
         department_code=payload.department_code.strip(),
@@ -321,6 +350,23 @@ def create_department(payload: DepartmentCreate, request: Request, user: User = 
     db.add(department)
     db.flush()
     write_audit(db, action="hr_department_created", module="hr", user_id=user.identification, entity="hr_department", entity_id=department.idDepartment, new_values=payload.model_dump(), request=request)
+    db.commit()
+    db.refresh(department)
+    return department
+
+
+@router.patch("/departments/{department_id}")
+def update_department(department_id: int, payload: DepartmentUpdate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
+    department = db.query(HRDepartment).filter(HRDepartment.idDepartment == department_id, HRDepartment.company_id == user.company_id).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="Department not found")
+    if payload.parent_id and not db.query(HRDepartment).filter(HRDepartment.idDepartment == payload.parent_id, HRDepartment.company_id == user.company_id).first():
+        raise HTTPException(status_code=404, detail="Parent department not found")
+    old_values = {"name": department.name, "parent_id": department.parent_id, "responsible_identification": department.responsible_identification, "status": department.status}
+    data = payload.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        setattr(department, key, value.strip() if isinstance(value, str) else value)
+    write_audit(db, action="hr_department_updated", module="hr", user_id=user.identification, entity="hr_department", entity_id=department.idDepartment, old_values=old_values, new_values=data, request=request)
     db.commit()
     db.refresh(department)
     return department
@@ -363,6 +409,34 @@ def create_position(payload: PositionCreate, request: Request, user: User = Depe
     return item
 
 
+@router.patch("/positions/{position_id}")
+def update_position(position_id: int, payload: PositionUpdate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
+    position = db.query(HRPosition).filter(HRPosition.idPosition == position_id, HRPosition.company_id == user.company_id).first()
+    if not position:
+        raise HTTPException(status_code=404, detail="Position not found")
+    old_values = {
+        "name": position.name,
+        "level": position.level,
+        "department": position.department,
+        "description": position.description,
+        "suggested_permissions": position.suggested_permissions,
+        "required_documents": position.required_documents,
+        "status": position.status,
+    }
+    data = payload.model_dump(exclude_unset=True)
+    new_values = payload.model_dump(exclude_unset=True)
+    if "suggested_permissions" in data:
+        position.suggested_permissions = {"items": data.pop("suggested_permissions") or []}
+    if "required_documents" in data:
+        position.required_documents = {"items": data.pop("required_documents") or []}
+    for key, value in data.items():
+        setattr(position, key, value.strip() if isinstance(value, str) else value)
+    write_audit(db, action="hr_position_updated", module="hr", user_id=user.identification, entity="hr_position", entity_id=position.idPosition, old_values=old_values, new_values=new_values, request=request)
+    db.commit()
+    db.refresh(position)
+    return position
+
+
 @router.get("/vacancies")
 def list_vacancies(status_filter: str | None = None, db: Session = Depends(get_db), user: User = Depends(require_permission("hr.view"))):
     query = db.query(HRVacancy).filter(HRVacancy.company_id == user.company_id)
@@ -375,7 +449,7 @@ def list_vacancies(status_filter: str | None = None, db: Session = Depends(get_d
 def create_vacancy(payload: VacancyCreate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
     if db.query(HRVacancy).filter(HRVacancy.vacancy_code == payload.vacancy_code, HRVacancy.company_id == user.company_id).first():
         raise HTTPException(status_code=409, detail="Vacancy code already exists")
-    if payload.position_id and not db.get(HRPosition, payload.position_id):
+    if payload.position_id and not db.query(HRPosition).filter(HRPosition.idPosition == payload.position_id, HRPosition.company_id == user.company_id).first():
         raise HTTPException(status_code=404, detail="Position not found")
     vacancy = HRVacancy(
         vacancy_code=payload.vacancy_code,
@@ -400,6 +474,26 @@ def create_vacancy(payload: VacancyCreate, request: Request, user: User = Depend
     return _vacancy_out(vacancy)
 
 
+@router.patch("/vacancies/{vacancy_id}")
+def update_vacancy(vacancy_id: int, payload: VacancyUpdate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
+    vacancy = db.query(HRVacancy).filter(HRVacancy.idVacancy == vacancy_id, HRVacancy.company_id == user.company_id).first()
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+    old_values = _vacancy_out(vacancy)
+    data = payload.model_dump(exclude_unset=True)
+    new_values = payload.model_dump(exclude_unset=True)
+    if "requirements" in data:
+        vacancy.requirements = {"items": data.pop("requirements") or []}
+    if data.get("status") == "open" and vacancy.status != "open":
+        vacancy.published_at = datetime.now(UTC)
+    for key, value in data.items():
+        setattr(vacancy, key, value.strip() if isinstance(value, str) else value)
+    write_audit(db, action="hr_vacancy_updated", module="hr", user_id=user.identification, entity="hr_vacancy", entity_id=vacancy.idVacancy, old_values=old_values, new_values=new_values, request=request)
+    db.commit()
+    db.refresh(vacancy)
+    return _vacancy_out(vacancy)
+
+
 @router.get("/candidates")
 def list_candidates(status_filter: str | None = None, db: Session = Depends(get_db), user: User = Depends(require_permission("hr.view"))):
     query = db.query(HRCandidate).filter(HRCandidate.company_id == user.company_id)
@@ -414,7 +508,7 @@ def create_candidate(payload: CandidateCreate, request: Request, user: User = De
         raise HTTPException(status_code=409, detail="Candidate code already exists")
     if payload.email and db.query(HRCandidate).filter(HRCandidate.email == payload.email, HRCandidate.status != "rechazado", HRCandidate.company_id == user.company_id).first():
         raise HTTPException(status_code=409, detail="Candidate email already exists")
-    if payload.resume_document_id and not db.get(Document, payload.resume_document_id):
+    if payload.resume_document_id and not db.query(Document).filter(Document.idDocument == payload.resume_document_id, Document.company_id == user.company_id).first():
         raise HTTPException(status_code=404, detail="Resume document not found")
     candidate = HRCandidate(
         candidate_code=payload.candidate_code.strip(),
@@ -440,7 +534,7 @@ def create_candidate(payload: CandidateCreate, request: Request, user: User = De
 
 @router.patch("/candidates/{candidate_id}/status")
 def update_candidate_status(candidate_id: int, payload: CandidateStatusUpdate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
-    candidate = db.get(HRCandidate, candidate_id)
+    candidate = db.query(HRCandidate).filter(HRCandidate.idCandidate == candidate_id, HRCandidate.company_id == user.company_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
     old_values = {"status": candidate.status, "observations": candidate.observations}
@@ -457,7 +551,7 @@ def update_candidate_status(candidate_id: int, payload: CandidateStatusUpdate, r
 
 @router.post("/candidates/{candidate_id}/hire", status_code=status.HTTP_201_CREATED)
 def hire_candidate(candidate_id: int, payload: CandidateHire, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
-    candidate = db.get(HRCandidate, candidate_id)
+    candidate = db.query(HRCandidate).filter(HRCandidate.idCandidate == candidate_id, HRCandidate.company_id == user.company_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
     if candidate.status not in {"aprobado", "validacion"}:
@@ -465,7 +559,7 @@ def hire_candidate(candidate_id: int, payload: CandidateHire, request: Request, 
     if db.get(Employee, payload.identification):
         raise HTTPException(status_code=409, detail="Employee already exists")
     employee_code = payload.employee_code or f"EMP-{payload.identification}"
-    if db.query(Employee).filter(Employee.employee_code == employee_code).first():
+    if db.query(Employee).filter(Employee.employee_code == employee_code, Employee.company_id == user.company_id).first():
         raise HTTPException(status_code=409, detail="Employee code already exists")
     employee = Employee(
         identification=payload.identification,
@@ -502,7 +596,7 @@ def list_employees(user: User = Depends(require_permission("hr.view")), db: Sess
 def create_employee(payload: EmployeeCreate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
     if db.get(Employee, payload.identification):
         raise HTTPException(status_code=409, detail="Employee already exists")
-    if db.query(Employee).filter(Employee.employee_code == payload.employee_code).first():
+    if db.query(Employee).filter(Employee.employee_code == payload.employee_code, Employee.company_id == user.company_id).first():
         raise HTTPException(status_code=409, detail="Employee code already exists")
     employee = Employee(**payload.model_dump(), company_id=user.company_id, status="active")
     db.add(employee)
@@ -516,16 +610,24 @@ def create_employee(payload: EmployeeCreate, request: Request, user: User = Depe
 
 
 @router.get("/employees/{identification}/compliance")
-def employee_compliance(identification: str, db: Session = Depends(get_db), _: User = Depends(require_permission("hr.view"))):
-    employee = db.get(Employee, identification)
+def employee_compliance(identification: str, db: Session = Depends(get_db), user: User = Depends(require_permission("hr.view"))):
+    employee = db.query(Employee).filter(Employee.identification == identification, Employee.company_id == user.company_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
     return {"employee": identification, **_employee_checklist(db, employee)}
 
 
+@router.get("/employees/{identification}/contracts")
+def employee_contracts(identification: str, db: Session = Depends(get_db), user: User = Depends(require_permission("hr.view"))):
+    employee = db.query(Employee).filter(Employee.identification == identification, Employee.company_id == user.company_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return db.query(EmployeeContract).filter(EmployeeContract.ps1010Identification == identification).order_by(EmployeeContract.start_date.desc()).all()
+
+
 @router.post("/employees/{identification}/files", status_code=status.HTTP_201_CREATED)
 def link_employee_file(identification: str, payload: EmployeeFileLink, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
-    if not db.get(Employee, identification):
+    if not db.query(Employee).filter(Employee.identification == identification, Employee.company_id == user.company_id).first():
         raise HTTPException(status_code=404, detail="Employee not found")
     document = db.get(Document, payload.document_id)
     if not document or document.company_id != user.company_id:
@@ -546,7 +648,7 @@ def link_employee_file(identification: str, payload: EmployeeFileLink, request: 
 
 @router.post("/employees/{identification}/contracts", status_code=status.HTTP_201_CREATED)
 def create_contract(identification: str, payload: ContractCreate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
-    if not db.get(Employee, identification):
+    if not db.query(Employee).filter(Employee.identification == identification, Employee.company_id == user.company_id).first():
         raise HTTPException(status_code=404, detail="Employee not found")
     contract = EmployeeContract(ps1010Identification=identification, **payload.model_dump())
     db.add(contract)
@@ -558,18 +660,24 @@ def create_contract(identification: str, payload: ContractCreate, request: Reque
 
 
 @router.get("/contracts/expiring")
-def expiring_contracts(days: int = 30, db: Session = Depends(get_db), _: User = Depends(require_permission("hr.view"))):
+def expiring_contracts(days: int = 30, db: Session = Depends(get_db), user: User = Depends(require_permission("hr.view"))):
     now = datetime.now(UTC)
     horizon = now.replace() + (datetime.fromtimestamp(now.timestamp() + days * 86400, UTC) - now)
-    return db.query(EmployeeContract).filter(EmployeeContract.end_date.isnot(None), EmployeeContract.end_date <= horizon, EmployeeContract.status == "active").all()
+    return (
+        db.query(EmployeeContract)
+        .join(Employee, Employee.identification == EmployeeContract.ps1010Identification)
+        .filter(Employee.company_id == user.company_id, EmployeeContract.end_date.isnot(None), EmployeeContract.end_date <= horizon, EmployeeContract.status == "active")
+        .all()
+    )
 
 
 @router.get("/sst/exams")
-def sst_exams(db: Session = Depends(get_db), _: User = Depends(require_permission("hr.view"))):
+def sst_exams(db: Session = Depends(get_db), user: User = Depends(require_permission("hr.view"))):
     exam_types = {"examen_ingreso", "examen_periodico", "examen_retiro", "certificado_medico"}
     incidents = (
         db.query(EmployeeIncident)
-        .filter(EmployeeIncident.incident_type.in_(exam_types))
+        .join(Employee, Employee.identification == EmployeeIncident.ps1010Identification)
+        .filter(Employee.company_id == user.company_id, EmployeeIncident.incident_type.in_(exam_types))
         .order_by(EmployeeIncident.created_at.desc())
         .all()
     )
@@ -578,7 +686,7 @@ def sst_exams(db: Session = Depends(get_db), _: User = Depends(require_permissio
 
 @router.get("/sst/alerts")
 def sst_alerts(user: User = Depends(require_permission("hr.view")), db: Session = Depends(get_db)):
-    # Filtrar por company_id para prevenir exposición cross-tenant
+    # Filtrar por company_id para prevenir exposicion cross-tenant.
     employees = db.query(Employee).filter(Employee.status == "active", Employee.company_id == user.company_id).order_by(Employee.full_name.asc()).limit(1000).all()
     alerts = []
     for employee in employees:
@@ -596,7 +704,7 @@ def sst_alerts(user: User = Depends(require_permission("hr.view")), db: Session 
 
 @router.post("/employees/{identification}/incidents", status_code=status.HTTP_201_CREATED)
 def create_incident(identification: str, payload: IncidentCreate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
-    if not db.get(Employee, identification):
+    if not db.query(Employee).filter(Employee.identification == identification, Employee.company_id == user.company_id).first():
         raise HTTPException(status_code=404, detail="Employee not found")
     incident = EmployeeIncident(ps1010Identification=identification, **payload.model_dump())
     db.add(incident)
@@ -609,7 +717,7 @@ def create_incident(identification: str, payload: IncidentCreate, request: Reque
 
 @router.post("/employees/{identification}/position-changes", status_code=status.HTTP_201_CREATED)
 def change_employee_position(identification: str, payload: PositionChange, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
-    employee = db.get(Employee, identification)
+    employee = db.query(Employee).filter(Employee.identification == identification, Employee.company_id == user.company_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
     old_values = {"position": employee.position, "department": employee.department}
@@ -629,8 +737,8 @@ def change_employee_position(identification: str, payload: PositionChange, reque
 
 
 @router.get("/employees/{identification}/timeline")
-def employee_timeline(identification: str, db: Session = Depends(get_db), _: User = Depends(require_permission("hr.view"))):
-    if not db.get(Employee, identification):
+def employee_timeline(identification: str, db: Session = Depends(get_db), user: User = Depends(require_permission("hr.view"))):
+    if not db.query(Employee).filter(Employee.identification == identification, Employee.company_id == user.company_id).first():
         raise HTTPException(status_code=404, detail="Employee not found")
     files = db.query(EmployeeFile).filter(EmployeeFile.ps1010Identification == identification).all()
     contracts = db.query(EmployeeContract).filter(EmployeeContract.ps1010Identification == identification).all()
