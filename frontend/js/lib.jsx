@@ -170,13 +170,13 @@ function Modal({ title, sub, onClose, children, footer, lg, wide }) {
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <div ref={dialogRef} className={`modal${lg || wide ? " lg" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div ref={dialogRef} className={`modal${lg ? " lg" : ""}${wide ? " wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="modal-head">
           <div><h2 id={titleId}>{title}</h2>{sub && <div className="sub">{sub}</div>}</div>
           <Button variant="subtle" size="sm" icon="x" onClick={onClose} aria-label="Cerrar" />
         </div>
-        {children}
-        {footer && <div className="row between" style={{ marginTop: "var(--s6)" }}>{footer}</div>}
+        <div className="modal-body">{children}</div>
+        {footer && <div className="modal-foot">{footer}</div>}
       </div>
     </>
   );
