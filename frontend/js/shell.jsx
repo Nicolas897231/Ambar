@@ -16,9 +16,7 @@ Object.assign(ROUTE_TITLES, {
 function Sidebar({ user, route, onNavigate, collapsed, setCollapsed, onOpenUserMenu }) {
   const [q, setQ] = useState("");
   const role = roleMeta(user);
-  const [open, setOpen] = useState(() => {
-    const o = {}; NAV.forEach(g => o[g.label] = true); return o;
-  });
+  const [open, setOpen] = useState({});
   const visible = useMemo(() => NAV.map(g => ({
     ...g,
     items: g.items.filter(it => can(user, it.perms) && (!q || (g.label + " " + it.label).toLowerCase().includes(q.toLowerCase())))
@@ -44,7 +42,7 @@ function Sidebar({ user, route, onNavigate, collapsed, setCollapsed, onOpenUserM
       <nav className="side-nav" data-tour="nav">
         {visible.map(g => (
           <div key={g.label} className={`nav-group${open[g.label] ? " open" : ""}`}>
-            <button className="nav-grp-btn" onClick={() => setOpen(o => ({ ...o, [g.label]: !o[g.label] }))} title={g.label}>
+            <button className="nav-grp-btn" onClick={() => setOpen(o => o[g.label] ? {} : { [g.label]: true })} title={g.label}>
               <Icon name={g.icon} size={17} className="g-ico" />
               <span className="g-label grow" style={{ textAlign: "left" }}>{g.label}</span>
               <Icon name="chevron-down" size={14} className="chev" />
