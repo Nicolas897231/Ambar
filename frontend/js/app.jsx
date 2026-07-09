@@ -1,5 +1,5 @@
 /* ============================================================
-   AMBAR — Root: sesión, tema, router por hash
+   AMBAR - Root: sesion, tema, router por hash
    ============================================================ */
 
 function ComingSoon({ route }) {
@@ -7,7 +7,7 @@ function ComingSoon({ route }) {
   return (
     <>
       <div className="page-head"><div><div className="eyebrow">{t[0]}</div><h1>{t[1]}</h1></div></div>
-      <Card><Empty icon="layout" title="Módulo en construcción" action={<Badge tone="brand">Próxima fase</Badge>}>Esta pantalla forma parte del alcance completo y se está construyendo por fases.</Empty></Card>
+      <Card><Empty icon="layout" title="Modulo en construccion" action={<Badge tone="brand">Proxima fase</Badge>}>Esta pantalla forma parte del alcance completo y se esta construyendo por fases.</Empty></Card>
     </>
   );
 }
@@ -75,7 +75,6 @@ function Root() {
   const onAuth = (u) => { setSession(u); setUser(u); navigate("dashboard"); };
   const onLogout = () => { clearSession(); setUser(null); location.hash = ""; };
 
-  // Public job portal lives outside the auth shell
   if (route === "empleo" || route === "portal") {
     return <JobPortal onBack={() => navigate(user ? "dashboard" : "dashboard")} loggedIn={!!user} />;
   }
@@ -87,9 +86,9 @@ function Root() {
         <div className="auth-formpanel">
           <div className="auth-card an-scale">
             <div className="mfa-badge pulse"><Icon name="shield-check" size={24} /></div>
-            <h2>Verificando sesión</h2>
+            <h2>Verificando sesion</h2>
             <p className="muted">Estamos validando tu cookie segura antes de abrir AMBAR.</p>
-            <Skeleton lines={3} />
+            <Skeleton rows={3} />
           </div>
         </div>
       </div>
@@ -107,7 +106,6 @@ function Root() {
     hr: window.HRPage, medical: window.MedicalPage, recruitment: window.RecruitmentPage,
     reports: window.ReportsPage, audit: window.AuditPage, security: window.SecurityPage, settings: window.SettingsPage,
   };
-  // Guard: route must be permitted for the user
   const navItem = NAV.flatMap(g => g.items).find(i => i.key === route);
   const allowed = !navItem || can(user, navItem.perms);
   const Page = allowed ? (PAGES[route] || null) : null;
@@ -115,20 +113,17 @@ function Root() {
   return (
     <AppShell user={user} route={route} onNavigate={navigate} onLogout={onLogout} theme={theme} toggleTheme={toggleTheme}>
       {!allowed
-        ? <Card><Empty icon="lock" title="Sin acceso a este módulo" action={<Button icon="arrow-left" onClick={() => navigate("dashboard")}>Ir al Dashboard</Button>}>Tu rol ({roleMeta(user).name}) no tiene permisos para ver esta sección. Habla con tu administrador si crees que es un error.</Empty></Card>
+        ? <Card><Empty icon="lock" title="Sin acceso a este modulo" action={<Button icon="arrow-left" onClick={() => navigate("dashboard")}>Ir al Dashboard</Button>}>Tu rol ({roleMeta(user).name}) no tiene permisos para ver esta seccion. Habla con tu administrador si crees que es un error.</Empty></Card>
         : (Page ? <ErrorBoundary key={route}><Page user={user} navigate={navigate} /></ErrorBoundary> : <ComingSoon route={route} />)}
     </AppShell>
   );
 }
 
-// Fallback portal stub if module not loaded yet
-if (!window.JobPortal) window.JobPortal = function ({ onBack }) { return <div className="auth-page"><div className="auth-formpanel"><Empty icon="briefcase" title="Portal de empleo" action={<Button onClick={onBack}>Volver</Button>}>En construcción.</Empty></div></div>; };
+if (!window.JobPortal) window.JobPortal = function ({ onBack }) { return <div className="auth-page"><div className="auth-formpanel"><Empty icon="briefcase" title="Portal de empleo" action={<Button onClick={onBack}>Volver</Button>}>En construccion.</Empty></div></div>; };
 
 Object.assign(window, { Root, ComingSoon });
 
 const _root = ReactDOM.createRoot(document.getElementById("root"));
 _root.render(<ToastProvider><ErrorBoundary><Root /></ErrorBoundary></ToastProvider>);
 
-// Enable entrance animations only after first paint (kept off in frozen/print
-// contexts so content is always visible by default).
 requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add("anim-ready")));

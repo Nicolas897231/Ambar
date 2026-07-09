@@ -8,6 +8,14 @@ function backendRoleName(role) {
   return roleMeta(backendRoleKey(role)).name || String(backendRoleKey(role)).replace(/_/g, " ");
 }
 
+function userId(user) {
+  return user.identification || user.id || user.idUser || "";
+}
+
+function userRoles(user) {
+  return user.roles || (user.role ? [user.role] : ["viewer"]);
+}
+
 function permissionGroupsFromBackend(permissions) {
   const items = AmbarAPI.listFrom(permissions);
   if (!items.length) return PERM_GROUPS;
@@ -65,7 +73,7 @@ function UserModal({ roles, positions, departments, onClose, onCreated }) {
     }
   };
   return (
-    <Modal title="Crear usuario" sub="El backend valida identificacion, correo, rol y telefono. La clave inicial sera la identificacion." onClose={onClose}
+    <Modal title="Crear usuario" sub="El usuario queda ligado a un rol real del backend. La clave inicial sera la identificacion." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="user-plus" onClick={submit}>Crear usuario</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
         <Field label="Identificacion" required><input inputMode="numeric" maxLength="12" value={payload.identification} onChange={(e) => setField("identification", e.target.value.replace(/\D/g, ""))} placeholder="1000000000" /></Field>
@@ -76,7 +84,58 @@ function UserModal({ roles, positions, departments, onClose, onCreated }) {
         <Field label="Dependencia RRHH"><select value={payload.department_name} onChange={(e) => setField("department_name", e.target.value)}><option value="">Sin dependencia asociada</option>{departments.map((d) => <option key={d.idDepartment || d.department_code || d.name} value={d.name}>{d.name}</option>)}</select></Field>
         <Field label="Rol" required><select value={payload.role_name} onChange={(e) => setField("role_name", e.target.value)}>{roles.map((role) => <option key={backendRoleKey(role)} value={backendRoleKey(role)}>{backendRoleName(role)}</option>)}</select></Field>
         <Field label="Estado"><select value={payload.status} onChange={(e) => setField("status", e.target.value)}><option value="active">Activo</option><option value="inactive">Inactivo</option><option value="locked">Bloqueado</option></select></Field>
-        <label className="check" style={{ gridColumn: "1 / -1" }}><input type="checkbox" checked={payload.mfa_enabled} onChange={(e) => setField("mfa_enabled", e.target.checked)} />Activar MFA TOTP para este usuario</label>
+        <label className="check" style={{ gridColumn: "1 / -1" }}><input type="checkbox" checked={payload.mfa_enabled} onChange={(e) => setField("mfa_enabled", e.target.checked)} />Solicitar MFA TOTP al ingresar</label>
+      </div>
+    </Modal>
+  );
+}
+
+function UserEditModal({ user, roles, onClose, onSaved }) {
+  const toast = useToast();
+  const [payload, setPayload] = seS({
+    name: user.name || "",
+    role_name: userRoles(user)[0] || "viewer",
+    status: user.status || "active",
+  });
+  const setField = (key, value) => setPayload((current) => ({ ...current, [key]: value }));
+  const submit = async () => {
+    if (!payload.name.trim() || /\d/.test(payload.name)) {
+      toast("El nombre no debe estar vacio ni contener numeros.", { tone: "danger", title: "Dato invalido" });
+      return;
+    }
+    try {
+      const saved = await AmbarAPI.patch(`/users/${encodeURIComponent(user.id)}`, {
+        name: payload.name.trim(),
+        role_names: [payload.role_name],
+        status: payload.status,
+      });
+      toast("Usuario actualizado.", { tone: "ok", title: "Cambios guardados" });
+      onSaved(saved);
+      onClose();
+    } catch (err) {
+      toast(err.message || "No fue posible actualizar el usuario.", { tone: "danger", title: "Error" });
+    }
+  };
+  return (
+    <Modal title="Editar usuario" sub={user.email} onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Guardar cambios</Button></>}>
+      <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
+        <Field label="Nombre" required><input value={payload.name} onChange={(e) => setField("name", e.target.value.replace(/[0-9]/g, ""))} /></Field>
+        <Field label="Rol"><select value={payload.role_name} onChange={(e) => setField("role_name", e.target.value)}>{roles.map((role) => <option key={backendRoleKey(role)} value={backendRoleKey(role)}>{backendRoleName(role)}</option>)}</select></Field>
+        <Field label="Estado"><select value={payload.status} onChange={(e) => setField("status", e.target.value)}><option value="active">Activo</option><option value="inactive">Inactivo</option><option value="locked">Bloqueado</option></select></Field>
+      </div>
+    </Modal>
+  );
+}
+
+function MfaModal({ result, onClose }) {
+  return (
+    <Modal title="MFA preparado" sub="Registra este secreto en el autenticador del usuario. No lo compartas por canales inseguros." onClose={onClose}
+      footer={<Button onClick={onClose}>Entendido</Button>}>
+      <div className="col gap4">
+        <Info label="Secreto TOTP" value={result.secret || "-"} />
+        <Field label="URI otpauth"><textarea readOnly value={result.otpauth_uri || ""} /></Field>
+        <p className="muted">Cuando MFA este habilitado, el login pedira el codigo temporal del autenticador.</p>
       </div>
     </Modal>
   );
@@ -98,8 +157,6 @@ function RoleModal({ role, permissions, onClose, onSaved }) {
       ? payload.permissions.filter((item) => item !== permission)
       : [...payload.permissions, permission]);
   };
-  const selectAll = () => setField("permissions", allKeys.slice());
-  const clearAll = () => setField("permissions", []);
   const submit = async () => {
     if (!/^[a-z0-9_]{3,80}$/.test(payload.role_name)) {
       toast("El codigo del rol usa solo minusculas, numeros y guion bajo.", { tone: "danger", title: "Rol invalido" });
@@ -131,8 +188,8 @@ function RoleModal({ role, permissions, onClose, onSaved }) {
         <Field label="Descripcion" required><input value={payload.description} onChange={(e) => setField("description", e.target.value)} /></Field>
       </div>
       <div className="row wrap gap2" style={{ margin: "var(--s4) 0" }}>
-        <Button size="sm" variant="ghost" onClick={selectAll}>Seleccionar todos</Button>
-        <Button size="sm" variant="ghost" onClick={clearAll}>Limpiar</Button>
+        <Button size="sm" variant="ghost" onClick={() => setField("permissions", allKeys.slice())}>Seleccionar todos</Button>
+        <Button size="sm" variant="ghost" onClick={() => setField("permissions", [])}>Limpiar</Button>
         <Badge tone="outline">{payload.permissions.length} permisos</Badge>
       </div>
       <div className="permission-pick-list">
@@ -153,24 +210,31 @@ function RoleModal({ role, permissions, onClose, onSaved }) {
   );
 }
 
-function SecurityPage() {
+function SecurityPage({ user }) {
+  const toast = useToast();
   const [tab, setTab] = seS("users");
   const [roleKey, setRoleKey] = seS("");
+  const [includeInactive, setIncludeInactive] = seS(false);
   const [creatingUser, setCreatingUser] = seS(false);
+  const [editingUser, setEditingUser] = seS(null);
   const [editingRole, setEditingRole] = seS(null);
-  const liveUsers = useLiveData(() => AmbarAPI.endpoints.users(), [], []);
+  const [mfaResult, setMfaResult] = seS(null);
+  const canManageUsers = can(user, ["users.manage"]);
+  const liveUsers = useLiveData(() => AmbarAPI.get(`/users?include_inactive=${includeInactive ? "true" : "false"}`), [], [includeInactive]);
   const liveRoles = useLiveData(() => AmbarAPI.endpoints.roles(), [], []);
   const { data: rawPerms } = useLiveData(() => AmbarAPI.endpoints.permissions(), [], []);
   const { data: rawPositions } = useLiveData(() => AmbarAPI.endpoints.positions(), [], []);
   const { data: rawDepartments } = useLiveData(() => AmbarAPI.endpoints.departments(), [], []);
+
   const users = AmbarAPI.listFrom(liveUsers.data).map((u, i) => ({
-    id: u.identification || u.id || i,
+    id: userId(u) || i,
     name: u.name || u.full_name || u.email || "Usuario",
     email: u.email || "",
-    role: normalizeRoleKey((u.roles || [u.role || "viewer"])[0]),
-    roles: u.roles || [u.role || "viewer"],
+    roles: userRoles(u),
+    role: normalizeRoleKey(userRoles(u)[0]),
     status: u.status || "active",
     permissions: u.permissions || [],
+    mfa_enabled: Boolean(u.mfa_enabled),
   }));
   const backendRoles = AmbarAPI.listFrom(liveRoles.data);
   const roles = backendRoles.length ? backendRoles : Object.entries(ROLES).map(([role_name, value]) => ({ role_name, description: value.desc, permissions: value.perms === "*" ? ["*"] : value.perms }));
@@ -178,19 +242,49 @@ function SecurityPage() {
   const rolePerms = selectedRole?.permissions?.includes("*") ? ALL_PERMS : (selectedRole?.permissions || []);
   const roleUsers = users.filter((u) => u.roles.map(normalizeRoleKey).includes(normalizeRoleKey(backendRoleKey(selectedRole))));
   const permissionGroups = permissionGroupsFromBackend(rawPerms);
+  const setUsers = (updater) => liveUsers.setData((current) => updater(AmbarAPI.listFrom(current)));
+  const updateUserInList = (saved) => setUsers((list) => list.map((item) => userId(item) === userId(saved) ? saved : item));
+  const disableUser = async (user) => {
+    try {
+      const saved = user.status === "active"
+        ? await AmbarAPI.delete(`/users/${encodeURIComponent(user.id)}`)
+        : await AmbarAPI.patch(`/users/${encodeURIComponent(user.id)}`, { status: "active" });
+      toast(user.status === "active" ? "Usuario desactivado." : "Usuario activado.", { tone: "ok", title: "Seguridad actualizada" });
+      updateUserInList(saved);
+    } catch (err) {
+      toast(err.message || "No fue posible cambiar el estado.", { tone: "danger", title: "Error" });
+    }
+  };
+  const toggleMfa = async (user) => {
+    try {
+      if (user.mfa_enabled) {
+        const saved = await AmbarAPI.post(`/users/${encodeURIComponent(user.id)}/mfa/disable`, {});
+        updateUserInList(saved);
+        toast("MFA deshabilitado para este usuario.", { tone: "ok", title: "MFA actualizado" });
+      } else {
+        const result = await AmbarAPI.post(`/users/${encodeURIComponent(user.id)}/mfa/setup`, {});
+        setMfaResult(result);
+        setUsers((list) => list.map((item) => userId(item) === user.id ? { ...item, mfa_enabled: true } : item));
+      }
+    } catch (err) {
+      toast(err.message || "No fue posible actualizar MFA.", { tone: "danger", title: "Error" });
+    }
+  };
+
   return (
     <>
       <div className="page-head">
         <div>
           <div className="eyebrow">Administracion</div>
-          <h1>Seguridad y Accesos</h1>
-          <p className="lead">Usuarios y permisos conectados al backend. Las acciones sensibles siguen validadas por API.</p>
+          <h1>Seguridad y accesos</h1>
+          <p className="lead">Usuarios, roles y permisos reales del backend. Las acciones sensibles se validan por API.</p>
         </div>
         <div className="page-actions">
-          {tab === "roles" && <Button variant="ghost" icon="shield" onClick={() => setEditingRole({})}>Crear rol</Button>}
-          <Button icon="user-plus" onClick={() => setCreatingUser(true)}>Crear usuario</Button>
+          {tab === "roles" && <Button variant="ghost" icon="shield" onClick={() => setEditingRole({})} disabled={!canManageUsers}>Crear rol</Button>}
+          <Button icon="user-plus" onClick={() => setCreatingUser(true)} disabled={!canManageUsers}>Crear usuario</Button>
         </div>
       </div>
+
       <div className="grid cols-4 stagger">
         <Metric label="Usuarios activos" value={users.filter((u) => u.status === "active").length} icon="users" tone="brand" accent />
         <Metric label="Roles backend" value={roles.length} icon="shield" tone="info" accent />
@@ -201,9 +295,25 @@ function SecurityPage() {
 
       {tab === "users" && (
         <Card flush className="an-rise">
+          <div className="row between wrap" style={{ padding: "var(--s4)", borderBottom: "1px solid var(--line)" }}>
+            <CardHead title="Usuarios" sub="Alta, cambios de rol, MFA y estado" icon="users" />
+            <label className="check"><input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />Mostrar inactivos</label>
+          </div>
           {liveUsers.loading ? <div style={{ padding: "var(--s5)" }}><Skeleton rows={6} /></div> : users.length === 0 ? <Empty icon="users" title="Sin usuarios">No hay usuarios retornados por el backend.</Empty> : (
-            <div className="table-scroll"><table className="tbl"><thead><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Permisos</th></tr></thead><tbody>
-              {users.map((u) => (<tr key={u.id}><td><div className="t-avatar"><Avatar size="sm" name={u.name} color={roleMeta(u).color} /><span className="cell-strong">{u.name}</span></div></td><td className="muted mono" style={{ fontSize: "var(--fs-xs)" }}>{u.email}</td><td><Badge tone="brand">{roleMeta(u).name}</Badge></td><td><Badge tone={u.status === "active" ? "success" : "neutral"} dot>{u.status}</Badge></td><td>{u.permissions.includes("*") ? <Badge tone="success">Todos</Badge> : <Badge tone="outline">{u.permissions.length}</Badge>}</td></tr>))}
+            <div className="table-scroll"><table className="tbl"><thead><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>MFA</th><th>Estado</th><th>Permisos</th><th>Acciones</th></tr></thead><tbody>
+              {users.map((u) => (<tr key={u.id}>
+                <td><div className="t-avatar"><Avatar size="sm" name={u.name} color={roleMeta(u).color} /><span className="cell-strong">{u.name}</span></div></td>
+                <td className="muted mono" style={{ fontSize: "var(--fs-xs)" }}>{u.email}</td>
+                <td><Badge tone="brand">{roleMeta(u).name}</Badge></td>
+                <td><Badge tone={u.mfa_enabled ? "success" : "outline"}>{u.mfa_enabled ? "Activo" : "No activo"}</Badge></td>
+                <td><Badge tone={u.status === "active" ? "success" : u.status === "locked" ? "danger" : "neutral"} dot>{u.status}</Badge></td>
+                <td>{u.permissions.includes("*") ? <Badge tone="success">Todos</Badge> : <Badge tone="outline">{u.permissions.length}</Badge>}</td>
+                <td><div className="row gap2 wrap">
+                  <Button size="sm" variant="ghost" icon="pencil" onClick={() => setEditingUser(u)} disabled={!canManageUsers}>Editar</Button>
+                  <Button size="sm" variant="ghost" icon="key-round" onClick={() => toggleMfa(u)} disabled={!canManageUsers}>{u.mfa_enabled ? "Quitar MFA" : "Preparar MFA"}</Button>
+                  <Button size="sm" variant={u.status === "active" ? "danger" : "ghost"} icon={u.status === "active" ? "trash" : "check"} onClick={() => disableUser(u)} disabled={!canManageUsers}>{u.status === "active" ? "Desactivar" : "Activar"}</Button>
+                </div></td>
+              </tr>))}
             </tbody></table></div>
           )}
         </Card>
@@ -211,17 +321,17 @@ function SecurityPage() {
 
       {tab === "roles" && (
         <div className="security-roles-layout">
-          <Card pad="sm" className="an-rise"><CardHead title="Roles" action={<Button size="sm" variant="ghost" icon="plus" onClick={() => setEditingRole({})}>Nuevo</Button>} /><div className="col" style={{ gap: 2 }}>
+          <Card pad="sm" className="an-rise"><CardHead title="Roles" action={<Button size="sm" variant="ghost" icon="plus" onClick={() => setEditingRole({})} disabled={!canManageUsers}>Nuevo</Button>} /><div className="col" style={{ gap: 2 }}>
             {roles.map((role) => {
               const key = backendRoleKey(role);
               const meta = roleMeta(key);
-              return <div key={key} className={`role-list-item${backendRoleKey(selectedRole) === key ? " active" : ""}`} onClick={() => setRoleKey(key)}><span className="role-swatch" style={{ background: meta.color }} /><div className="grow" style={{ minWidth: 0 }}><div className="role-name-line">{backendRoleName(role)}</div><small className="muted truncate" style={{ display: "block" }}>{users.filter((u) => u.roles.map(normalizeRoleKey).includes(normalizeRoleKey(key))).length} usuarios</small></div></div>;
+              return <button key={key} type="button" className={`role-list-item${backendRoleKey(selectedRole) === key ? " active" : ""}`} onClick={() => setRoleKey(key)}><span className="role-swatch" style={{ background: meta.color }} /><div className="grow" style={{ minWidth: 0 }}><div className="role-name-line">{backendRoleName(role)}</div><small className="muted truncate" style={{ display: "block" }}>{users.filter((u) => u.roles.map(normalizeRoleKey).includes(normalizeRoleKey(key))).length} usuarios</small></div></button>;
             })}
           </div></Card>
           <Card className="an-rise">
             <div className="row between center" style={{ marginBottom: "var(--s3)" }}>
               <div className="row gap2"><span className="role-swatch" style={{ background: roleMeta(backendRoleKey(selectedRole)).color, height: 28 }} /><div><h3>{backendRoleName(selectedRole)}</h3><p className="muted" style={{ fontSize: "var(--fs-sm)" }}>{roleMeta(backendRoleKey(selectedRole)).area}</p></div></div>
-              {selectedRole?.idRole && <Button size="sm" variant="ghost" icon="pencil" onClick={() => setEditingRole(selectedRole)}>Editar permisos</Button>}
+              {selectedRole?.idRole && <Button size="sm" variant="ghost" icon="pencil" onClick={() => setEditingRole(selectedRole)} disabled={!canManageUsers}>Editar permisos</Button>}
             </div>
             <p className="muted" style={{ fontSize: "var(--fs-sm)", marginBottom: "var(--s4)" }}>{selectedRole?.description || roleMeta(backendRoleKey(selectedRole)).desc}</p>
             <div className="divider" />
@@ -242,9 +352,11 @@ function SecurityPage() {
         </tbody></table></div></Card>
       )}
 
-      {creatingUser && <UserModal roles={roles} positions={AmbarAPI.listFrom(rawPositions)} departments={AmbarAPI.listFrom(rawDepartments)} onClose={() => setCreatingUser(false)} onCreated={(created) => liveUsers.setData((current) => [created, ...(current || [])])} />}
+      {creatingUser && <UserModal roles={roles} positions={AmbarAPI.listFrom(rawPositions)} departments={AmbarAPI.listFrom(rawDepartments)} onClose={() => setCreatingUser(false)} onCreated={(created) => setUsers((list) => [created, ...list])} />}
+      {editingUser && <UserEditModal user={editingUser} roles={roles} onClose={() => setEditingUser(null)} onSaved={updateUserInList} />}
+      {mfaResult && <MfaModal result={mfaResult} onClose={() => setMfaResult(null)} />}
       {editingRole && <RoleModal role={editingRole.idRole ? editingRole : null} permissions={rawPerms} onClose={() => setEditingRole(null)} onSaved={(saved) => liveRoles.setData((current) => {
-        const list = current || [];
+        const list = AmbarAPI.listFrom(current);
         return list.some((item) => item.idRole === saved.idRole) ? list.map((item) => item.idRole === saved.idRole ? saved : item) : [saved, ...list];
       })} />}
     </>

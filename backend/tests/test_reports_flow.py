@@ -32,7 +32,10 @@ def test_reports_jobs_create_list_and_download():
 
         downloaded = client.get(f"/api/v1/reports/jobs/{job['idJob']}/download", headers=headers)
         assert downloaded.status_code == 200, downloaded.text
-        assert downloaded.json()["download_url"] == job["generated_file"]
+        assert downloaded.headers["content-type"].startswith("text/csv")
+        assert "attachment" in downloaded.headers["content-disposition"]
+        assert "metric,value" in downloaded.text
+        assert job["generated_file"] not in downloaded.text
 
 
 def test_reports_reject_invalid_type():

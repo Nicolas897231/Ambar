@@ -123,6 +123,15 @@ function Field({ label, help, required, children, hint, id: fieldId }) {
   );
 }
 
+function Info({ label, value, mono }) {
+  return (
+    <div className="info-line">
+      <span>{label}</span>
+      <strong className={mono ? "mono" : ""}>{value ?? "-"}</strong>
+    </div>
+  );
+}
+
 /* ---------- Empty / Skeleton ---------- */
 function Empty({ icon = "inbox", title, children, action }) {
   return (

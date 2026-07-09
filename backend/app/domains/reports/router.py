@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -32,6 +33,18 @@ def _generate_csv(db: Session, report_type: str, job_id: int) -> str:
         rows = ["metric,value", f"documents,{db.query(Document).count()}", f"generated_at,{datetime.now(UTC).isoformat()}"]
     path.write_text("\n".join(rows), encoding="utf-8")
     return str(path)
+
+
+def _safe_report_path(value: str | None) -> Path:
+    if not value:
+        raise HTTPException(status_code=404, detail="Report file not found")
+    reports_dir = Path("reports").resolve()
+    report_path = Path(value).resolve()
+    if reports_dir not in report_path.parents and report_path != reports_dir:
+        raise HTTPException(status_code=403, detail="Invalid report path")
+    if not report_path.exists() or not report_path.is_file():
+        raise HTTPException(status_code=404, detail="Report file not found")
+    return report_path
 
 
 @router.post("/jobs", status_code=status.HTTP_201_CREATED)
@@ -70,6 +83,8 @@ def download_job(job_id: int, request: Request, user: User = Depends(require_per
     job = db.get(ReportJob, job_id)
     if not job or job.ps405Identification != user.identification:
         raise HTTPException(status_code=404, detail="Report not found")
+    report_path = _safe_report_path(job.generated_file)
     write_audit(db, action="report_downloaded", module="reports", user_id=user.identification, entity="report_job", entity_id=job.idJob, request=request)
     db.commit()
-    return {"download_url": job.generated_file, "expires_in_seconds": 600}
+    filename = f"ambar_{job.report_type}_{job.idJob}.csv"
+    return FileResponse(path=report_path, media_type="text/csv; charset=utf-8", filename=filename)

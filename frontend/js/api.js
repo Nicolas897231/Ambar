@@ -134,6 +134,7 @@
     get: request,
     post(path, payload) { return request(path, { method: "POST", body: JSON.stringify(payload || {}) }); },
     patch(path, payload) { return request(path, { method: "PATCH", body: JSON.stringify(payload || {}) }); },
+    delete(path) { return request(path, { method: "DELETE" }); },
     download,
     form,
     listFrom,
@@ -194,7 +195,7 @@
       expiringContracts: () => request("/hr/contracts/expiring"),
       medicalExams: () => request("/hr/sst/exams"),
       sstAlerts: () => request("/hr/sst/alerts"),
-      audit: () => request("/audit?limit=100"),
+      audit: (query = "") => request(`/audit?limit=100${query ? `&${query}` : ""}`),
       auditSummary: () => request("/audit/summary"),
       users: () => request("/users"),
       roles: () => request("/users/roles"),
@@ -207,7 +208,14 @@
       tasksSummary: () => request("/workflows/tasks/summary"),
       ocrJobs: () => request("/ocr/jobs"),
       biDashboard: () => request("/bi/executive-dashboard"),
+      biRefresh: () => request("/bi/refresh", { method: "POST", body: "{}" }),
+      biSnapshots: () => request("/bi/snapshots"),
       reportsJobs: () => request("/reports/jobs"),
+      reportDownload: (jobId) => download(`/reports/jobs/${jobId}/download`, `ambar_reporte_${jobId}.csv`),
+      auditExport: (query = "", format = "csv") => download(`/audit/export?format=${format}${query ? `&${query}` : ""}`, `ambar_auditoria.${format === "xlsx" ? "xlsx" : "csv"}`),
+      integrationLogs: (integrationId) => request(`/integrations/${integrationId}/logs`),
+      integrationSync: (integrationId, payload) => request(`/integrations/${integrationId}/sync`, { method: "POST", body: JSON.stringify(payload || {}) }),
+      createSignatureRequest: (payload) => request("/signatures/requests", { method: "POST", body: JSON.stringify(payload || {}) }),
       platform: () => request("/platform/technical-dashboard")
     }
   };
