@@ -42,6 +42,7 @@ mkdirSync(vendor, { recursive: true });
 for (const [sourcePath, fileName] of [
   ["node_modules/react/umd/react.production.min.js", "react.production.min.js"],
   ["node_modules/react-dom/umd/react-dom.production.min.js", "react-dom.production.min.js"],
+  ["node_modules/qrcode-generator/qrcode.js", "qrcode.js"],
 ]) {
   const source = join(root, sourcePath);
   if (!existsSync(source)) throw new Error(`Missing frontend vendor asset: ${sourcePath}. Run npm install in frontend.`);

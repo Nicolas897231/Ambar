@@ -142,6 +142,6 @@ input:disabled, select:disabled, textarea:disabled { background: var(--panel-2);
 @media (min-width: 1500px) { .cols-4 { grid-template-columns: repeat(4, minmax(220px, 1fr)); } }
 @media (max-width: 860px) {
   .app-shell { grid-template-columns: 1fr; }
-  .sidebar { position: relative; min-height: auto; max-height: none; }
+  .sidebar { position: relative; height: auto; min-height: auto; max-height: none; overflow: visible; }
   .content { padding: var(--s5) var(--s4); }
 }

@@ -57,7 +57,19 @@ function SystemStatus({ platform }) {
 
 function IntegrationModal({ onClose, onCreated }) {
   const toast = useToast();
-  const [payload, setPayload] = stS({ integration_name: "", integration_type: "generic_rest", config_data: "{}" });
+  const [payload, setPayload] = stS({
+    integration_name: "",
+    integration_type: "generic_rest",
+    config_data: JSON.stringify({
+      base_url: "https://sistema-externo.empresa.com",
+      auth_type: "bearer",
+      token_env: "ERP_TOKEN",
+      endpoints: {
+        push_document: "/documents",
+        pull_status: "/documents/{id}/status"
+      }
+    }, null, 2)
+  });
   const setField = (key, value) => setPayload((current) => ({ ...current, [key]: value }));
   const submit = async () => {
     if (payload.integration_name.trim().length < 3) {
@@ -89,8 +101,11 @@ function IntegrationModal({ onClose, onCreated }) {
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="plug-zap" onClick={submit}>Crear integracion</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
         <Field label="Nombre" required><input value={payload.integration_name} onChange={(e) => setField("integration_name", e.target.value)} placeholder="ERP principal" /></Field>
-        <Field label="Tipo"><select value={payload.integration_type} onChange={(e) => setField("integration_type", e.target.value)}><option value="generic_rest">REST generico</option><option value="sap">SAP</option><option value="odoo">Odoo</option><option value="dynamics">Dynamics</option><option value="netsuite">NetSuite</option><option value="siigo">Siigo</option><option value="helisa">Helisa</option><option value="payroll">Nomina</option></select></Field>
-        <div style={{ gridColumn: "1 / -1" }}><Field label="Configuracion JSON"><textarea value={payload.config_data} onChange={(e) => setField("config_data", e.target.value)} /></Field></div>
+        <Field label="Tipo"><select value={payload.integration_type} onChange={(e) => setField("integration_type", e.target.value)}><option value="generic_rest">REST generico</option><option value="sap">SAP</option><option value="odoo">Odoo</option><option value="dynamics">Dynamics</option><option value="netsuite">NetSuite</option><option value="siigo">Siigo</option><option value="helisa">Helisa</option><option value="payroll">Nomina</option><option value="document_ingest">Ingreso documental</option></select></Field>
+        <div style={{ gridColumn: "1 / -1" }}><Field label="Configuracion JSON"><textarea rows="9" value={payload.config_data} onChange={(e) => setField("config_data", e.target.value)} /></Field></div>
+        <div className="notice info" style={{ gridColumn: "1 / -1" }}>
+          No guardes contrasenas ni tokens reales en este JSON. Usa nombres de variables como <span className="mono">ERP_TOKEN</span> y configura el secreto en el servidor.
+        </div>
       </div>
     </Modal>
   );
@@ -274,6 +289,19 @@ function SettingsPage({ user }) {
           <div className="row between" style={{ padding: "var(--s4)", borderBottom: "1px solid var(--line)" }}>
             <CardHead title="Integraciones" sub="Conectores registrados en backend" icon="plug-zap" />
             <Button icon="plus" onClick={() => setCreatingIntegration(true)} disabled={!canManageIntegrations}>Crear integracion</Button>
+          </div>
+          <div className="integration-help">
+            <div>
+              <CardHead title="Que hace una integracion" sub="Conecta AMBAR con sistemas externos sin duplicar procesos" icon="plug-zap" />
+              <p className="muted" style={{ fontSize: "var(--fs-sm)", marginTop: "var(--s2)" }}>
+                Hoy AMBAR registra conectores, payloads y logs auditados. Para recibir archivos de otra app se agrega un adaptador de ingreso documental que cree documento, metadata y archivo digital contra el repositorio seguro.
+              </p>
+            </div>
+            <ul className="integration-flow">
+              <li>Enviar metadata o estados desde AMBAR hacia un ERP, nomina, contabilidad o sistema propio.</li>
+              <li>Recibir documentos de otra aplicacion mediante API: expediente, tipologia, metadata, archivo y trazabilidad.</li>
+              <li>Consultar logs para saber que se envio, que fallo y que entidad documental quedo relacionada.</li>
+            </ul>
           </div>
           {liveIntegrations.loading ? <div style={{ padding: "var(--s5)" }}><Skeleton rows={5} /></div> : integrations.length === 0 ? <Empty icon="plug-zap" title="Sin integraciones reales">No hay integraciones registradas por backend para listar en esta pantalla.</Empty> : (
             <div className="table-scroll"><table className="tbl"><thead><tr><th>Nombre</th><th>Tipo</th><th>Estado</th><th>Creacion</th><th>Acciones</th></tr></thead><tbody>{integrations.map((item) => <tr key={item.idIntegration || item.id}>

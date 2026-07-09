@@ -128,14 +128,57 @@ function UserEditModal({ user, roles, onClose, onSaved }) {
   );
 }
 
-function MfaModal({ result, onClose }) {
+function copyText(value, toast, label) {
+  if (!value) return;
+  navigator.clipboard?.writeText(value).then(
+    () => toast(`${label} copiado.`, { tone: "ok", title: "Copiado" }),
+    () => toast("No fue posible copiar automaticamente.", { tone: "warning", title: "Copia manual" })
+  );
+}
+
+function TotpQr({ value }) {
+  let svg = "";
+  try {
+    if (value && window.qrcode) {
+      const qr = window.qrcode(0, "M");
+      qr.addData(value);
+      qr.make();
+      svg = qr.createSvgTag(5, 2);
+    }
+  } catch {
+    svg = "";
+  }
   return (
-    <Modal title="MFA preparado" sub="Registra este secreto en el autenticador del usuario. No lo compartas por canales inseguros." onClose={onClose}
+    <div className="mfa-qr-card">
+      {svg ? <div className="mfa-qr" dangerouslySetInnerHTML={{ __html: svg }} /> : (
+        <div className="mfa-qr mfa-qr-empty"><Icon name="qr-code" size={34} /><span>No fue posible generar el QR</span></div>
+      )}
+      <p className="muted">Escanea este QR con Microsoft Authenticator, Google Authenticator, Authy o 1Password.</p>
+    </div>
+  );
+}
+
+function MfaModal({ result, onClose }) {
+  const toast = useToast();
+  return (
+    <Modal wide title="MFA preparado" sub="Activa el segundo factor escaneando el QR. No compartas este secreto por canales inseguros." onClose={onClose}
       footer={<Button onClick={onClose}>Entendido</Button>}>
-      <div className="col gap4">
-        <Info label="Secreto TOTP" value={result.secret || "-"} />
-        <Field label="URI otpauth"><textarea readOnly value={result.otpauth_uri || ""} /></Field>
-        <p className="muted">Cuando MFA este habilitado, el login pedira el codigo temporal del autenticador.</p>
+      <div className="mfa-setup">
+        <TotpQr value={result.otpauth_uri || ""} />
+        <div className="col gap4">
+          <div className="mfa-steps">
+            <div><span>1</span><p>Abre Microsoft Authenticator o Google Authenticator.</p></div>
+            <div><span>2</span><p>Elige agregar cuenta y escanea el QR.</p></div>
+            <div><span>3</span><p>En el siguiente ingreso AMBAR pedira el codigo de 6 digitos.</p></div>
+          </div>
+          <Info label="Secreto manual" value={result.secret || "-"} />
+          <div className="row wrap gap2">
+            <Button size="sm" variant="ghost" icon="copy" onClick={() => copyText(result.secret, toast, "Secreto")}>Copiar secreto</Button>
+            <Button size="sm" variant="ghost" icon="copy" onClick={() => copyText(result.otpauth_uri, toast, "URI")}>Copiar URI</Button>
+          </div>
+          <Field label="URI otpauth para soporte tecnico"><textarea readOnly value={result.otpauth_uri || ""} /></Field>
+          <p className="muted">Si el usuario cambia de celular, desactiva MFA y vuelve a prepararlo para emitir un nuevo QR.</p>
+        </div>
       </div>
     </Modal>
   );

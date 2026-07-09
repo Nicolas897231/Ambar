@@ -107,6 +107,14 @@ const server = http.createServer(async (req, res) => {
   if (!req.url) return send(res, 400, "Bad request");
   if (req.url.startsWith("/api/v1/")) return proxyApi(req, res);
   if (req.url === "/health" || req.url === "/health/") return send(res, 200, JSON.stringify({ status: "ok", service: "ambar-web" }), { "content-type": "application/json" });
+  if (req.url === "/vendor/qrcode.js" && !existsSync(join(root, "vendor", "qrcode.js"))) {
+    const qrPath = join(process.cwd(), "node_modules", "qrcode-generator", "qrcode.js");
+    if (existsSync(qrPath)) {
+      res.writeHead(200, secureHeaders({ "content-type": "application/javascript; charset=utf-8", "cache-control": "public, max-age=31536000, immutable" }));
+      createReadStream(qrPath).pipe(res);
+      return;
+    }
+  }
   if (req.url === "/robots.txt") return send(res, 200, "User-agent: *\nDisallow: /api/\nDisallow: /health\nDisallow: /metrics\n", { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=86400" });
   if (req.url === "/.well-known/security.txt") return send(res, 200, "Contact: security@ambar.co\nExpires: 2027-01-01T00:00:00.000Z\nPreferred-Languages: es, en\nPolicy: https://ambar.co/security\n", { "content-type": "text/plain; charset=utf-8" });
 
