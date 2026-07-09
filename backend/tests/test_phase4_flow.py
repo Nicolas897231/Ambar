@@ -71,6 +71,36 @@ def test_phase4_ocr_signature_integrations_webhooks_bi_flow():
         )
         assert sync.status_code == 201, sync.text
 
+        ingest = client.post(
+            "/api/v1/integrations",
+            json={
+                "integration_name": f"Ingreso documental Fase 4 {document_id}",
+                "integration_type": "document_ingest",
+                "config_data": {
+                    "direction": "receive",
+                    "http_method": "POST",
+                    "endpoint_path": "/external/documents",
+                    "auth": {"type": "bearer", "secret_ref": "AMBAR_INGEST_TOKEN"},
+                },
+            },
+            headers=headers,
+        )
+        assert ingest.status_code == 201, ingest.text
+        assert ingest.json()["config_data"]["direction"] == "receive"
+        assert ingest.json()["config_data"]["auth"]["secret_ref"] == "AMBAR_INGEST_TOKEN"
+
+        ingest_sync = client.post(
+            f"/api/v1/integrations/{ingest.json()['idIntegration']}/sync",
+            json={"entity_type": "document", "entity_id": str(document_id), "payload": {"document_id": document_id}},
+            headers=headers,
+        )
+        assert ingest_sync.status_code == 201, ingest_sync.text
+        log_payload = ingest_sync.json()["request_payload"]
+        assert log_payload["direction"] == "receive"
+        assert log_payload["http_method"] == "POST"
+        assert "AMBAR_INGEST_TOKEN" == log_payload["auth"]["secret_ref"]
+        assert "secret_value" not in log_payload["auth"]
+
         webhook = client.post(
             "/api/v1/webhooks/endpoints",
             json={"endpoint_name": f"Webhook Fase 4 {document_id}", "target_url": "https://example.com/webhook", "event_type": "ocr.completed"},

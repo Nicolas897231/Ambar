@@ -55,39 +55,85 @@ function SystemStatus({ platform }) {
   );
 }
 
+const INTEGRATION_TYPES = [
+  ["generic_rest", "REST generico"],
+  ["document_ingest", "Ingreso documental"],
+  ["sap", "SAP"],
+  ["odoo", "Odoo"],
+  ["dynamics", "Dynamics"],
+  ["netsuite", "NetSuite"],
+  ["siigo", "Siigo"],
+  ["helisa", "Helisa"],
+  ["payroll", "Nomina"],
+];
+
+const INTEGRATION_DIRECTIONS = [
+  ["send", "AMBAR envia datos"],
+  ["receive", "AMBAR recibe datos o archivos"],
+  ["sync", "AMBAR sincroniza en ambos sentidos"],
+];
+
+const INTEGRATION_METHODS = ["GET", "POST", "PUT", "PATCH"];
+
+function integrationConfig(item) {
+  return item?.config_data || {};
+}
+
+function integrationAuth(config) {
+  return config.auth || {};
+}
+
+function integrationDirectionLabel(value) {
+  return (INTEGRATION_DIRECTIONS.find(([key]) => key === value)?.[1]) || "No definido";
+}
+
+function integrationTypeLabel(value) {
+  return (INTEGRATION_TYPES.find(([key]) => key === value)?.[1]) || value || "-";
+}
+
 function IntegrationModal({ onClose, onCreated }) {
   const toast = useToast();
   const [payload, setPayload] = stS({
     integration_name: "",
     integration_type: "generic_rest",
-    config_data: JSON.stringify({
-      base_url: "https://sistema-externo.empresa.com",
-      auth_type: "bearer",
-      token_env: "ERP_TOKEN",
-      endpoints: {
-        push_document: "/documents",
-        pull_status: "/documents/{id}/status"
-      }
-    }, null, 2)
+    direction: "send",
+    http_method: "POST",
+    base_url: "https://sistema-externo.empresa.com",
+    endpoint_path: "/documents",
+    auth_type: "bearer",
+    secret_ref: "ERP_TOKEN",
+    notes: "",
   });
   const setField = (key, value) => setPayload((current) => ({ ...current, [key]: value }));
+  const configData = () => ({
+    direction: payload.direction,
+    http_method: payload.http_method,
+    base_url: payload.base_url.trim(),
+    endpoint_path: payload.endpoint_path.trim(),
+    auth: {
+      type: payload.auth_type,
+      secret_ref: payload.secret_ref.trim().toUpperCase(),
+    },
+    notes: payload.notes.trim(),
+  });
   const submit = async () => {
     if (payload.integration_name.trim().length < 3) {
       toast("Agrega un nombre de integracion.", { tone: "danger", title: "Faltan datos" });
       return;
     }
-    let configData = {};
-    try {
-      configData = payload.config_data.trim() ? JSON.parse(payload.config_data) : {};
-    } catch {
-      toast("La configuracion debe ser JSON valido.", { tone: "danger", title: "JSON invalido" });
+    if (!payload.endpoint_path.trim().startsWith("/")) {
+      toast("La ruta debe iniciar con /, por ejemplo /documents.", { tone: "danger", title: "Ruta invalida" });
+      return;
+    }
+    if (payload.auth_type !== "none" && !/^[A-Z][A-Z0-9_]{2,80}$/.test(payload.secret_ref.trim().toUpperCase())) {
+      toast("El secreto debe ser una variable como ERP_TOKEN o AMBAR_INGEST_TOKEN.", { tone: "danger", title: "Secreto invalido" });
       return;
     }
     try {
       const created = await AmbarAPI.post("/integrations", {
         integration_name: payload.integration_name.trim(),
         integration_type: payload.integration_type,
-        config_data: configData,
+        config_data: configData(),
       });
       toast("Integracion registrada.", { tone: "ok", title: "Integracion lista" });
       onCreated(created);
@@ -97,15 +143,22 @@ function IntegrationModal({ onClose, onCreated }) {
     }
   };
   return (
-    <Modal title="Nueva integracion" sub="Registra el conector. La sincronizacion queda auditada por backend." onClose={onClose}
+    <Modal wide title="Nueva integracion" sub="Define si AMBAR envia, recibe o sincroniza datos con otro sistema." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="plug-zap" onClick={submit}>Crear integracion</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
         <Field label="Nombre" required><input value={payload.integration_name} onChange={(e) => setField("integration_name", e.target.value)} placeholder="ERP principal" /></Field>
-        <Field label="Tipo"><select value={payload.integration_type} onChange={(e) => setField("integration_type", e.target.value)}><option value="generic_rest">REST generico</option><option value="sap">SAP</option><option value="odoo">Odoo</option><option value="dynamics">Dynamics</option><option value="netsuite">NetSuite</option><option value="siigo">Siigo</option><option value="helisa">Helisa</option><option value="payroll">Nomina</option><option value="document_ingest">Ingreso documental</option></select></Field>
-        <div style={{ gridColumn: "1 / -1" }}><Field label="Configuracion JSON"><textarea rows="9" value={payload.config_data} onChange={(e) => setField("config_data", e.target.value)} /></Field></div>
+        <Field label="Tipo de conector"><select value={payload.integration_type} onChange={(e) => setField("integration_type", e.target.value)}>{INTEGRATION_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
+        <Field label="Operacion"><select value={payload.direction} onChange={(e) => setField("direction", e.target.value)}>{INTEGRATION_DIRECTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
+        <Field label="Metodo HTTP"><select value={payload.http_method} onChange={(e) => setField("http_method", e.target.value)}>{INTEGRATION_METHODS.map((method) => <option key={method} value={method}>{method}</option>)}</select></Field>
+        <Field label="URL base del sistema externo"><input value={payload.base_url} onChange={(e) => setField("base_url", e.target.value)} placeholder="https://sistema.empresa.com" /></Field>
+        <Field label="Ruta endpoint" required><input value={payload.endpoint_path} onChange={(e) => setField("endpoint_path", e.target.value)} placeholder="/documents" /></Field>
+        <Field label="Autenticacion"><select value={payload.auth_type} onChange={(e) => setField("auth_type", e.target.value)}><option value="none">Sin autenticacion</option><option value="bearer">Bearer token</option><option value="api_key">API key</option><option value="basic">Basic</option></select></Field>
+        <Field label="Variable del secreto"><input value={payload.secret_ref} onChange={(e) => setField("secret_ref", e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ""))} placeholder="ERP_TOKEN" disabled={payload.auth_type === "none"} /></Field>
+        <div style={{ gridColumn: "1 / -1" }}><Field label="Notas operativas"><textarea rows="3" value={payload.notes} onChange={(e) => setField("notes", e.target.value)} placeholder="Ej: recibe documentos con expediente, tipologia, metadata y archivo digital." /></Field></div>
         <div className="notice info" style={{ gridColumn: "1 / -1" }}>
-          No guardes contrasenas ni tokens reales en este JSON. Usa nombres de variables como <span className="mono">ERP_TOKEN</span> y configura el secreto en el servidor.
+          AMBAR guarda el nombre del secreto, no el valor. En el servidor debe existir una variable con ese nombre, por ejemplo <span className="mono">{payload.secret_ref || "ERP_TOKEN"}</span>. El worker o adaptador lee esa variable al ejecutar la integracion.
         </div>
+        <pre className="json-box" style={{ gridColumn: "1 / -1" }}>{prettyJson(configData())}</pre>
       </div>
     </Modal>
   );
@@ -115,6 +168,8 @@ function IntegrationSyncModal({ integration, onClose, onSynced }) {
   const toast = useToast();
   const [payload, setPayload] = stS({ entity_type: "document", entity_id: "", payload: "{}" });
   const setField = (key, value) => setPayload((current) => ({ ...current, [key]: value }));
+  const config = integrationConfig(integration);
+  const auth = integrationAuth(config);
   const submit = async () => {
     if (!payload.entity_id.trim()) {
       toast("Indica el id de la entidad a sincronizar.", { tone: "danger", title: "Faltan datos" });
@@ -143,6 +198,12 @@ function IntegrationSyncModal({ integration, onClose, onSynced }) {
   return (
     <Modal title="Sincronizar integracion" sub={integration.integration_name} onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="refresh" onClick={submit}>Sincronizar</Button></>}>
+      <div className="integration-summary">
+        <Info label="Operacion" value={integrationDirectionLabel(config.direction)} />
+        <Info label="Metodo" value={config.http_method || "-"} />
+        <Info label="Endpoint" value={`${config.base_url || ""}${config.endpoint_path || ""}`} />
+        <Info label="Secreto servidor" value={auth.secret_ref || "Sin secreto"} />
+      </div>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
         <Field label="Tipo entidad"><select value={payload.entity_type} onChange={(e) => setField("entity_type", e.target.value)}><option value="document">Documento</option><option value="expedient">Expediente</option><option value="employee">Empleado</option><option value="transfer">Transferencia</option></select></Field>
         <Field label="Id entidad" required><input value={payload.entity_id} onChange={(e) => setField("entity_id", e.target.value)} /></Field>
@@ -292,22 +353,22 @@ function SettingsPage({ user }) {
           </div>
           <div className="integration-help">
             <div>
-              <CardHead title="Que hace una integracion" sub="Conecta AMBAR con sistemas externos sin duplicar procesos" icon="plug-zap" />
+            <CardHead title="Que hace una integracion" sub="Conecta AMBAR con sistemas externos sin duplicar procesos" icon="plug-zap" />
               <p className="muted" style={{ fontSize: "var(--fs-sm)", marginTop: "var(--s2)" }}>
-                Hoy AMBAR registra conectores, payloads y logs auditados. Para recibir archivos de otra app se agrega un adaptador de ingreso documental que cree documento, metadata y archivo digital contra el repositorio seguro.
+                Cada conector define una operacion, metodo HTTP, ruta y secreto de servidor. Asi sabes si AMBAR envia datos, recibe documentos o sincroniza estados.
               </p>
             </div>
             <ul className="integration-flow">
-              <li>Enviar metadata o estados desde AMBAR hacia un ERP, nomina, contabilidad o sistema propio.</li>
-              <li>Recibir documentos de otra aplicacion mediante API: expediente, tipologia, metadata, archivo y trazabilidad.</li>
-              <li>Consultar logs para saber que se envio, que fallo y que entidad documental quedo relacionada.</li>
+              <li><b>Enviar:</b> AMBAR hace POST, PUT o PATCH hacia otro sistema con metadata, estado o trazabilidad.</li>
+              <li><b>Recibir:</b> otra app llama el adaptador de AMBAR para crear documento, metadata y archivo digital.</li>
+              <li><b>Sincronizar:</b> AMBAR consulta con GET o actualiza con POST/PUT segun el proceso definido.</li>
             </ul>
           </div>
           {liveIntegrations.loading ? <div style={{ padding: "var(--s5)" }}><Skeleton rows={5} /></div> : integrations.length === 0 ? <Empty icon="plug-zap" title="Sin integraciones reales">No hay integraciones registradas por backend para listar en esta pantalla.</Empty> : (
-            <div className="table-scroll"><table className="tbl"><thead><tr><th>Nombre</th><th>Tipo</th><th>Estado</th><th>Creacion</th><th>Acciones</th></tr></thead><tbody>{integrations.map((item) => <tr key={item.idIntegration || item.id}>
-              <td className="cell-strong">{item.integration_name}</td><td>{item.integration_type}</td><td><Badge tone={item.status === "active" ? "success" : "neutral"} dot>{item.status}</Badge></td><td className="mono" style={{ fontSize: "var(--fs-xs)" }}>{String(item.created_at || "-").slice(0, 10)}</td>
+            <div className="table-scroll"><table className="tbl"><thead><tr><th>Nombre</th><th>Tipo</th><th>Operacion</th><th>Metodo</th><th>Endpoint</th><th>Secreto</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{integrations.map((item) => { const config = integrationConfig(item); const auth = integrationAuth(config); return <tr key={item.idIntegration || item.id}>
+              <td className="cell-strong">{item.integration_name}</td><td>{integrationTypeLabel(item.integration_type)}</td><td>{integrationDirectionLabel(config.direction)}</td><td><Badge tone="outline">{config.http_method || "-"}</Badge></td><td className="mono" style={{ fontSize: "var(--fs-xs)" }}>{config.endpoint_path || "-"}</td><td className="mono" style={{ fontSize: "var(--fs-xs)" }}>{auth.secret_ref || "-"}</td><td><Badge tone={item.status === "active" ? "success" : "neutral"} dot>{item.status}</Badge></td>
               <td><div className="row gap2 wrap"><Button size="sm" variant="ghost" icon="refresh" onClick={() => setSyncIntegration(item)} disabled={!canManageIntegrations}>Sincronizar</Button><Button size="sm" variant="ghost" icon="history" onClick={() => openLogs(item)} disabled={!canManageIntegrations}>Logs</Button></div></td>
-            </tr>)}</tbody></table></div>
+            </tr>; })}</tbody></table></div>
           )}
         </Card>
       )}

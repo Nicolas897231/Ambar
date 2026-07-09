@@ -106,6 +106,7 @@
 .integration-flow { display: grid; gap: var(--s2); margin: 0; padding: 0; }
 .integration-flow li { list-style: none; display: flex; gap: var(--s2); align-items: flex-start; color: var(--muted); font-size: var(--fs-sm); }
 .integration-flow li::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--brand); margin-top: 0.55em; flex: 0 0 auto; }
+.integration-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s3); padding: var(--s3); margin-bottom: var(--s4); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel-2); }
 .notice { padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel-2); color: var(--muted); font-size: var(--fs-sm); }
 .notice.info { border-color: color-mix(in oklab, var(--brand) 24%, var(--line)); background: var(--brand-ghost); color: var(--text); }
 .audit-filters {
@@ -315,7 +316,7 @@
   .security-roles-layout,
   .settings-grid { grid-template-columns: 1fr; }
   .settings-preview { position: static; }
-  .mfa-setup, .integration-help { grid-template-columns: 1fr; }
+  .mfa-setup, .integration-help, .integration-summary { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
