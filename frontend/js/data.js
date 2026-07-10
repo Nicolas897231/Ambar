@@ -106,10 +106,10 @@ window.can = function(user, anyOf){
 
 /* ---- Navegación (filtrada por permisos en el shell) ---- */
 window.NAV = [
-  { label: "Principal", icon: "gauge", items: [
-    { key: "dashboard", label: "Dashboard", icon: "gauge", perms: ["analytics.view","bi.view","hr.view","document.read"] },
+  { label: "Inicio operativo", icon: "gauge", items: [
+    { key: "dashboard", label: "Centro operacional", icon: "gauge", perms: ["analytics.view","bi.view","hr.view","document.read"] },
   ]},
-  { label: "Gestión Documental", icon: "file-text", items: [
+  { label: "Gestionar documentos", icon: "file-text", items: [
     { key: "expedients", label: "Expedientes", icon: "folder-kanban", perms: ["document.read","document.create"] },
     { key: "documents", label: "Documentos", icon: "file-text", perms: ["document.read","document.read_all","document.create"] },
     { key: "repository", label: "Repositorio", icon: "database", perms: ["document.read","document.read_all"] },
@@ -118,7 +118,7 @@ window.NAV = [
     { key: "digitization", label: "Digitalización", icon: "scan-line", perms: ["ocr.manage"] },
     { key: "trd", label: "TRD & Retención", icon: "table", perms: ["trd.manage"] },
   ]},
-  { label: "Archivo & Custodia", icon: "warehouse", items: [
+  { label: "Operar custodia", icon: "warehouse", items: [
     { key: "archive", label: "Archivo Físico", icon: "warehouse", perms: ["archive.manage","document.read"] },
     { key: "inventory", label: "Inventarios", icon: "boxes", perms: ["document.read","archive.manage"] },
     { key: "kardex", label: "Kardex", icon: "history", perms: ["document.read","audit.view"] },
@@ -128,7 +128,7 @@ window.NAV = [
     { key: "loans", label: "Préstamos", icon: "package-check", perms: ["document.transfer","transfer.manage"] },
     { key: "correspondence", label: "Correspondencia", icon: "mail", perms: ["mail.view","mail.manage"] },
   ]},
-  { label: "Talento Humano", icon: "briefcase", items: [
+  { label: "Talento humano", icon: "briefcase", items: [
     { key: "hr", label: "Empleados", icon: "briefcase", perms: ["hr.view","hr.manage"] },
     { key: "medical", label: "Exámenes Médicos", icon: "stethoscope", perms: ["medical.view","medical.manage"] },
     { key: "recruitment", label: "Reclutamiento", icon: "user-plus", perms: ["recruit.view","recruit.manage"] },

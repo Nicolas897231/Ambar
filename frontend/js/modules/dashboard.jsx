@@ -3,6 +3,65 @@ function greeting() {
   return h < 12 ? "Buenos dias" : h < 19 ? "Buenas tardes" : "Buenas noches";
 }
 
+function operationalQueue(dashboard, advanced, notifications, tasks, user) {
+  return [
+    {
+      title: "Digitalizar documentos pendientes",
+      detail: `${dashboard.incomplete_documents || 0} registros sin archivo digital`,
+      value: dashboard.incomplete_documents || 0,
+      route: "digitization",
+      icon: "scan-line",
+      tone: "warn",
+      perms: ["ocr.manage", "analytics.view"]
+    },
+    {
+      title: "Revisar transferencias",
+      detail: `${dashboard.pending_transfers || 0} transferencias en proceso`,
+      value: dashboard.pending_transfers || 0,
+      route: "transfers",
+      icon: "route",
+      tone: "brand",
+      perms: ["transfer.manage", "transfer.batch_manage", "analytics.view"]
+    },
+    {
+      title: "Gestionar prestamos vencidos",
+      detail: `${dashboard.overdue_loans || 0} prestamos requieren devolucion`,
+      value: dashboard.overdue_loans || 0,
+      route: "loans",
+      icon: "package-check",
+      tone: "danger",
+      perms: ["document.transfer", "transfer.manage", "analytics.view"]
+    },
+    {
+      title: "Cerrar tareas asignadas",
+      detail: `${advanced.pending_tasks || 0} tareas pendientes, ${advanced.overdue_tasks || 0} vencidas`,
+      value: advanced.pending_tasks || 0,
+      route: "dashboard",
+      icon: "list-checks",
+      tone: "info",
+      perms: ["notification.read", "analytics.view"]
+    },
+    {
+      title: "Leer alertas accionables",
+      detail: `${notifications.length || 0} notificaciones visibles para tu usuario`,
+      value: notifications.length || 0,
+      route: "dashboard",
+      icon: "bell",
+      tone: "brand",
+      perms: ["notification.read", "analytics.view"]
+    },
+    {
+      title: "Resolver tareas operativas",
+      detail: tasks[0]?.title || tasks[0]?.description || "Sin tareas urgentes asignadas",
+      value: tasks.length || 0,
+      route: tasks[0]?.module || "dashboard",
+      icon: "workflow",
+      tone: "info",
+      perms: ["notification.read", "analytics.view"]
+    },
+  ].filter(item => item.value > 0 && can(user, item.perms));
+}
+
 function DashboardPage({ user, navigate }) {
   const { data: rawDashboard, loading } = useLiveData(() => AmbarAPI.endpoints.dashboard(), {}, []);
   const { data: rawAdvanced } = useLiveData(() => AmbarAPI.endpoints.dashboardAdvanced(), {}, []);
@@ -33,6 +92,15 @@ function DashboardPage({ user, navigate }) {
     { label: "Incompletos", value: incomplete, color: "var(--viz-rose)" },
   ].filter(x => x.value > 0);
   const statusItems = Object.entries(docsByStatus).map(([label, value]) => ({ label, value, color: "var(--brand)" }));
+  const queue = operationalQueue(dashboard, advanced, notifications, tasks, user);
+  const quickActions = [
+    { label: "Registrar expediente", route: "expedients", icon: "folder-kanban", perms: ["document.create"] },
+    { label: "Registrar documento", route: "documents", icon: "file-text", perms: ["document.create"] },
+    { label: "Ubicar caja o carpeta", route: "archive", icon: "warehouse", perms: ["archive.manage", "document.read"] },
+    { label: "Preparar transferencia", route: "transfers", icon: "route", perms: ["transfer.manage", "document.transfer"] },
+    { label: "Consultar Kardex", route: "kardex", icon: "history", perms: ["document.read", "audit.view"] },
+    { label: "Buscar documentos", route: "documentSearch", icon: "search", perms: ["search.query", "document.read"] },
+  ].filter(item => can(user, item.perms));
 
   return (
     <>
@@ -61,6 +129,39 @@ function DashboardPage({ user, navigate }) {
           ))}
         </div>
       )}
+
+      <div className="grid action-grid">
+        <Card className="an-rise">
+          <CardHead title="Trabajo para hoy" sub="Acciones reales calculadas con datos del backend" icon="list-checks" action={<Badge tone={queue.length ? "warning" : "success"}>{queue.length ? "Requiere accion" : "Al dia"}</Badge>} />
+          {queue.length === 0 ? (
+            <Empty icon="check-circle" title="Sin pendientes críticos">No hay vencimientos, transferencias ni tareas urgentes para tu usuario.</Empty>
+          ) : (
+            <div className="action-board">
+              {queue.slice(0, 6).map((item) => (
+                <button key={item.title} className={`action-item tone-${item.tone}`} onClick={() => navigate(item.route)}>
+                  <span className="action-icon"><Icon name={item.icon} size={18} /></span>
+                  <span className="grow">
+                    <b>{item.title}</b>
+                    <small>{item.detail}</small>
+                  </span>
+                  <Icon name="arrow-right" size={16} />
+                </button>
+              ))}
+            </div>
+          )}
+        </Card>
+        <Card className="an-rise">
+          <CardHead title="Accesos rápidos" sub="Rutas frecuentes segun permisos" icon="sparkles" />
+          <div className="quick-actions">
+            {quickActions.map((item) => (
+              <button key={item.route} className="quick-action" onClick={() => navigate(item.route)}>
+                <Icon name={item.icon} size={17} />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </Card>
+      </div>
 
       <div className="grid" style={{ gridTemplateColumns: "1.35fr 1fr" }}>
         <Card className="an-rise">

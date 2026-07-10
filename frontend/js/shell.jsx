@@ -1,15 +1,15 @@
 const ROUTE_TITLES = {
-  dashboard: ["Principal", "Dashboard"], expedients: ["Gestión Documental", "Expedientes"], documents: ["Gestión Documental", "Documentos"],
-  digitization: ["Gestión Documental", "Digitalización"], trd: ["Gestión Documental", "TRD & Retención"],
-  archive: ["Archivo & Custodia", "Archivo Físico"], transfers: ["Archivo & Custodia", "Transferencias"], loans: ["Archivo & Custodia", "Préstamos"],
-  correspondence: ["Archivo & Custodia", "Correspondencia"], hr: ["Talento Humano", "Empleados"], medical: ["Talento Humano", "Exámenes Médicos"],
-  recruitment: ["Talento Humano", "Reclutamiento"], reports: ["Inteligencia", "Reportes & BI"], audit: ["Inteligencia", "Auditoría"],
+  dashboard: ["Inicio operativo", "Centro operacional"], expedients: ["Gestionar documentos", "Expedientes"], documents: ["Gestionar documentos", "Documentos"],
+  digitization: ["Gestionar documentos", "Digitalización"], trd: ["Gestionar documentos", "TRD & Retención"],
+  archive: ["Operar custodia", "Archivo Físico"], transfers: ["Operar custodia", "Transferencias"], loans: ["Operar custodia", "Préstamos"],
+  correspondence: ["Operar custodia", "Correspondencia"], hr: ["Talento humano", "Empleados"], medical: ["Talento humano", "Exámenes Médicos"],
+  recruitment: ["Talento humano", "Reclutamiento"], reports: ["Inteligencia", "Reportes & BI"], audit: ["Inteligencia", "Auditoría"],
   security: ["Administración", "Seguridad"], settings: ["Administración", "Configuración"],
 };
 Object.assign(ROUTE_TITLES, {
-  repository: ["Gestión Documental", "Repositorio"],
-  foliation: ["Gestión Documental", "Foliación"],
-  documentSearch: ["Gestión Documental", "Búsqueda documental"],
+  repository: ["Gestionar documentos", "Repositorio"],
+  foliation: ["Gestionar documentos", "Foliación"],
+  documentSearch: ["Gestionar documentos", "Búsqueda documental"],
 });
 
 

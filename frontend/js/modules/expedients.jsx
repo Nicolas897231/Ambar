@@ -45,6 +45,13 @@ function ExpedientDetail({ exp, onClose, navigate }) {
     return String(expId || "") === String(exp.backendId || "") || String(expCode).toLowerCase() === String(exp.id).toLowerCase();
   });
   const folders = AmbarAPI.listFrom(foldersLive.data);
+  const nextAction = docs.length === 0
+    ? { label: "Registrar documento", route: "documents", icon: "file-text", text: "Este expediente no tiene documentos asociados." }
+    : folders.length === 0
+      ? { label: "Crear carpeta", route: null, icon: "folders", text: "Organiza los documentos en una unidad de conservacion." }
+      : exp.compliance < 100
+        ? { label: "Revisar foliacion", route: "foliation", icon: "list-checks", text: "La completitud documental aun no esta al 100%." }
+        : { label: "Ver Kardex", route: "kardex", icon: "history", text: "El expediente esta listo para revisar trazabilidad." };
   const createFolder = async () => {
     if (!folderDraft.folder_code.trim() || !folderDraft.folder_name.trim()) {
       toast("Código y nombre de carpeta son obligatorios.", { tone: "danger", title: "Faltan datos" });
@@ -92,6 +99,26 @@ function ExpedientDetail({ exp, onClose, navigate }) {
           </p>
         </Card>
       </div>
+      <Card className="workspace-actions">
+        <div className="row between wrap" style={{ gap: "var(--s4)", alignItems: "flex-start" }}>
+          <div className="row gap3" style={{ minWidth: 0 }}>
+            <span className="m-icon" style={{ background: "var(--brand-ghost)", color: "var(--brand)" }}><Icon name={nextAction.icon} size={18} /></span>
+            <div>
+              <h3 style={{ fontSize: "var(--fs-md)" }}>Siguiente accion sugerida</h3>
+              <p className="muted" style={{ marginTop: 4 }}>{nextAction.text}</p>
+            </div>
+          </div>
+          <Button icon={nextAction.icon} onClick={() => nextAction.route ? navigate(nextAction.route) : document.querySelector('[placeholder="CAR-001"]')?.focus()}>{nextAction.label}</Button>
+        </div>
+        <div className="quick-actions compact">
+          <button className="quick-action" onClick={() => navigate && navigate("documents")}><Icon name="file-text" size={16} /><span>Documentos</span></button>
+          <button className="quick-action" onClick={() => navigate && navigate("foliation")}><Icon name="list-checks" size={16} /><span>Foliacion</span></button>
+          <button className="quick-action" onClick={() => navigate && navigate("transfers")}><Icon name="route" size={16} /><span>Transferir</span></button>
+          <button className="quick-action" onClick={() => navigate && navigate("loans")}><Icon name="package-check" size={16} /><span>Prestar</span></button>
+          <button className="quick-action" onClick={() => navigate && navigate("archive")}><Icon name="warehouse" size={16} /><span>Ubicacion</span></button>
+          <button className="quick-action" onClick={() => navigate && navigate("kardex")}><Icon name="history" size={16} /><span>Kardex</span></button>
+        </div>
+      </Card>
       <div className="grid cols-2" style={{ gap: "var(--s4)", marginTop: "var(--s4)" }}>
         <Card>
           <CardHead title="Documentos del expediente" sub="Registros reales asociados" icon="file-text" action={<Badge tone="outline">{docs.length}</Badge>} />
@@ -119,8 +146,12 @@ function ExpedientDetail({ exp, onClose, navigate }) {
         </Card>
       </div>
       <Card>
-        <Empty icon="history" title="Trazabilidad bajo demanda">Para ver movimientos de custodia y ubicación abre el módulo de Archivo Físico o Kardex. No se muestran movimientos inventados.</Empty>
-        <Button variant="ghost" className="btn-block" icon="route" onClick={() => navigate && navigate("archive")}>Ver custodia</Button>
+        <CardHead title="Trazabilidad" sub="No se inventan movimientos; se consulta Kardex y custodia cuando el backend tenga eventos" icon="history" />
+        <div className="quick-actions compact">
+          <button className="quick-action" onClick={() => navigate && navigate("archive")}><Icon name="warehouse" size={16} /><span>Ver custodia</span></button>
+          <button className="quick-action" onClick={() => navigate && navigate("kardex")}><Icon name="history" size={16} /><span>Ver Kardex</span></button>
+          <button className="quick-action" onClick={() => navigate && navigate("audit")}><Icon name="shield-check" size={16} /><span>Ver auditoria</span></button>
+        </div>
       </Card>
     </Drawer>
   );

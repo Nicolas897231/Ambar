@@ -61,6 +61,22 @@ function EmployeeProfile({ emp, onClose, navigate }) {
         </div>
         <div className="col center"><Gauge value={compliance.compliance ?? emp.compliance} label="Expediente" tone={(compliance.compliance ?? emp.compliance) >= 90 ? "var(--ok)" : "var(--warn)"} /></div>
       </div>
+      <Card className="workspace-actions" pad="sm">
+        <div className="row between wrap" style={{ gap: "var(--s3)" }}>
+          <div>
+            <h3 style={{ fontSize: "var(--fs-md)" }}>Vista 360 laboral</h3>
+            <p className="muted" style={{ marginTop: 4 }}>Desde aqui puedes revisar documentos, contratos, examenes, novedades y trazabilidad sin duplicar archivos.</p>
+          </div>
+          <Badge tone={(compliance.compliance ?? emp.compliance) >= 90 ? "success" : "warning"}>{compliance.compliance ?? emp.compliance}% documental</Badge>
+        </div>
+        <div className="quick-actions compact">
+          <button className="quick-action" onClick={() => setTab("documents")}><Icon name="folder-kanban" size={16} /><span>Documentos</span></button>
+          <button className="quick-action" onClick={() => setTab("contracts")}><Icon name="file-text" size={16} /><span>Contratos</span></button>
+          <button className="quick-action" onClick={() => setTab("medical")}><Icon name="stethoscope" size={16} /><span>Examenes</span></button>
+          <button className="quick-action" onClick={() => setTab("changes")}><Icon name="history" size={16} /><span>Cargos</span></button>
+          <button className="quick-action" onClick={() => navigate && navigate("expedients")}><Icon name="folder-kanban" size={16} /><span>Expediente</span></button>
+        </div>
+      </Card>
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       {tab === "info" && (<div className="grid cols-2" style={{ gap: "var(--s4)" }}>{[["Identificación", emp.id], ["Cargo", emp.pos], ["Área / dependencia", emp.area], ["Tipo de contrato", emp.contract], ["Fecha de ingreso", emp.start], ["Estado", emp.state]].map(([k, v]) => <div key={k} className="kv"><span className="k">{k}</span><span className="v">{v}</span></div>)}</div>)}
       {tab === "documents" && (<div className="col gap3">
@@ -202,7 +218,7 @@ function HRPage({ user, navigate }) {
 
   return (
     <>
-      <div className="page-head"><div><div className="eyebrow">Talento Humano</div><h1>Recursos Humanos</h1><p className="lead">Administra el ciclo de vida de tus colaboradores: datos, contratos, expediente documental, exámenes médicos y novedades, todo conectado al archivo.</p></div><div className="page-actions">{canManage && <><Button variant="ghost" icon="download" onClick={exportRows}>Exportar</Button><Button icon="user-plus" onClick={() => setModal("employee")}>Alta manual</Button></>}</div></div>
+      <div className="page-head"><div><div className="eyebrow">Talento Humano</div><h1>Recursos Humanos</h1><p className="lead">Administra el ciclo de vida de tus colaboradores: datos, contratos, expediente documental, exámenes médicos y novedades, todo conectado al archivo.</p></div><div className="page-actions">{canManage && <><Button variant="ghost" icon="download" onClick={exportRows}>Exportar</Button><Button icon="user-plus" onClick={() => setModal("employee")}>Nuevo empleado</Button></>}</div></div>
       <div className="grid cols-4 stagger">
         <Metric label="Empleados activos" value={employees.filter(e => String(e.state).toLowerCase().includes("active") || String(e.state).toLowerCase().includes("activo")).length} icon="users" tone="brand" accent />
         <Metric label="Contratos por vencer" value={liveContracts.data.length} icon="file-clock" tone="danger" accent foot="próximos 30 días" />
