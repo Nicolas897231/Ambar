@@ -9,6 +9,8 @@ COPY ["Mapa de Pantallas.html", "./"]
 COPY js ./js
 COPY styles ./styles
 COPY scripts ./scripts
+COPY assets ./assets
+COPY favicon.svg ./favicon.svg
 RUN npm run build
 
 FROM node:24-alpine AS runner
