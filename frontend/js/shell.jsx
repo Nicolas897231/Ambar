@@ -26,7 +26,7 @@ function Sidebar({ user, route, onNavigate, collapsed, setCollapsed, onOpenUserM
     <aside className="sidebar">
       <div className="side-brand">
         <button className="icon-btn" style={{ color: "var(--side-muted)", display: collapsed ? "grid" : "none" }} onClick={() => setCollapsed(false)} aria-label="Expandir menú lateral"><Icon name="menu" size={18} /></button>
-        <div className="side-logo" onClick={() => onNavigate("dashboard")} style={{ cursor: "pointer" }}><Icon name="folder-kanban" size={22} /></div>
+        <div className="side-logo" onClick={() => onNavigate("dashboard")} style={{ cursor: "pointer" }}><img src="/assets/ambar-logo.svg" alt="" /></div>
         <div className="b-text grow">
           <div className="b-name">AMBAR</div>
           <div className="b-sub">SGDEA Enterprise</div>

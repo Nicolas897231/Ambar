@@ -65,7 +65,7 @@ function LoginScreen({ onAuth }) {
 
       <div className="auth-brandpanel">
         <div className="row gap2" style={{ marginBottom: "auto" }}>
-          <div className="side-logo" style={{ width: 44, height: 44 }}><Icon name="folder-kanban" size={24} /></div>
+          <div className="side-logo" style={{ width: 44, height: 44 }}><img src="/assets/ambar-logo.svg" alt="" /></div>
           <div><div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 24, color: "#fff", letterSpacing: ".02em" }}>AMBAR</div><div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: "rgba(255,255,255,.55)" }}>SGDEA Enterprise</div></div>
         </div>
         <div className="auth-hero">
@@ -87,7 +87,7 @@ function LoginScreen({ onAuth }) {
         <div className="auth-card an-scale">
           {view === "recover" ? <RecoverView onBack={() => setView("login")} /> : (
             <>
-              <div className="auth-mobile-brand"><div className="side-logo"><Icon name="folder-kanban" size={22} /></div><b>AMBAR</b></div>
+              <div className="auth-mobile-brand"><div className="side-logo"><img src="/assets/ambar-logo.svg" alt="" /></div><b>AMBAR</b></div>
               <h2>Bienvenido de nuevo</h2>
               <p className="muted" style={{ marginBottom: "var(--s5)" }}>Ingresa con tu cuenta corporativa para continuar.</p>
               <form onSubmit={submitCreds} className="col" style={{ gap: "var(--s4)" }}>

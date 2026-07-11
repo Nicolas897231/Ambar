@@ -1,5 +1,6 @@
 import json
 from collections.abc import Callable
+from functools import lru_cache
 from typing import TypeVar
 
 from redis import Redis
@@ -17,9 +18,21 @@ LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCKOUT_SECONDS = 900  # 15 minutos
 
 
+@lru_cache(maxsize=1)
+def _redis_client() -> Redis:
+    settings = get_settings()
+    return Redis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        socket_connect_timeout=1,
+        socket_timeout=2,
+        health_check_interval=30,
+    )
+
+
 def redis_client() -> Redis | None:
     try:
-        return Redis.from_url(get_settings().redis_url, decode_responses=True, socket_connect_timeout=1)
+        return _redis_client()
     except Exception:
         return None
 

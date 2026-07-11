@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -9,8 +10,10 @@ from app.db.models import Document, DocumentLoan, Expedient, Folder, KardexMovem
 from app.db.session import get_db
 from app.domains.archives.router import _require_archive_access, allowed_archive_ids
 from app.services.audit import write_audit
+from app.services.cache import cached
 
 router = APIRouter(prefix="/kardex", tags=["kardex"])
+logger = logging.getLogger(__name__)
 
 
 def _authorized_archive_filter(ids: list[int]):
@@ -95,24 +98,34 @@ def _apply_filters(query, *, archive_id: int | None, entity_type: str | None, mo
 
 @router.get("/summary")
 def summary(user: User = Depends(require_permission("document.read")), db: Session = Depends(get_db)):
-    ids = allowed_archive_ids(db, user)
-    if not ids:
-        return {"documents": 0, "folders": 0, "expedients": 0, "boxes": 0, "pending_transfers": 0, "pending_receptions": 0, "overdue_loans": 0, "today_movements": 0, "recent_rejections": 0, "fuid_inconsistencies": 0, "unfoliated_documents": 0}
-    today = datetime.now().date()
-    movements = _base_query(db, user)
-    return {
-        "documents": db.query(Document).filter(Document.ps930IdArchive.in_(ids)).count(),
-        "folders": db.query(Folder).filter(Folder.ps930IdArchive.in_(ids)).count(),
-        "expedients": db.query(Expedient).filter(Expedient.ps930IdArchive.in_(ids)).count(),
-        "boxes": db.query(PhysicalBox).filter(PhysicalBox.ps930IdArchive.in_(ids)).count(),
-        "pending_transfers": db.query(TransferBatch).filter(or_(TransferBatch.ps930OriginArchiveId.in_(ids), TransferBatch.ps930DestinationArchiveId.in_(ids)), TransferBatch.status.in_(["pending", "approved", "packed", "shipped", "under_review"])).count(),
-        "pending_receptions": db.query(TransferBatchItem).filter(or_(TransferBatchItem.ps930OriginArchiveId.in_(ids), TransferBatchItem.ps930DestinationArchiveId.in_(ids)), TransferBatchItem.status.in_(["pending", "pending_review", "with_inconsistency"])).count(),
-        "overdue_loans": db.query(DocumentLoan).filter(DocumentLoan.ps930IdArchive.in_(ids), DocumentLoan.status == "overdue").count(),
-        "today_movements": movements.filter(KardexMovement.created_at >= datetime.combine(today, datetime.min.time())).count(),
-        "recent_rejections": movements.filter(KardexMovement.status == "rejected").count(),
-        "fuid_inconsistencies": movements.filter(KardexMovement.movement_type.in_(["reception.item.partially_received", "reception.item.rejected"])).count(),
-        "unfoliated_documents": db.query(Document).filter(Document.ps930IdArchive.in_(ids), Document.folio_total.is_(None)).count(),
-    }
+    return cached(f"kardex:summary:{user.identification}", lambda: _summary_payload(user, db), ttl=45)
+
+
+def _summary_payload(user: User, db: Session):
+    fallback = {"documents": 0, "folders": 0, "expedients": 0, "boxes": 0, "pending_transfers": 0, "pending_receptions": 0, "overdue_loans": 0, "today_movements": 0, "recent_rejections": 0, "fuid_inconsistencies": 0, "unfoliated_documents": 0}
+    try:
+        ids = allowed_archive_ids(db, user)
+        if not ids:
+            return fallback
+        today = datetime.now().date()
+        movements = _base_query(db, user)
+        return {
+            "documents": db.query(Document).filter(Document.ps930IdArchive.in_(ids)).count(),
+            "folders": db.query(Folder).filter(Folder.ps930IdArchive.in_(ids)).count(),
+            "expedients": db.query(Expedient).filter(Expedient.ps930IdArchive.in_(ids)).count(),
+            "boxes": db.query(PhysicalBox).filter(PhysicalBox.ps930IdArchive.in_(ids)).count(),
+            "pending_transfers": db.query(TransferBatch).filter(or_(TransferBatch.ps930OriginArchiveId.in_(ids), TransferBatch.ps930DestinationArchiveId.in_(ids)), TransferBatch.status.in_(["pending", "approved", "packed", "shipped", "under_review"])).count(),
+            "pending_receptions": db.query(TransferBatchItem).filter(or_(TransferBatchItem.ps930OriginArchiveId.in_(ids), TransferBatchItem.ps930DestinationArchiveId.in_(ids)), TransferBatchItem.status.in_(["pending", "pending_review", "with_inconsistency"])).count(),
+            "overdue_loans": db.query(DocumentLoan).filter(DocumentLoan.ps930IdArchive.in_(ids), DocumentLoan.status == "overdue").count(),
+            "today_movements": movements.filter(KardexMovement.created_at >= datetime.combine(today, datetime.min.time())).count(),
+            "recent_rejections": movements.filter(KardexMovement.status == "rejected").count(),
+            "fuid_inconsistencies": movements.filter(KardexMovement.movement_type.in_(["reception.item.partially_received", "reception.item.rejected"])).count(),
+            "unfoliated_documents": db.query(Document).filter(Document.ps930IdArchive.in_(ids), Document.folio_total.is_(None)).count(),
+        }
+    except Exception:
+        logger.exception("kardex summary failed")
+        db.rollback()
+        return fallback
 
 
 @router.get("/timeline")

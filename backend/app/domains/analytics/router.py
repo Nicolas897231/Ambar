@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends
@@ -21,8 +22,10 @@ from app.db.models import (
     WorkflowTask,
 )
 from app.db.session import get_db
+from app.services.cache import cached
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
+logger = logging.getLogger(__name__)
 
 
 def _allowed_archive_ids(db: Session, user: User) -> list[int] | None:
@@ -50,6 +53,15 @@ def dashboard(
     user: User = Depends(require_permission("analytics.view")),
     db: Session = Depends(get_db),
 ):
+    cache_key = f"analytics:dashboard:{user.company_id}:{user.identification}"
+
+    def build() -> dict:
+        return _dashboard_payload(user, db)
+
+    return cached(cache_key, build, ttl=45)
+
+
+def _dashboard_payload(user: User, db: Session) -> dict:
     documents_query = db.query(Document).filter(Document.company_id == user.company_id)
     archive_ids = _allowed_archive_ids(db, user)
     total_documents = documents_query.count()
@@ -115,42 +127,69 @@ def advanced_dashboard(
     user: User = Depends(require_permission("analytics.view")),
     db: Session = Depends(get_db),
 ):
-    from app.db.models import Employee, EmployeeContract, WorkflowInstance
+    cache_key = f"analytics:advanced:{user.company_id}:{user.identification}"
 
-    archive_ids = _allowed_archive_ids(db, user)
-    active_workflows = db.query(WorkflowInstance).filter(WorkflowInstance.status == "in_progress").count()
-    pending_tasks = db.query(WorkflowTask).filter(WorkflowTask.ps405Identification == user.identification, WorkflowTask.status.in_(["pending", "in_progress", "in_review"])).count()
-    overdue_tasks = db.query(WorkflowTask).filter(WorkflowTask.ps405Identification == user.identification, WorkflowTask.status == "overdue").count()
-    overdue_tasks += db.query(WorkflowTask).filter(WorkflowTask.ps405Identification == user.identification, WorkflowTask.status.in_(["pending", "in_progress", "in_review"]), WorkflowTask.due_date < datetime.now(UTC)).count()
-    batches_query = db.query(TransferBatch).filter(TransferBatch.status.notin_(["closed", "rejected"]))
-    if archive_ids is not None:
-        batches_query = batches_query.filter(
-            TransferBatch.ps930OriginArchiveId.in_(archive_ids) | TransferBatch.ps930DestinationArchiveId.in_(archive_ids)
-        ) if archive_ids else batches_query.filter(False)
-    active_batches = batches_query.count()
-    receptions_query = db.query(TransferBatchItem).filter(TransferBatchItem.status.in_(["pending", "pending_review", "with_inconsistency"]))
-    receptions_query = _filter_allowed_archives(receptions_query, TransferBatchItem.ps930OriginArchiveId, archive_ids)
-    pending_receptions = receptions_query.count()
-    overdue_loans = _filter_allowed_archives(db.query(DocumentLoan), DocumentLoan.ps930IdArchive, archive_ids).filter(DocumentLoan.status == "overdue").count()
-    employees = db.query(Employee).filter(Employee.company_id == user.company_id).count()
-    active_contracts = (
-        db.query(EmployeeContract)
-        .join(Employee, Employee.identification == EmployeeContract.ps1010Identification)
-        .filter(Employee.company_id == user.company_id, EmployeeContract.status == "active")
-        .count()
-    )
-    operational_load = pending_tasks + active_batches
-    risk_level = "Alto" if overdue_tasks >= 5 else "Medio" if overdue_tasks >= 1 else "Bajo"
-    return {
-        "active_workflows": active_workflows,
-        "pending_tasks": pending_tasks,
-        "overdue_tasks": overdue_tasks,
-        "action_required": db.query(AdvancedNotification).filter(AdvancedNotification.ps405Identification == user.identification, AdvancedNotification.status == "action_required").count(),
-        "pending_receptions": pending_receptions,
-        "overdue_loans": overdue_loans,
-        "active_transfer_batches": active_batches,
-        "employees": employees,
-        "active_contracts": active_contracts,
-        "operational_load": operational_load,
-        "risk_level": risk_level,
+    def build() -> dict:
+        return _advanced_dashboard_payload(user, db)
+
+    return cached(cache_key, build, ttl=45)
+
+
+def _advanced_dashboard_payload(user: User, db: Session) -> dict:
+    fallback = {
+        "active_workflows": 0,
+        "pending_tasks": 0,
+        "overdue_tasks": 0,
+        "action_required": 0,
+        "pending_receptions": 0,
+        "overdue_loans": 0,
+        "active_transfer_batches": 0,
+        "employees": 0,
+        "active_contracts": 0,
+        "operational_load": 0,
+        "risk_level": "Bajo",
     }
+    try:
+        from app.db.models import Employee, EmployeeContract, WorkflowInstance
+
+        archive_ids = _allowed_archive_ids(db, user)
+        active_workflows = db.query(WorkflowInstance).filter(WorkflowInstance.status == "in_progress").count()
+        pending_tasks = db.query(WorkflowTask).filter(WorkflowTask.ps405Identification == user.identification, WorkflowTask.status.in_(["pending", "in_progress", "in_review"])).count()
+        overdue_tasks = db.query(WorkflowTask).filter(WorkflowTask.ps405Identification == user.identification, WorkflowTask.status == "overdue").count()
+        overdue_tasks += db.query(WorkflowTask).filter(WorkflowTask.ps405Identification == user.identification, WorkflowTask.status.in_(["pending", "in_progress", "in_review"]), WorkflowTask.due_date < datetime.now(UTC)).count()
+        batches_query = db.query(TransferBatch).filter(TransferBatch.status.notin_(["closed", "rejected"]))
+        if archive_ids is not None:
+            batches_query = batches_query.filter(
+                TransferBatch.ps930OriginArchiveId.in_(archive_ids) | TransferBatch.ps930DestinationArchiveId.in_(archive_ids)
+            ) if archive_ids else batches_query.filter(False)
+        active_batches = batches_query.count()
+        receptions_query = db.query(TransferBatchItem).filter(TransferBatchItem.status.in_(["pending", "pending_review", "with_inconsistency"]))
+        receptions_query = _filter_allowed_archives(receptions_query, TransferBatchItem.ps930OriginArchiveId, archive_ids)
+        pending_receptions = receptions_query.count()
+        overdue_loans = _filter_allowed_archives(db.query(DocumentLoan), DocumentLoan.ps930IdArchive, archive_ids).filter(DocumentLoan.status == "overdue").count()
+        employees = db.query(Employee).filter(Employee.company_id == user.company_id).count()
+        active_contracts = (
+            db.query(EmployeeContract)
+            .join(Employee, Employee.identification == EmployeeContract.ps1010Identification)
+            .filter(Employee.company_id == user.company_id, EmployeeContract.status == "active")
+            .count()
+        )
+        operational_load = pending_tasks + active_batches
+        risk_level = "Alto" if overdue_tasks >= 5 else "Medio" if overdue_tasks >= 1 else "Bajo"
+        return {
+            "active_workflows": active_workflows,
+            "pending_tasks": pending_tasks,
+            "overdue_tasks": overdue_tasks,
+            "action_required": db.query(AdvancedNotification).filter(AdvancedNotification.ps405Identification == user.identification, AdvancedNotification.status == "action_required").count(),
+            "pending_receptions": pending_receptions,
+            "overdue_loans": overdue_loans,
+            "active_transfer_batches": active_batches,
+            "employees": employees,
+            "active_contracts": active_contracts,
+            "operational_load": operational_load,
+            "risk_level": risk_level,
+        }
+    except Exception:
+        logger.exception("advanced analytics summary failed")
+        db.rollback()
+        return fallback

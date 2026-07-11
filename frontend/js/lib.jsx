@@ -58,6 +58,15 @@ function CardHead({ title, sub, icon, action }) {
 }
 
 /* ---------- Badge ---------- */
+function FilterChip({ label, active, onClick }) {
+  return (
+    <button type="button" className={`chip filter-chip${active ? " active" : ""}`} onClick={onClick}>
+      <span>{label}</span>
+      {onClick && <span className="x" aria-hidden="true">x</span>}
+    </button>
+  );
+}
+
 function Badge({ tone = "neutral", children, dot, icon, className = "" }) {
   const map = { success: "badge-success", warning: "badge-warning", danger: "badge-danger", info: "badge-info", brand: "badge-brand", outline: "badge-outline", neutral: "" };
   return <span className={`badge ${map[tone] || ""} ${className}`}>{dot && <span className="dot" />}{icon && <Icon name={icon} size={12} />}{children}</span>;
@@ -395,5 +404,5 @@ function Stepper({ steps, current }) {
   );
 }
 
-Object.assign(window, { Icon, Button, Card, CardHead, Badge, Tabs, Segmented, Tip, HelpDot, Switch, Field, Empty, Skeleton, Avatar, Modal, Drawer, ToastProvider, useToast, downloadCSV, downloadJSON, downloadText, safeFilename, Metric, Meter, Stepper, useCountUp,
+Object.assign(window, { Icon, Button, Card, CardHead, FilterChip, Badge, Tabs, Segmented, Tip, HelpDot, Switch, Field, Empty, Skeleton, Avatar, Modal, Drawer, ToastProvider, useToast, downloadCSV, downloadJSON, downloadText, safeFilename, Metric, Meter, Stepper, useCountUp,
   React, useState, useEffect, useRef, useMemo, useCallback, createContext, useContext });

@@ -16,6 +16,24 @@ from app.core.config import get_settings
 # Hash dummy precalculado para ejecutar bcrypt incluso cuando el usuario no existe,
 # nivelando el tiempo de respuesta y previniendo enumeración de usuarios por timing.
 _DUMMY_HASH = bcrypt.hashpw(b"ambar-timing-guard-dummy", bcrypt.gensalt(rounds=12)).decode("utf-8")
+_COMMON_LEAKED_PASSWORD_PATTERNS = {
+    "password",
+    "password1",
+    "password123",
+    "admin123",
+    "admin1234",
+    "qwerty123",
+    "qwerty123!",
+    "changeeme",
+    "changeme",
+    "changeme123",
+    "changeme123!",
+    "ambar123",
+    "ambar123!",
+    "12345678",
+    "123456789",
+    "1234567890",
+}
 
 
 def hash_password(password: str) -> str:
@@ -62,6 +80,12 @@ def decode_token(token: str) -> dict[str, Any]:
 
 
 def enforce_password_policy(password: str) -> None:
+    normalized = password.strip().casefold()
+    compact = "".join(char for char in normalized if char.isalnum())
+    if normalized in _COMMON_LEAKED_PASSWORD_PATTERNS or compact in _COMMON_LEAKED_PASSWORD_PATTERNS:
+        raise ValueError("Password is too common or appears in leaked password patterns")
+    if any(pattern in normalized for pattern in ("password", "qwerty", "123456", "abcdef")):
+        raise ValueError("Password contains a common leaked pattern")
     if len(password) < 12:
         raise ValueError("Password must have at least 12 characters")
     if len(password.encode("utf-8")) > 72:

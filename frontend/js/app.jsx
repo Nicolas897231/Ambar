@@ -22,17 +22,13 @@ function getRoute() {
 
 function Root() {
   const [user, setUser] = useState(() => getSession());
-  const [checkingSession, setCheckingSession] = useState(() => Boolean(getSession()));
+  const [checkingSession, setCheckingSession] = useState(true);
   const [route, setRoute] = useState(getRoute());
   const [theme, setThemeState] = useState(getTheme());
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
   useEffect(() => {
     let alive = true;
-    if (!window.AmbarAPI?.hasSession()) {
-      setCheckingSession(false);
-      return;
-    }
     window.AmbarAPI.validateSession()
       .then((freshUser) => {
         if (!alive) return;

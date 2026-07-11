@@ -10,7 +10,7 @@ from app.core.security import decode_token
 from app.db.models import Permission, RolePermission, User, UserRole
 from app.db.session import get_db
 from app.services.audit import write_audit
-from app.services.cache import is_token_blacklisted
+from app.services.cache import get_json, is_token_blacklisted, set_json
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -57,19 +57,25 @@ def get_current_user(
 
 
 def user_permissions(db: Session, user: User) -> set[str]:
+    cache_key = f"user_permissions:{user.identification}"
+    cached = get_json(cache_key)
+    if isinstance(cached, list) and all(isinstance(item, str) for item in cached):
+        return set(cached)
     role_ids = [
         row.ps407IdRole
         for row in db.query(UserRole).filter(UserRole.ps405Identification == user.identification).all()
     ]
     if not role_ids:
         return set()
-    return {
+    permissions = {
         item.permission_key
         for item in db.query(Permission.permission_key)
         .join(RolePermission, RolePermission.ps409IdPermission == Permission.idPermission)
         .filter(RolePermission.ps407IdRole.in_(role_ids))
         .all()
     }
+    set_json(cache_key, sorted(permissions), ttl=60)
+    return permissions
 
 
 def require_permission(permission: str) -> Callable:

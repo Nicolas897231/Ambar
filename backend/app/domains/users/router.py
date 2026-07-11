@@ -3,13 +3,14 @@ from datetime import datetime
 import re
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import require_permission
 from app.core.security import enforce_password_policy, generate_totp_secret, hash_password, totp_uri
 from app.db.models import Permission, RefreshSession, Role, RolePermission, User, UserRole
 from app.db.session import get_db
 from app.services.audit import write_audit
+from app.services.cache import delete_pattern
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -179,6 +180,10 @@ def _permissions_by_key(db: Session, keys: list[str]) -> list[Permission]:
     return permissions
 
 
+def _invalidate_permission_cache(identification: str | None = None) -> None:
+    delete_pattern(f"user_permissions:{identification}" if identification else "user_permissions:*")
+
+
 @router.get("/permissions", response_model=list[PermissionOut])
 def list_permissions(
     _: User = Depends(require_permission("users.manage")),
@@ -229,6 +234,7 @@ def create_role(
         request=request,
     )
     db.commit()
+    _invalidate_permission_cache()
     db.refresh(role)
     return _role_out(role)
 
@@ -267,6 +273,7 @@ def update_role(
         request=request,
     )
     db.commit()
+    _invalidate_permission_cache()
     db.refresh(role)
     return _role_out(role)
 
@@ -274,13 +281,15 @@ def update_role(
 @router.get("", response_model=list[UserOut])
 def list_users(
     include_inactive: bool = Query(default=False),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=250),
     actor: User = Depends(require_permission("users.manage")),
     db: Session = Depends(get_db),
 ) -> list[UserOut]:
-    query = db.query(User).filter(User.company_id == actor.company_id)
+    query = db.query(User).options(selectinload(User.roles).selectinload(UserRole.role)).filter(User.company_id == actor.company_id)
     if not include_inactive:
         query = query.filter(User.status == "active")
-    return [_out(user, db) for user in query.order_by(User.created_at.desc()).all()]
+    return [_out(user, db) for user in query.order_by(User.created_at.desc()).offset(skip).limit(limit).all()]
 
 
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
@@ -345,6 +354,7 @@ def create_user(
         request=request,
     )
     db.commit()
+    _invalidate_permission_cache(user.identification)
     db.refresh(user)
     return _out(user, db)
 
@@ -410,6 +420,7 @@ def disable_mfa(
         request=request,
     )
     db.commit()
+    _invalidate_permission_cache(user.identification)
     db.refresh(user)
     return _out(user, db)
 
@@ -456,6 +467,7 @@ def update_user(
         request=request,
     )
     db.commit()
+    _invalidate_permission_cache(user.identification)
     db.refresh(user)
     return _out(user, db)
 

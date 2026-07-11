@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   const USER = "ambar_current_user";
   const API_BASE = window.AMBAR_API_BASE || "/api/v1";
 
@@ -104,13 +104,12 @@
       await request("/auth/login", { method: "POST", body: JSON.stringify({ email, password, mfa_code: mfa_code || null }) });
       const me = await this.validateSession();
       if (!me) {
-        throw new Error("No fue posible confirmar la sesión. Revisa que el gateway conserve las cookies de autenticación.");
+        throw new Error("No fue posible confirmar la sesion. Revisa que el gateway conserve las cookies de autenticacion.");
       }
       return me;
     },
     async me(force = false) {
-      const cached = localStorage.getItem(USER);
-      if (cached && !force) return JSON.parse(cached);
+      void force;
       const me = mapUser(await request("/auth/me"));
       localStorage.setItem(USER, JSON.stringify(me));
       return me;
@@ -197,7 +196,7 @@
       sstAlerts: () => request("/hr/sst/alerts"),
       audit: (query = "") => request(`/audit?limit=100${query ? `&${query}` : ""}`),
       auditSummary: () => request("/audit/summary"),
-      users: () => request("/users"),
+      users: (params = {}) => request(`/users?skip=${Number(params.skip || 0)}&limit=${Math.min(Number(params.limit || 100), 250)}`),
       roles: () => request("/users/roles"),
       permissions: () => request("/users/permissions"),
       integrations: () => request("/integrations"),

@@ -99,7 +99,7 @@ function safePath(urlPath) {
 
 async function serveIndex(res) {
   const html = await readFile(join(root, "index.html"));
-  res.writeHead(200, secureHeaders({ "content-type": "text/html; charset=utf-8" }));
+  res.writeHead(200, secureHeaders({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }));
   res.end(html);
 }
 
@@ -125,7 +125,8 @@ const server = http.createServer(async (req, res) => {
   if (ext === ".map" || filePath.includes("/.")) return send(res, 404, "Not Found");
   if (existsSync(filePath) && statSync(filePath).isFile()) {
     const type = mime[extname(filePath).toLowerCase()] || "application/octet-stream";
-    const cache = filePath.includes(`${root}\\vendor`) || filePath.includes(`${root}/vendor`) ? { "cache-control": "public, max-age=31536000, immutable" } : {};
+    const immutableAsset = filePath.includes(`${root}\\vendor`) || filePath.includes(`${root}/vendor`) || filePath.includes(`${root}\\assets`) || filePath.includes(`${root}/assets`) || ext === ".svg";
+    const cache = immutableAsset ? { "cache-control": "public, max-age=31536000, immutable" } : { "cache-control": "no-cache" };
     res.writeHead(200, secureHeaders({ "content-type": type, ...cache }));
     createReadStream(filePath).pipe(res);
     return;

@@ -9,7 +9,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
-from app.core.middleware import DistributedRateLimitMiddleware, MetricsMiddleware, RequestContextMiddleware, SecurityHeadersMiddleware
+from app.core.middleware import DistributedRateLimitMiddleware, MetricsMiddleware, RequestContextMiddleware, SafeExceptionMiddleware, SecurityHeadersMiddleware
 from app.db.bootstrap import seed_database
 from app.db.session import Base, SessionLocal, engine, read_engine
 from app.services.cache import get_json, set_json
@@ -315,6 +315,7 @@ def create_app() -> FastAPI:
         redoc_url=None if settings.is_production else "/redoc",
         openapi_url=None if settings.is_production else "/openapi.json",
     )
+    app.add_middleware(SafeExceptionMiddleware)
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
     app.add_middleware(RequestContextMiddleware)

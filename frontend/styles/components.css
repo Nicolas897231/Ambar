@@ -105,6 +105,8 @@ table.tbl { width: 100%; min-width: 760px; border-collapse: collapse; font-size:
 .chip:hover { border-color: var(--brand); color: var(--text); }
 .chip.active { background: var(--brand-ghost); border-color: var(--brand); color: var(--brand-ink); }
 .chip .x { opacity: 0.6; }
+.filter-chip { max-width: 220px; }
+.filter-chip span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------------- EMPTY / SKELETON ---------------- */
 .empty { display: grid; justify-items: center; text-align: center; gap: var(--s3); padding: var(--s9) var(--s5); color: var(--muted); }

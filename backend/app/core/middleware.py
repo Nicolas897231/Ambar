@@ -1,4 +1,5 @@
 from collections import defaultdict
+import logging
 from time import time
 from uuid import uuid4
 
@@ -10,11 +11,45 @@ from app.core.config import get_settings
 from app.services.cache import increment_window
 from app.services.metrics import metrics_registry, now
 
+logger = logging.getLogger(__name__)
+
 # Límites específicos por endpoint sensible (req/min por IP)
 _SENSITIVE_LIMITS: dict[str, int] = {
     "/api/v1/auth/login": 10,
     "/api/v1/auth/refresh": 20,
+    "/api/v1/auth/session": 60,
+    "/api/v1/auth/me": 60,
+    "/api/v1/users": 40,
+    "/api/v1/users/roles": 40,
+    "/api/v1/audit/export": 10,
+    "/api/v1/reports/jobs": 20,
 }
+
+_RATE_LIMIT_EXEMPT_PATHS = {"/health", "/health/live", "/health/ready", "/metrics"}
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",", 1)[0].strip() or "unknown"
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    return request.client.host if request.client else "unknown"
+
+
+class SafeExceptionMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next) -> Response:
+        try:
+            return await call_next(request)
+        except Exception:
+            request_id = getattr(request.state, "request_id", request.headers.get("x-request-id", str(uuid4())))
+            logger.exception("unhandled_request_error", extra={"request_id": request_id, "path": request.url.path})
+            return JSONResponse(
+                {"detail": "Error interno controlado", "request_id": request_id},
+                status_code=500,
+                headers={"X-Request-ID": request_id},
+            )
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -29,7 +64,11 @@ class MetricsMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         started = now()
         response = await call_next(request)
-        metrics_registry.observe(request.url.path, response.status_code, now() - started)
+        duration = now() - started
+        metrics_registry.observe(request.url.path, response.status_code, duration)
+        duration_ms = round(duration * 1000, 2)
+        response.headers["Server-Timing"] = f"app;dur={duration_ms}"
+        response.headers["X-Response-Time-ms"] = str(duration_ms)
         return response
 
 
@@ -84,8 +123,10 @@ class DistributedRateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:
         settings = get_settings()
-        ip = request.client.host if request.client else "unknown"
+        ip = _client_ip(request)
         path = request.url.path
+        if path in _RATE_LIMIT_EXEMPT_PATHS:
+            return await call_next(request)
 
         # Límite específico para endpoints sensibles (más restrictivo)
         limit = _SENSITIVE_LIMITS.get(path, settings.rate_limit_per_minute)
