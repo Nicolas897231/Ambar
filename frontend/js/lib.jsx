@@ -117,12 +117,21 @@ function Switch({ checked, onChange }) {
 let _fieldCounter = 0;
 function Field({ label, help, required, children, hint, id: fieldId }) {
   const [uid] = useState(() => fieldId || `fld-${++_fieldCounter}`);
-  const enhanced = React.Children.map(children, (child, i) => {
-    if (i === 0 && child && typeof child === "object" && child.props && !child.props.id && !child.props["aria-label"]) {
-      return React.cloneElement(child, { id: uid });
+  const enhanceControl = (node, state = { done: false }) => {
+    if (!React.isValidElement(node) || state.done) return node;
+    const isField = typeof node.type === "string" && ["input", "select", "textarea"].includes(node.type);
+    if (isField) {
+      state.done = true;
+      const props = {};
+      if (!node.props.id && !node.props["aria-label"]) props.id = uid;
+      if (!node.props.name) props.name = node.props.id || uid;
+      return Object.keys(props).length ? React.cloneElement(node, props) : node;
     }
-    return child;
-  });
+    if (!node.props?.children) return node;
+    const nextChildren = React.Children.map(node.props.children, (child) => enhanceControl(child, state));
+    return React.cloneElement(node, undefined, nextChildren);
+  };
+  const enhanced = React.Children.map(children, (child) => enhanceControl(child));
   return (
     <div className="field">
       {label && <label htmlFor={uid}>{label}{required && <span className="req">*</span>}{help && <HelpDot text={help} />}</label>}

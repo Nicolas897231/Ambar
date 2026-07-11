@@ -129,7 +129,7 @@ table.tbl { width: 100%; min-width: 760px; border-collapse: collapse; font-size:
 
 /* ---------------- MODAL / DRAWER ---------------- */
 .scrim { position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(3px); z-index: 80; animation: fade-in var(--t-med) var(--ease-out); }
-.modal { position: fixed; z-index: 81; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(560px, calc(100vw - 32px)); max-height: min(88dvh, calc(100vh - 48px)); overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--shadow-xl); padding: 0; display: flex; flex-direction: column; animation: modal-in var(--t-med) var(--ease-spring); }
+.modal { position: fixed; z-index: 81; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(560px, calc(100vw - 32px)); max-height: min(86dvh, calc(100vh - 64px)); overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--shadow-xl); padding: 0; display: flex; flex-direction: column; animation: modal-in var(--t-med) var(--ease-spring); }
 .modal.lg { width: min(820px, calc(100vw - 32px)); }
 .modal.wide { width: min(980px, calc(100vw - 32px)); }
 @keyframes modal-in { from { opacity: 0; transform: translate(-50%, -46%) scale(0.96); } to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
@@ -149,11 +149,18 @@ table.tbl { width: 100%; min-width: 760px; border-collapse: collapse; font-size:
 .drawer-body { padding: var(--s6); display: grid; gap: var(--s5); }
 
 @media (max-width: 720px) {
-  .modal { width: calc(100vw - 20px); max-height: calc(100dvh - 20px); border-radius: var(--r-lg); }
+  .modal { width: calc(100vw - 20px); max-height: calc(100dvh - 24px); border-radius: var(--r-lg); }
   .modal-head, .modal-body, .modal-foot { padding-left: var(--s4); padding-right: var(--s4); }
   .modal-foot { flex-direction: column-reverse; align-items: stretch; }
   .modal-foot .row { width: 100%; justify-content: space-between; }
   .modal-foot .btn { width: 100%; justify-content: center; }
+}
+@media (max-height: 760px) {
+  .modal { top: 12px; transform: translateX(-50%); max-height: calc(100dvh - 24px); }
+  @keyframes modal-in { from { opacity: 0; transform: translateX(-50%) translateY(18px) scale(0.98); } to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
+  .modal-head { padding-top: var(--s4); padding-bottom: var(--s4); }
+  .modal-body { padding-top: var(--s4); padding-bottom: var(--s4); }
+  .modal-foot { padding-top: var(--s3); padding-bottom: var(--s3); }
 }
 
 /* ---------------- TOOLTIP ---------------- */

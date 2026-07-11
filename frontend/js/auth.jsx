@@ -50,6 +50,8 @@ function LoginScreen({ onAuth }) {
         setError("Ingresa el código MFA configurado para este usuario.");
       } else if (err.status === 404) {
         setError("El frontend no encuentra el API. Revisa API_PROXY_TARGET o el gateway.");
+      } else if (err.status === 401) {
+        setError("Correo o contraseña incorrectos. Verifica las credenciales del usuario.");
       } else {
         setError("Credenciales inválidas o servicio no disponible.");
       }
@@ -95,7 +97,7 @@ function LoginScreen({ onAuth }) {
                 <Field label="Contraseña"><div className="input-icon"><Icon name="lock" size={16} /><input type={showPass ? "text" : "password"} value={pass} placeholder="••••••••" onChange={e => setPass(e.target.value)} required style={{ paddingRight: 40 }} /><button type="button" className="pass-toggle" onClick={() => setShowPass(s => !s)} tabIndex={-1}><Icon name={showPass ? "eye-off" : "eye"} size={16} /></button></div></Field>
                 {needsMfa && <Field label="Código MFA"><input className="mfa-input mono" value={mfa} onChange={e => setMfa(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" inputMode="numeric" /></Field>}
                 {error && <div className="auth-error an-fall"><Icon name="alert-circle" size={15} /> {error}</div>}
-                <div className="row between" style={{ fontSize: "var(--fs-sm)" }}><label className="check"><input type="checkbox" defaultChecked /> Recordarme</label><a className="auth-link" onClick={() => setView("recover")}>¿Olvidaste tu contraseña?</a></div>
+                <div className="row between" style={{ fontSize: "var(--fs-sm)" }}><label className="check" htmlFor="remember-session"><input id="remember-session" name="remember-session" type="checkbox" defaultChecked /> Recordarme</label><a className="auth-link" onClick={() => setView("recover")}>¿Olvidaste tu contraseña?</a></div>
                 <Button size="lg" className="btn-block shine" type="submit" disabled={loading} icon={needsMfa ? "key-round" : "log-in"}>{loading ? "Validando…" : needsMfa ? "Validar MFA" : "Ingresar"}</Button>
               </form>
               <div className="auth-divider"><span>Acceso público</span></div>
