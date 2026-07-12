@@ -347,7 +347,7 @@ function CreatePhysicalModal({ mode, onClose, onCreated }) {
       {kind === "archive" && <div className="grid cols-2">
         <Field label="Sede" required><select value={payload.location_id || ""} onChange={e => setField("location_id", e.target.value)}><option value="">Seleccionar sede</option>{locations.map(l => <option key={l.idLocation || l.id} value={l.idLocation || l.id}>{l.location_name}</option>)}</select></Field>
         <Field label="Tipo" required><select value={payload.archive_type} onChange={e => setField("archive_type", e.target.value)}><option value="gestion">Gestión</option><option value="central">Central</option><option value="historico">Histórico</option><option value="satelite">Satélite</option></select></Field>
-        <Field label="Código" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input value={payload.archive_code || ""} onChange={e => setField("archive_code", e.target.value)} placeholder="Automático" /></Field>
+        <Field label="Código" help="AMBAR genera este código automáticamente al guardar el archivo."><AutoCodeInput /></Field>
         <Field label="Nombre" required><input value={payload.archive_name || ""} onChange={e => setField("archive_name", e.target.value)} placeholder="Archivo Central Cali" /></Field>
         <Field label="Capacidad cajas"><input type="number" min="0" value={payload.capacity_units || 0} onChange={e => setField("capacity_units", e.target.value)} /></Field>
       </div>}      {kind === "bulk" && <div className="grid cols-2">
@@ -374,7 +374,7 @@ function CreatePhysicalModal({ mode, onClose, onCreated }) {
       {kind === "box" && <div className="grid cols-2">
         <Field label="Archivo" required><select value={payload.archive_id || ""} onChange={e => { setField("archive_id", e.target.value); setField("shelf_id", ""); }}><option value="">Seleccionar archivo</option>{archives.map(a => <option key={a.idArchive || a.id} value={a.idArchive || a.id}>{a.archive_name}</option>)}</select></Field>
         <Field label="Ubicación topográfica" required><select value={payload.shelf_id || ""} onChange={e => setField("shelf_id", e.target.value)}><option value="">Seleccionar pasillo / estantería / nivel</option>{shelves.map(s => <option key={s.idShelf || s.id} value={s.idShelf || s.id}>{shelfLabel(s)}</option>)}</select></Field>
-        <Field label="Código caja" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input value={payload.box_code || ""} onChange={e => setField("box_code", e.target.value)} placeholder="Automático" /></Field>
+        <Field label="Código caja" help="AMBAR genera este código automáticamente al guardar la caja."><AutoCodeInput /></Field>
         <Field label="Nombre"><input value={payload.box_name || ""} onChange={e => setField("box_name", e.target.value)} placeholder="Contratos 2026" /></Field>
         <Field label="Capacidad carpetas"><input type="number" min="0" value={payload.capacity_folders || 0} onChange={e => setField("capacity_folders", e.target.value)} /></Field>
       </div>}

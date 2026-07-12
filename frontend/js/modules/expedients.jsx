@@ -139,7 +139,7 @@ function ExpedientDetail({ exp, onClose, navigate }) {
           )}
           <div className="divider" />
           <div className="grid cols-2">
-            <Field label="Código" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input value={folderDraft.folder_code} onChange={e => setFolderDraft(p => ({ ...p, folder_code: e.target.value }))} placeholder="Automático" maxLength={80} /></Field>
+            <Field label="Código" help="AMBAR genera este código automáticamente al guardar la carpeta."><AutoCodeInput /></Field>
             <Field label="Nombre"><input value={folderDraft.folder_name} onChange={e => setFolderDraft(p => ({ ...p, folder_name: e.target.value }))} placeholder="Contratos 2026" maxLength={160} /></Field>
           </div>
           <Button variant="ghost" className="btn-block" icon="plus" onClick={createFolder} disabled={creatingFolder}>{creatingFolder ? "Creando..." : "Crear carpeta"}</Button>
@@ -194,7 +194,7 @@ function CreateExpedientModal({ onClose, onCreated }) {
     <Modal lg title="Nuevo expediente" sub="Clasifica el expediente desde TRD. El archivo y la retencion quedan trazables." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear expediente</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
-        <Field label="Código" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input value={payload.expedient_code} maxLength={80} placeholder="Automático" onChange={e => setField("expedient_code", e.target.value)} /></Field>
+        <Field label="Código" help="AMBAR genera este código automáticamente al guardar el expediente."><AutoCodeInput /></Field>
         <Field label="Nombre" required><input value={payload.expedient_name} maxLength={220} placeholder="Historia laboral / proceso / contrato" onChange={e => setField("expedient_name", e.target.value)} /></Field>
         <Field label="Tipo"><select value={payload.expedient_type} onChange={e => setField("expedient_type", e.target.value)}>{["administrativo", "laboral", "contable", "juridico", "electronico", "hibrido"].map(x => <option key={x} value={x}>{x}</option>)}</select></Field>
         <Field label="Archivo" required><select value={payload.archive_id || ""} onChange={e => setField("archive_id", Number(e.target.value) || null)}><option value="">Seleccionar archivo</option>{archives.map(a => <option key={a.idArchive || a.id} value={a.idArchive || a.id}>{a.archive_name || a.name || a.archive_code}</option>)}</select></Field>

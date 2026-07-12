@@ -168,7 +168,19 @@ table.tbl { width: 100%; min-width: 760px; border-collapse: collapse; font-size:
 .tip > .tip-bubble { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%) translateY(4px); background: var(--text-strong); color: var(--panel); font-size: var(--fs-xs); font-weight: 500; padding: 6px 10px; border-radius: var(--r-sm); white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity var(--t-fast), transform var(--t-fast); z-index: 60; box-shadow: var(--shadow-md); max-width: 240px; white-space: normal; width: max-content; text-align: center; }
 .tip > .tip-bubble::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: var(--text-strong); }
 .tip:hover > .tip-bubble { opacity: 1; transform: translateX(-50%) translateY(0); }
+.field .tip > .tip-bubble { top: calc(100% + 8px); bottom: auto; left: 0; transform: translateY(-2px); text-align: left; z-index: 220; }
+.field .tip > .tip-bubble::after { top: auto; bottom: 100%; left: 10px; transform: none; border-color: transparent; border-bottom-color: var(--text-strong); }
+.field .tip:hover > .tip-bubble { transform: translateY(0); }
 .help-dot { width: 15px; height: 15px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--panel-3); color: var(--muted); font-size: 10px; font-weight: 700; cursor: help; flex-shrink: 0; }
+.auto-code-input {
+  color: var(--muted);
+  background:
+    linear-gradient(135deg, color-mix(in oklab, var(--brand-ghost) 45%, transparent), transparent 70%),
+    var(--panel-2);
+  border-style: dashed;
+  cursor: default;
+}
+.auto-code-input:focus { box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand) 14%, transparent); }
 
 /* ---------------- TOAST ---------------- */
 .toast-stack { position: fixed; bottom: var(--s5); right: var(--s5); z-index: 200; display: grid; gap: var(--s2); width: min(360px, calc(100vw - 32px)); }

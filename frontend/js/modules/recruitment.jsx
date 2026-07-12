@@ -94,7 +94,7 @@ function VacancyModal({ onClose, onCreated }) {
     <Modal title="Nueva vacante" sub="Se publica en el pipeline interno y en el portal público si queda abierta." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear vacante</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
-        <Field label="Código" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input value={payload.vacancy_code} onChange={(e) => setField("vacancy_code", e.target.value)} placeholder="Automático" /></Field>
+        <Field label="Código" help="AMBAR genera este código automáticamente al guardar la vacante."><AutoCodeInput /></Field>
         <Field label="Estado"><select value={payload.status} onChange={(e) => setField("status", e.target.value)}><option value="open">Abierta</option><option value="paused">Pausada</option><option value="closed">Cerrada</option></select></Field>
         <Field label="Cargo / vacante" required><input value={payload.title} onChange={(e) => setField("title", e.target.value)} placeholder="Ej. Auxiliar de archivo" /></Field>
         <Field label="Dependencia" required><input value={payload.department} onChange={(e) => setField("department", e.target.value)} placeholder="Ej. Talento Humano" /></Field>

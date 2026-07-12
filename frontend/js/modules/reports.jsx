@@ -58,6 +58,7 @@ function ReportsPage({ user }) {
   const statusItems = Object.entries(docsByStatus).map(([label, value]) => ({ label, value }));
   const canRequestReports = can(user, ["report.request"]);
   const canRefreshBi = can(user, ["bi.refresh"]);
+  const reportRestriction = "Tu perfil puede consultar indicadores, pero no generar reportes. Solicita el permiso report.request al administrador.";
 
   const refreshBi = async () => {
     setBusy("bi");
@@ -75,7 +76,7 @@ function ReportsPage({ user }) {
 
   const createReport = async () => {
     if (!canRequestReports) {
-      toast("Tu perfil no tiene permiso para generar reportes.", { tone: "danger", title: "Acceso restringido" });
+      toast(reportRestriction, { tone: "danger", title: "Acceso restringido" });
       return;
     }
     setBusy("report");
@@ -108,15 +109,16 @@ function ReportsPage({ user }) {
           <p className="lead">Indicadores reales conectados a la base de datos, reportes auditados y tablero gerencial sin datos simulados.</p>
         </div>
         <div className="page-actions">
-          <select value={reportType} onChange={(event) => setReportType(event.target.value)} disabled={!canRequestReports}>
+          <select value={reportType} onChange={(event) => setReportType(event.target.value)} disabled={!canRequestReports} title={canRequestReports ? "Tipo de reporte" : reportRestriction}>
             {REPORT_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
-          <Button icon="download" onClick={createReport} disabled={!canRequestReports || busy === "report"}>
+          <Button icon="download" onClick={createReport} disabled={!canRequestReports || busy === "report"} title={canRequestReports ? "Generar reporte auditado" : reportRestriction}>
             Generar reporte
           </Button>
-          <Button variant="ghost" icon="refresh" onClick={refreshBi} disabled={!canRefreshBi || busy === "bi"}>
+          <Button variant="ghost" icon="refresh" onClick={refreshBi} disabled={!canRefreshBi || busy === "bi"} title={canRefreshBi ? "Actualizar indicadores BI" : "Solicita el permiso bi.refresh al administrador."}>
             Actualizar BI
           </Button>
+          {!canRequestReports && <small className="faint" style={{ width: "100%", textAlign: "right" }}>{reportRestriction}</small>}
         </div>
       </div>
 
@@ -167,7 +169,7 @@ function ReportsPage({ user }) {
 
       <Card flush className="an-rise">
         <div className="row between wrap" style={{ padding: "var(--s4)", borderBottom: "1px solid var(--line)" }}>
-          <CardHead title="Reportes generados" sub="Jobs reales creados desde backend y auditados por usuario." icon="calendar" />
+          <CardHead title="Reportes generados" sub="Trabajos reales creados desde backend y auditados por usuario." icon="calendar" />
           <Badge tone="outline">{jobs.length} reportes</Badge>
         </div>
         <ReportJobsTable jobs={jobs} loading={liveJobs.loading} onDownload={downloadReport} />

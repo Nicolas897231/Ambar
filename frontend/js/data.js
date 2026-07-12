@@ -23,7 +23,7 @@ window.PERM_GROUPS = [
   { mod: "Reclutamiento", perms: [["recruit.view", "Consultar candidatos"], ["recruit.manage", "Gestionar vacantes y pipeline"]] },
   { mod: "Correspondencia", perms: [["mail.view", "Consultar"], ["mail.manage", "Radicar y tramitar"]] },
   { mod: "Búsqueda & OCR", perms: [["search.query", "Buscar"], ["ocr.manage", "Operar digitalización/OCR"]] },
-  { mod: "Reportes & BI", perms: [["analytics.view", "Indicadores operativos"], ["bi.view", "Tableros gerenciales"]] },
+  { mod: "Reportes & BI", perms: [["analytics.view", "Indicadores operativos"], ["bi.view", "Tableros gerenciales"], ["report.request", "Generar y descargar reportes"], ["bi.refresh", "Actualizar BI"]] },
   { mod: "Seguridad", perms: [["users.manage", "Usuarios, roles y permisos"], ["audit.view", "Auditoría"]] },
   { mod: "Plataforma", perms: [["platform.view", "Configuración"], ["integration.manage", "Integraciones"], ["signature.manage", "Firmas"], ["workflow.manage", "Automatización"]] },
   { mod: "Notificaciones", perms: [["notification.read", "Recibir alertas"]] },
@@ -99,6 +99,7 @@ window.permsOf = function(user){
   return r.perms === "*" ? ALL_PERMS.slice() : r.perms;
 };
 window.can = function(user, anyOf){
+  if (Array.isArray(user?.permissions) && user.permissions.includes("*")) return true;
   const p = permsOf(user);
   if(!anyOf || anyOf.length === 0) return true;
   return anyOf.some(x => p.includes(x));

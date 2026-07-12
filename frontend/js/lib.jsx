@@ -107,6 +107,10 @@ function HelpDot({ text }) {
   return <Tip text={text}><span className="help-dot">?</span></Tip>;
 }
 
+function AutoCodeInput({ value = "", placeholder = "Se genera al guardar", ...props }) {
+  return <input {...props} className={`auto-code-input ${props.className || ""}`.trim()} value={value} placeholder={placeholder} readOnly aria-readonly="true" />;
+}
+
 /* ---------- Switch ---------- */
 function Switch({ checked, onChange }) {
   return <span className="switch" data-on={!!checked} role="switch" aria-checked={!!checked} tabIndex={0}
@@ -120,12 +124,20 @@ function Field({ label, help, required, children, hint, id: fieldId }) {
   const enhanceControl = (node, state = { done: false }) => {
     if (!React.isValidElement(node) || state.done) return node;
     const isField = typeof node.type === "string" && ["input", "select", "textarea"].includes(node.type);
+    const isAutoCode = node.type === AutoCodeInput;
     if (isField) {
       state.done = true;
       const props = {};
       if (!node.props.id && !node.props["aria-label"]) props.id = uid;
       if (!node.props.name) props.name = node.props.id || uid;
       return Object.keys(props).length ? React.cloneElement(node, props) : node;
+    }
+    if (isAutoCode) {
+      state.done = true;
+      const props = {};
+      if (!node.props.id && !node.props["aria-label"]) props.id = uid;
+      if (!node.props.name) props.name = node.props.id || uid;
+      return React.cloneElement(node, props);
     }
     if (!node.props?.children) return node;
     const nextChildren = React.Children.map(node.props.children, (child) => enhanceControl(child, state));
@@ -413,5 +425,5 @@ function Stepper({ steps, current }) {
   );
 }
 
-Object.assign(window, { Icon, Button, Card, CardHead, FilterChip, Badge, Tabs, Segmented, Tip, HelpDot, Switch, Field, Empty, Skeleton, Avatar, Modal, Drawer, ToastProvider, useToast, downloadCSV, downloadJSON, downloadText, safeFilename, Metric, Meter, Stepper, useCountUp,
+Object.assign(window, { Icon, Button, Card, CardHead, FilterChip, Badge, Tabs, Segmented, Tip, HelpDot, AutoCodeInput, Switch, Field, Empty, Skeleton, Avatar, Modal, Drawer, ToastProvider, useToast, downloadCSV, downloadJSON, downloadText, safeFilename, Metric, Meter, Stepper, useCountUp,
   React, useState, useEffect, useRef, useMemo, useCallback, createContext, useContext });
