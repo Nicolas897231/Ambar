@@ -12,12 +12,13 @@ from app.core.deps import require_permission
 from app.db.models import AuditLog, Document, DocumentType, Expedient, Folder, TrdDependency, TrdDisposition, TrdSeries, TrdSubseries, User
 from app.db.session import get_db
 from app.services.audit import write_audit
+from app.services.codes import supplied_or_generated
 
 router = APIRouter(prefix="/trd", tags=["trd"])
 
 
 class SeriesCreate(BaseModel):
-    code: str = Field(min_length=2, max_length=40)
+    code: str | None = Field(default=None, min_length=2, max_length=40)
     name: str = Field(min_length=3, max_length=160)
     description: str | None = None
     dependency_id: int | None = None
@@ -25,7 +26,7 @@ class SeriesCreate(BaseModel):
 
 
 class DependencyCreate(BaseModel):
-    code: str = Field(min_length=2, max_length=40)
+    code: str | None = Field(default=None, min_length=2, max_length=40)
     name: str = Field(min_length=3, max_length=160)
     description: str | None = None
     status: str = Field(default="active", pattern="^(active|inactive)$")
@@ -589,13 +590,13 @@ def list_dependencies(db: Session = Depends(get_db), _: User = Depends(require_p
 
 @router.post("/dependencies", status_code=status.HTTP_201_CREATED)
 def create_dependency(payload: DependencyCreate, request: Request, user: User = Depends(require_permission("trd.manage")), db: Session = Depends(get_db)) -> dict:
-    code = payload.code.strip().upper()
+    code = supplied_or_generated(db, payload.code, TrdDependency, "code", "DEP")
     if db.query(TrdDependency).filter(TrdDependency.code == code).first():
         raise HTTPException(status_code=409, detail="Dependency code already exists")
     item = TrdDependency(code=code, name=payload.name.strip(), description=payload.description, status=payload.status)
     db.add(item)
     db.flush()
-    write_audit(db, action="trd_dependency_created", module="trd", user_id=user.identification, entity="dependency", entity_id=item.idDependency, new_values=payload.model_dump(), request=request)
+    write_audit(db, action="trd_dependency_created", module="trd", user_id=user.identification, entity="dependency", entity_id=item.idDependency, new_values=payload.model_dump() | {"code": code}, request=request)
     db.commit()
     db.refresh(item)
     return _dependency_out(item)
@@ -710,13 +711,14 @@ def create_series(
     user: User = Depends(require_permission("trd.manage")),
     db: Session = Depends(get_db),
 ):
-    if db.query(TrdSeries).filter(TrdSeries.code == payload.code).first():
+    code = supplied_or_generated(db, payload.code, TrdSeries, "code", "SER")
+    if db.query(TrdSeries).filter(TrdSeries.code == code).first():
         raise HTTPException(status_code=409, detail="Series code already exists")
     dependency = db.get(TrdDependency, payload.dependency_id) if payload.dependency_id else _default_dependency(db)
     if not dependency:
         raise HTTPException(status_code=422, detail="La dependencia TRD no existe.")
     item = TrdSeries(
-        code=payload.code.strip(),
+        code=code,
         name=payload.name.strip(),
         description=payload.description,
         ps608IdDependency=dependency.idDependency,
@@ -724,7 +726,7 @@ def create_series(
     )
     db.add(item)
     db.flush()
-    write_audit(db, action="trd_series_created", module="trd", user_id=user.identification, entity="series", entity_id=item.idSeries, new_values=payload.model_dump(), request=request)
+    write_audit(db, action="trd_series_created", module="trd", user_id=user.identification, entity="series", entity_id=item.idSeries, new_values=payload.model_dump() | {"code": code}, request=request)
     db.commit()
     db.refresh(item)
     return _series_out(item)

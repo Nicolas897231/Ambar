@@ -33,7 +33,7 @@ function TransferWizard({ onClose, onCreated }) {
   const [step, setStep] = trS(0);
   const [busy, setBusy] = trS(false);
   const [payload, setPayload] = trS({
-    batch_code: `TR-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`,
+    batch_code: "",
     origin_archive_id: "",
     destination_archive_id: "",
     entity_type: "expedient",
@@ -71,7 +71,7 @@ function TransferWizard({ onClose, onCreated }) {
     setBusy(true);
     try {
       const batch = await AmbarAPI.post("/transfer-batches", {
-        batch_code: payload.batch_code,
+        batch_code: payload.batch_code.trim() || null,
         origin_archive_id: Number(payload.origin_archive_id),
         destination_archive_id: Number(payload.destination_archive_id),
       });
@@ -100,7 +100,7 @@ function TransferWizard({ onClose, onCreated }) {
       {step === 0 && <div className="col gap4">
         <div className="page-intro"><span className="pi-ico"><Icon name="folder-kanban" size={18} /></span><div><h4>Selecciona la unidad documental</h4><p>Elige expediente, carpeta, caja o documento real. AMBAR validará préstamo activo, TRD, foliación y permisos en backend.</p></div></div>
         {archives.length === 0 ? <Empty icon="archive" title="Sin archivos parametrizados">Crea archivos autorizados antes de preparar transferencias.</Empty> : <div className="grid cols-2" style={{ gap: "var(--s3)" }}>
-          <Field label="Código de lote"><input value={payload.batch_code} onChange={e => setField("batch_code", e.target.value)} /></Field>
+          <Field label="Código de lote" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input value={payload.batch_code} onChange={e => setField("batch_code", e.target.value)} placeholder="Automático" /></Field>
           <Field label="Tipo de unidad"><select value={payload.entity_type} onChange={e => setField("entity_type", e.target.value)}><option value="expedient">Expediente</option><option value="folder">Carpeta</option><option value="box">Caja</option><option value="document">Documento</option></select></Field>
           <Field label="Archivo origen" required><select value={payload.origin_archive_id} onChange={e => setField("origin_archive_id", e.target.value)}><option value="">Seleccionar origen</option>{archives.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}</select></Field>
           <Field label="Archivo destino" required><select value={payload.destination_archive_id} onChange={e => setField("destination_archive_id", e.target.value)}><option value="">Seleccionar destino</option>{archives.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}</select></Field>
@@ -108,7 +108,7 @@ function TransferWizard({ onClose, onCreated }) {
         </div>}
       </div>}
       {step === 1 && <div className="col center gap4" style={{ padding: "var(--s6)" }}><div className="mfa-badge" style={{ background: "var(--ok-bg)", color: "var(--ok)" }}><Icon name="shield-check" size={26} /></div><h3>Validacion en backend</h3><p className="muted" style={{ textAlign: "center", maxWidth: "54ch" }}>Al crear el lote se bloquearán unidades prestadas, unidades de otro archivo, errores TRD e inconsistencias críticas.</p><div className="row wrap gap2"><Badge tone="info" icon="shield-check">Permisos por archivo</Badge><Badge tone="info" icon="clipboard">TRD y FUID</Badge><Badge tone="info" icon="package-check">Recepcion controlada</Badge></div></div>}
-      {step === 2 && <div className="col gap4"><div className="page-intro"><span className="pi-ico"><Icon name="clipboard" size={18} /></span><div><h4>FUID automatico</h4><p>El inventario se genera desde la unidad seleccionada, TRD, folios, soporte y ubicación física.</p></div></div><Card flush><table className="tbl"><thead><tr><th>Lote</th><th>Unidad</th><th>Origen</th><th>Destino</th></tr></thead><tbody><tr><td className="cell-mono">{payload.batch_code}</td><td>{payload.entity_type} #{payload.entity_id || "-"}</td><td>{archives.find(a => String(a.id) === String(payload.origin_archive_id))?.label || "-"}</td><td>{archives.find(a => String(a.id) === String(payload.destination_archive_id))?.label || "-"}</td></tr></tbody></table></Card></div>}
+      {step === 2 && <div className="col gap4"><div className="page-intro"><span className="pi-ico"><Icon name="clipboard" size={18} /></span><div><h4>FUID automatico</h4><p>El inventario se genera desde la unidad seleccionada, TRD, folios, soporte y ubicación física.</p></div></div><Card flush><table className="tbl"><thead><tr><th>Lote</th><th>Unidad</th><th>Origen</th><th>Destino</th></tr></thead><tbody><tr><td className="cell-mono">{payload.batch_code || "Automático al crear"}</td><td>{payload.entity_type} #{payload.entity_id || "-"}</td><td>{archives.find(a => String(a.id) === String(payload.origin_archive_id))?.label || "-"}</td><td>{archives.find(a => String(a.id) === String(payload.destination_archive_id))?.label || "-"}</td></tr></tbody></table></Card></div>}
       {step === 3 && <div className="grid cols-2" style={{ gap: "var(--s3)" }}><Card pad="sm"><CardHead title="Entrega" sub="La evidencia documental se carga desde el detalle de transferencia si aplica." icon="paperclip" /></Card><Card pad="sm"><CardHead title="Kardex" sub="La creación del lote deja movimiento y auditoría automáticamente." icon="history" /></Card></div>}
       {step === 4 && <div className="col gap4"><div className="page-intro"><span className="pi-ico"><Icon name="package-check" size={18} /></span><div><h4>Recepcion controlada</h4><p>El destino compara lo declarado en FUID contra lo recibido y puede aceptar, rechazar o recibir parcial desde la bandeja de recepcion.</p></div></div></div>}
       {step === 5 && <div className="col center gap4" style={{ padding: "var(--s6)" }}><div className="mfa-badge pulse"><Icon name="archive" size={26} /></div><h3>Listo para crear</h3><p className="muted" style={{ textAlign: "center", maxWidth: "50ch" }}>Al confirmar se creará el lote, se agregará la unidad, se generará FUID y quedará trazabilidad en Kardex y auditoría.</p></div>}

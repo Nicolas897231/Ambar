@@ -37,6 +37,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.services.audit import write_audit
+from app.services.codes import supplied_or_generated
 from app.services.operational import create_operational_task, notify_action, resolve_notifications, resolve_related_tasks
 from app.services.storage import presigned_url
 
@@ -44,7 +45,7 @@ router = APIRouter(prefix="/archives", tags=["archives"])
 
 
 class ArchiveCreate(BaseModel):
-    archive_code: str = Field(min_length=2, max_length=60)
+    archive_code: str | None = Field(default=None, min_length=2, max_length=60)
     archive_name: str = Field(min_length=3, max_length=180)
     archive_type: str = Field(pattern="^(gestion|central|historico|satelite)$")
     location_id: int | None = 1
@@ -80,7 +81,7 @@ class ArchiveAccessCreate(BaseModel):
 
 
 class ExpedientCreate(BaseModel):
-    expedient_code: str = Field(min_length=2, max_length=80)
+    expedient_code: str | None = Field(default=None, min_length=2, max_length=80)
     expedient_name: str = Field(min_length=3, max_length=220)
     expedient_type: str = Field(default="administrativo", max_length=80)
     archive_id: int
@@ -94,7 +95,7 @@ class ExpedientCreate(BaseModel):
 
 
 class FolderCreate(BaseModel):
-    folder_code: str = Field(min_length=1, max_length=80)
+    folder_code: str | None = Field(default=None, min_length=1, max_length=80)
     folder_name: str = Field(min_length=3, max_length=220)
     expedient_id: int
     box_id: int | None = None
@@ -104,7 +105,7 @@ class FolderCreate(BaseModel):
 
 class ShelfCreate(BaseModel):
     archive_id: int
-    shelf_code: str = Field(min_length=1, max_length=60)
+    shelf_code: str | None = Field(default=None, min_length=1, max_length=60)
     shelf_name: str = Field(min_length=2, max_length=160)
     aisle: str | None = None
     floor: str | None = None
@@ -119,7 +120,7 @@ class ShelfCreate(BaseModel):
 class BoxCreate(BaseModel):
     archive_id: int
     shelf_id: int | None = None
-    box_code: str = Field(min_length=1, max_length=60)
+    box_code: str | None = Field(default=None, min_length=1, max_length=60)
     box_name: str | None = None
     capacity_folders: int = 0
 
@@ -386,10 +387,11 @@ def list_archives(user: User = Depends(require_permission("document.read")), db:
 
 @router.post("", response_model=ArchiveOut, status_code=status.HTTP_201_CREATED)
 def create_archive(payload: ArchiveCreate, request: Request, user: User = Depends(require_permission("archive.manage")), db: Session = Depends(get_db)) -> ArchiveOut:
-    if db.query(Archive).filter(Archive.archive_code == payload.archive_code).first():
+    archive_code = supplied_or_generated(db, payload.archive_code, Archive, "archive_code", "ARC")
+    if db.query(Archive).filter(Archive.archive_code == archive_code).first():
         raise HTTPException(status_code=409, detail="Archive code already exists")
     archive = Archive(
-        archive_code=payload.archive_code,
+        archive_code=archive_code,
         archive_name=payload.archive_name,
         archive_type=payload.archive_type,
         ps700IdLocation=payload.location_id,
@@ -403,7 +405,7 @@ def create_archive(payload: ArchiveCreate, request: Request, user: User = Depend
     db.add(archive)
     db.flush()
     db.add(ArchiveUser(ps930IdArchive=archive.idArchive, ps405Identification=user.identification, access_level="admin"))
-    write_audit(db, action="archive_created", module="archives", user_id=user.identification, entity="archive", entity_id=archive.idArchive, new_values=payload.model_dump(), request=request)
+    write_audit(db, action="archive_created", module="archives", user_id=user.identification, entity="archive", entity_id=archive.idArchive, new_values=payload.model_dump() | {"archive_code": archive_code}, request=request)
     db.commit()
     db.refresh(archive)
     return _archive_out(archive)
@@ -555,8 +557,9 @@ def create_expedient(payload: ExpedientCreate, request: Request, user: User = De
         raise HTTPException(status_code=422, detail="La serie TRD debe pertenecer a una dependencia.")
     if payload.dependency_id and series.ps608IdDependency and payload.dependency_id != series.ps608IdDependency:
         raise HTTPException(status_code=422, detail="La serie no pertenece a la dependencia seleccionada.")
+    expedient_code = supplied_or_generated(db, payload.expedient_code, Expedient, "expedient_code", "EXP", scope_filters=[Expedient.ps930IdArchive == archive.idArchive])
     item = Expedient(
-        expedient_code=payload.expedient_code,
+        expedient_code=expedient_code,
         expedient_name=payload.expedient_name,
         expedient_type=payload.expedient_type,
         ps930IdArchive=archive.idArchive,
@@ -572,6 +575,7 @@ def create_expedient(payload: ExpedientCreate, request: Request, user: User = De
     archive.expedient_count += 1
     db.flush()
     movement = KardexMovement(
+        movement_code=supplied_or_generated(db, None, KardexMovement, "movement_code", "MOV"),
         movement_type="document_created",
         entity_type="expedient",
         entity_id=item.idExpedient,
@@ -596,7 +600,7 @@ def create_expedient(payload: ExpedientCreate, request: Request, user: User = De
         metadata={"event": "expedient.created"},
     )
     _trace(db, movement.idMovement, "expedient_created", user, request, item.expedient_code)
-    write_audit(db, action="expedient_created", module="archives", user_id=user.identification, entity="expedient", entity_id=item.idExpedient, new_values=payload.model_dump(), request=request)
+    write_audit(db, action="expedient_created", module="archives", user_id=user.identification, entity="expedient", entity_id=item.idExpedient, new_values=payload.model_dump() | {"expedient_code": expedient_code}, request=request)
     db.commit()
     db.refresh(item)
     return item
@@ -1052,6 +1056,7 @@ def _custody_to_dict(item: Custodianship, db: Session) -> dict:
 
 def _location_movement(db: Session, request: Request, user: User, *, movement_type: str, entity_type: str, entity_id: int, archive_id: int, previous: str | None, current: str | None, observation: str | None = None) -> KardexMovement:
     movement = KardexMovement(
+        movement_code=supplied_or_generated(db, None, KardexMovement, "movement_code", "MOV"),
         movement_type=movement_type,
         entity_type=entity_type,
         entity_id=entity_id,
@@ -1846,8 +1851,9 @@ def create_folder(payload: FolderCreate, request: Request, user: User = Depends(
         box = db.get(PhysicalBox, payload.box_id)
         if box and box.ps930IdArchive != expedient.ps930IdArchive:
             raise HTTPException(status_code=422, detail="La caja pertenece a otro archivo. Usa transferencia documental antes de cambiar archivo.")
+    folder_code = supplied_or_generated(db, payload.folder_code, Folder, "folder_code", "CAR", scope_filters=[Folder.ps950IdExpedient == expedient.idExpedient])
     item = Folder(
-        folder_code=payload.folder_code,
+        folder_code=folder_code,
         folder_name=payload.folder_name,
         ps950IdExpedient=expedient.idExpedient,
         ps930IdArchive=expedient.ps930IdArchive,
@@ -1865,6 +1871,7 @@ def create_folder(payload: FolderCreate, request: Request, user: User = Depends(
         if box:
             box.current_folders += 1
     movement = KardexMovement(
+        movement_code=supplied_or_generated(db, None, KardexMovement, "movement_code", "MOV"),
         movement_type="document_created",
         entity_type="folder",
         entity_id=item.idFolder,
@@ -1888,7 +1895,7 @@ def create_folder(payload: FolderCreate, request: Request, user: User = Depends(
         metadata={"event": "folder.created", "expedient_id": expedient.idExpedient},
     )
     _trace(db, movement.idMovement, "folder_created", user, request, item.folder_code)
-    write_audit(db, action="folder_created", module="archives", user_id=user.identification, entity="folder", entity_id=item.idFolder, new_values=payload.model_dump(), request=request)
+    write_audit(db, action="folder_created", module="archives", user_id=user.identification, entity="folder", entity_id=item.idFolder, new_values=payload.model_dump() | {"folder_code": folder_code}, request=request)
     db.commit()
     db.refresh(item)
     return item
@@ -1899,12 +1906,13 @@ def create_shelf(payload: ShelfCreate, request: Request, user: User = Depends(re
     _require_archive_access(db, user, payload.archive_id, {"admin"})
     module = payload.body or payload.module
     bay = payload.level or payload.bay
-    item = Shelf(ps930IdArchive=payload.archive_id, shelf_code=payload.shelf_code, shelf_name=payload.shelf_name, aisle=payload.aisle, floor=payload.floor, module=module, bay=bay, capacity_boxes=payload.capacity_boxes)
+    shelf_code = supplied_or_generated(db, payload.shelf_code, Shelf, "shelf_code", "UBI", scope_filters=[Shelf.ps930IdArchive == payload.archive_id])
+    item = Shelf(ps930IdArchive=payload.archive_id, shelf_code=shelf_code, shelf_name=payload.shelf_name, aisle=payload.aisle, floor=payload.floor, module=module, bay=bay, capacity_boxes=payload.capacity_boxes)
     item.physical_location = _shelf_topographic_path(item)
     db.add(item)
     db.flush()
-    _location_movement(db, request, user, movement_type="shelf.created", entity_type="box", entity_id=0, archive_id=payload.archive_id, previous=None, current=payload.shelf_code, observation=f"Estanteria creada: {payload.shelf_code}")
-    write_audit(db, action="shelf_created", module="archives", user_id=user.identification, entity="shelf", new_values=payload.model_dump(), request=request)
+    _location_movement(db, request, user, movement_type="shelf.created", entity_type="box", entity_id=0, archive_id=payload.archive_id, previous=None, current=shelf_code, observation=f"Estanteria creada: {shelf_code}")
+    write_audit(db, action="shelf_created", module="archives", user_id=user.identification, entity="shelf", new_values=payload.model_dump() | {"shelf_code": shelf_code}, request=request)
     db.commit()
     db.refresh(item)
     return _shelf_out(db, item)
@@ -2024,7 +2032,8 @@ def create_box(payload: BoxCreate, request: Request, user: User = Depends(requir
             raise HTTPException(status_code=404, detail="Shelf not found")
         if shelf.ps930IdArchive != payload.archive_id:
             raise HTTPException(status_code=422, detail="Shelf belongs to another archive. Use transfer before changing archive.")
-    item = PhysicalBox(ps930IdArchive=payload.archive_id, ps934IdShelf=payload.shelf_id, box_code=payload.box_code, box_name=payload.box_name, capacity_folders=payload.capacity_folders)
+    box_code = supplied_or_generated(db, payload.box_code, PhysicalBox, "box_code", "BX", scope_filters=[PhysicalBox.ps930IdArchive == payload.archive_id])
+    item = PhysicalBox(ps930IdArchive=payload.archive_id, ps934IdShelf=payload.shelf_id, box_code=box_code, box_name=payload.box_name, capacity_folders=payload.capacity_folders)
     db.add(item)
     archive.box_count += 1
     db.flush()
@@ -2040,7 +2049,7 @@ def create_box(payload: BoxCreate, request: Request, user: User = Depends(requir
         related_movement_id=movement.idMovement,
         metadata={"event": "box.created"},
     )
-    write_audit(db, action="box_created", module="archives", user_id=user.identification, entity="box", new_values=payload.model_dump(), request=request)
+    write_audit(db, action="box_created", module="archives", user_id=user.identification, entity="box", new_values=payload.model_dump() | {"box_code": box_code}, request=request)
     db.commit()
     db.refresh(item)
     return _box_out(db, item)
@@ -2872,7 +2881,7 @@ def generate_fuid(expedient_id: int, request: Request, user: User = Depends(requ
         raise HTTPException(status_code=404, detail="Expedient not found")
     _require_archive_access(db, user, expedient.ps930IdArchive, {"operate", "admin"})
     records = _fuid_records_from_expedient(db, expedient)
-    code = f"FUID-{expedient.expedient_code}-{int(datetime.now(UTC).timestamp())}"
+    code = supplied_or_generated(db, None, InventoryFuid, "fuid_code", "FUID")
     item = InventoryFuid(
         fuid_code=code,
         ps930IdArchive=expedient.ps930IdArchive,
@@ -2923,7 +2932,7 @@ def generate_fuid_from_transfer(transfer_id: int, request: Request, user: User =
     if existing:
         return _fuid_to_dict(existing)
     records = _fuid_records_from_transfer(db, batch)
-    code = f"FUID-{batch.batch_code}-{int(datetime.now(UTC).timestamp())}"
+    code = supplied_or_generated(db, None, InventoryFuid, "fuid_code", "FUID")
     item = InventoryFuid(
         fuid_code=code,
         ps930IdArchive=batch.ps930OriginArchiveId or batch.ps930DestinationArchiveId or 1,

@@ -53,13 +53,13 @@ function ExpedientDetail({ exp, onClose, navigate }) {
         ? { label: "Revisar foliacion", route: "foliation", icon: "list-checks", text: "La completitud documental aun no esta al 100%." }
         : { label: "Ver Kardex", route: "kardex", icon: "history", text: "El expediente esta listo para revisar trazabilidad." };
   const createFolder = async () => {
-    if (!folderDraft.folder_code.trim() || !folderDraft.folder_name.trim()) {
-      toast("Código y nombre de carpeta son obligatorios.", { tone: "danger", title: "Faltan datos" });
+    if (!folderDraft.folder_name.trim()) {
+      toast("El nombre de carpeta es obligatorio. El código lo puede generar AMBAR.", { tone: "danger", title: "Faltan datos" });
       return;
     }
     setCreatingFolder(true);
     try {
-      await AmbarAPI.post("/archives/folders", { ...folderDraft, expedient_id: Number(exp.backendId), metadata: {} });
+      await AmbarAPI.post("/archives/folders", { ...folderDraft, folder_code: folderDraft.folder_code.trim() || null, expedient_id: Number(exp.backendId), metadata: {} });
       toast("Carpeta creada dentro del expediente.", { tone: "ok", title: "Carpeta lista" });
       setFolderDraft({ folder_code: "", folder_name: "" });
       foldersLive.setData(await AmbarAPI.endpoints.folders(exp.backendId));
@@ -139,7 +139,7 @@ function ExpedientDetail({ exp, onClose, navigate }) {
           )}
           <div className="divider" />
           <div className="grid cols-2">
-            <Field label="Código"><input value={folderDraft.folder_code} onChange={e => setFolderDraft(p => ({ ...p, folder_code: e.target.value }))} placeholder="CAR-001" maxLength={80} /></Field>
+            <Field label="Código" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input value={folderDraft.folder_code} onChange={e => setFolderDraft(p => ({ ...p, folder_code: e.target.value }))} placeholder="Automático" maxLength={80} /></Field>
             <Field label="Nombre"><input value={folderDraft.folder_name} onChange={e => setFolderDraft(p => ({ ...p, folder_name: e.target.value }))} placeholder="Contratos 2026" maxLength={160} /></Field>
           </div>
           <Button variant="ghost" className="btn-block" icon="plus" onClick={createFolder} disabled={creatingFolder}>{creatingFolder ? "Creando..." : "Crear carpeta"}</Button>
@@ -172,7 +172,6 @@ function CreateExpedientModal({ onClose, onCreated }) {
 
   const submit = async () => {
     const missing = [];
-    if (!payload.expedient_code.trim()) missing.push("codigo");
     if (!payload.expedient_name.trim()) missing.push("nombre");
     if (!payload.archive_id) missing.push("archivo");
     if (!payload.series_id) missing.push("serie");
@@ -195,7 +194,7 @@ function CreateExpedientModal({ onClose, onCreated }) {
     <Modal lg title="Nuevo expediente" sub="Clasifica el expediente desde TRD. El archivo y la retencion quedan trazables." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear expediente</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
-        <Field label="Codigo" required><input value={payload.expedient_code} maxLength={80} placeholder="EXP-2026-0001" onChange={e => setField("expedient_code", e.target.value)} /></Field>
+        <Field label="Código" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input value={payload.expedient_code} maxLength={80} placeholder="Automático" onChange={e => setField("expedient_code", e.target.value)} /></Field>
         <Field label="Nombre" required><input value={payload.expedient_name} maxLength={220} placeholder="Historia laboral / proceso / contrato" onChange={e => setField("expedient_name", e.target.value)} /></Field>
         <Field label="Tipo"><select value={payload.expedient_type} onChange={e => setField("expedient_type", e.target.value)}>{["administrativo", "laboral", "contable", "juridico", "electronico", "hibrido"].map(x => <option key={x} value={x}>{x}</option>)}</select></Field>
         <Field label="Archivo" required><select value={payload.archive_id || ""} onChange={e => setField("archive_id", Number(e.target.value) || null)}><option value="">Seleccionar archivo</option>{archives.map(a => <option key={a.idArchive || a.id} value={a.idArchive || a.id}>{a.archive_name || a.name || a.archive_code}</option>)}</select></Field>

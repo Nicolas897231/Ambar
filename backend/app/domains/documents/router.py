@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.domains.archives.router import _require_archive_access, allowed_archive_ids
 from app.services.audit import write_audit
 from app.services.cache import delete_pattern
+from app.services.codes import supplied_or_generated
 from app.services.events import publish_event
 from app.services.search import index_document
 from app.services.storage import ALLOWED_MIME_TYPES, presigned_url, store_file
@@ -125,7 +126,7 @@ class FileOut(BaseModel):
 
 
 class DocumentTypeCreate(BaseModel):
-    type_code: str = Field(min_length=2, max_length=80)
+    type_code: str | None = Field(default=None, min_length=2, max_length=80)
     name: str = Field(min_length=2, max_length=140)
     description: str | None = None
     series_id: int | None = None
@@ -453,11 +454,12 @@ def apply_document_type_template(
 @router.post("/types", status_code=status.HTTP_201_CREATED)
 def create_document_type(payload: DocumentTypeCreate, request: Request, user: User = Depends(require_permission("trd.manage")), db: Session = Depends(get_db)) -> dict:
     _ensure_default_document_types(db)
-    if db.query(DocumentType).filter(DocumentType.type_code == payload.type_code).first():
+    type_code = supplied_or_generated(db, payload.type_code, DocumentType, "type_code", "TIP").lower()
+    if db.query(DocumentType).filter(DocumentType.type_code == type_code).first():
         raise HTTPException(status_code=409, detail="Document type already exists")
     _validate_type_trd_scope(db, payload.series_id, payload.subseries_id)
     item = DocumentType(
-        type_code=payload.type_code.strip(),
+        type_code=type_code,
         name=payload.name.strip(),
         description=payload.description,
         ps610IdSeries=payload.series_id,
@@ -474,7 +476,7 @@ def create_document_type(payload: DocumentTypeCreate, request: Request, user: Us
     )
     db.add(item)
     db.flush()
-    write_audit(db, action="document_type_created", module="documents", user_id=user.identification, entity="document_type", entity_id=item.idDocumentType, new_values=payload.model_dump(), request=request)
+    write_audit(db, action="document_type_created", module="documents", user_id=user.identification, entity="document_type", entity_id=item.idDocumentType, new_values=payload.model_dump() | {"type_code": type_code}, request=request)
     db.commit()
     return {"idDocumentType": item.idDocumentType, "type_code": item.type_code, "name": item.name, "status": item.status, "sector": item.sector, "icon": item.icon, "color": item.color, "template_sector": item.template_sector, "required_in_expedient": item.required_in_expedient}
 
@@ -554,7 +556,7 @@ def create_document(
     archive = _require_archive_access(db, user, archive_id)
     db.execute(update(Archive).where(Archive.idArchive == archive_id).values(document_count=Archive.document_count + 1))
     db.add(DocumentHistory(ps520IdDocument=document.idDocument, action="created", ps405Identification=user.identification, details=payload.model_dump()))
-    movement = KardexMovement(movement_type="document_created", entity_type="document", entity_id=document.idDocument, ps930DestinationArchiveId=archive_id, ps405ActorIdentification=user.identification, status="accepted", observations="Documento creado en expediente/carpeta/TRD")
+    movement = KardexMovement(movement_code=supplied_or_generated(db, None, KardexMovement, "movement_code", "MOV"), movement_type="document_created", entity_type="document", entity_id=document.idDocument, ps930DestinationArchiveId=archive_id, ps405ActorIdentification=user.identification, status="accepted", observations="Documento creado en expediente/carpeta/TRD")
     db.add(movement)
     db.flush()
     _record_document_custody(db, document, archive.custodian_identification or user.identification, movement.idMovement)
@@ -676,7 +678,7 @@ async def upload_file(document_id: int, request: Request, file: UploadFile = Fil
     document.version += 1
     db.add(document_file)
     db.add(DocumentHistory(ps520IdDocument=document.idDocument, action="file_uploaded", ps405Identification=user.identification, details={"original_name": stored["original_name"], "checksum": stored["checksum"]}))
-    db.add(KardexMovement(movement_type="file_uploaded", entity_type="document", entity_id=document.idDocument, ps930DestinationArchiveId=document.ps930IdArchive, ps405ActorIdentification=user.identification, status="stored", observations="Archivo digital cargado al repositorio", metadata_json={"checksum": stored["checksum"], "content_type": stored["content_type"]}))
+    db.add(KardexMovement(movement_code=supplied_or_generated(db, None, KardexMovement, "movement_code", "MOV"), movement_type="file_uploaded", entity_type="document", entity_id=document.idDocument, ps930DestinationArchiveId=document.ps930IdArchive, ps405ActorIdentification=user.identification, status="stored", observations="Archivo digital cargado al repositorio", metadata_json={"checksum": stored["checksum"], "content_type": stored["content_type"]}))
     write_audit(db, action="document_file_uploaded", module="documents", user_id=user.identification, archive_id=document.ps930IdArchive, entity="document", entity_id=document.idDocument, entity_label=document.document_name, new_values={"checksum": stored["checksum"], "content_type": stored["content_type"]}, request=request)
     db.commit()
     delete_pattern("analytics:*")

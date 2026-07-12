@@ -1,6 +1,5 @@
 import re
 from datetime import UTC, datetime
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
@@ -10,6 +9,7 @@ from app.core.deps import require_permission
 from app.db.models import AdvancedNotification, Document, Employee, EmployeeContract, EmployeeFile, EmployeeIncident, HRCandidate, HRDepartment, HRPosition, HRVacancy, NotificationDeliveryLog, User
 from app.db.session import get_db
 from app.services.audit import write_audit
+from app.services.codes import supplied_or_generated
 from app.services.events import publish_event
 from app.services.storage import store_file
 
@@ -20,7 +20,7 @@ MANDATORY_FILES = {"hoja_vida", "contrato_firmado", "arl", "examen_ingreso"}
 
 class EmployeeCreate(BaseModel):
     identification: str = Field(min_length=6, max_length=12)
-    employee_code: str = Field(min_length=2, max_length=40)
+    employee_code: str | None = Field(default=None, min_length=2, max_length=40)
     full_name: str = Field(min_length=3, max_length=180)
     position: str = Field(min_length=2, max_length=120)
     department: str = Field(min_length=2, max_length=120)
@@ -34,7 +34,7 @@ class EmployeeCreate(BaseModel):
             raise ValueError("Identification must contain only 6 to 12 digits")
         return normalized
 
-    @field_validator("employee_code", "position", "department")
+    @field_validator("position", "department")
     @classmethod
     def strip_catalog_text(cls, value: str) -> str:
         return value.strip()
@@ -66,7 +66,7 @@ class IncidentCreate(BaseModel):
 
 
 class PositionCreate(BaseModel):
-    position_code: str = Field(min_length=2, max_length=40)
+    position_code: str | None = Field(default=None, min_length=2, max_length=40)
     name: str = Field(min_length=2, max_length=120)
     level: str = Field(default="operativo", min_length=2, max_length=80)
     department: str = Field(min_length=2, max_length=120)
@@ -76,14 +76,14 @@ class PositionCreate(BaseModel):
 
 
 class DepartmentCreate(BaseModel):
-    department_code: str = Field(min_length=2, max_length=40)
+    department_code: str | None = Field(default=None, min_length=2, max_length=40)
     name: str = Field(min_length=2, max_length=120)
     parent_id: int | None = None
     responsible_identification: str | None = None
 
 
 class CandidateCreate(BaseModel):
-    candidate_code: str = Field(min_length=2, max_length=40)
+    candidate_code: str | None = Field(default=None, min_length=2, max_length=40)
     full_name: str = Field(min_length=3, max_length=180)
     email: str | None = None
     phone: str | None = None
@@ -102,7 +102,7 @@ class CandidateCreate(BaseModel):
 
 
 class VacancyCreate(BaseModel):
-    vacancy_code: str = Field(min_length=2, max_length=50)
+    vacancy_code: str | None = Field(default=None, min_length=2, max_length=50)
     title: str = Field(min_length=3, max_length=160)
     department: str = Field(min_length=2, max_length=120)
     position_id: int | None = None
@@ -113,7 +113,7 @@ class VacancyCreate(BaseModel):
     status: str = Field(default="open", pattern="^(open|paused|closed|cancelled)$")
     closes_at: datetime | None = None
 
-    @field_validator("title", "department", "vacancy_code")
+    @field_validator("title", "department")
     @classmethod
     def strip_required(cls, value: str) -> str:
         return " ".join(value.strip().split())
@@ -280,7 +280,7 @@ async def public_apply_vacancy(
         except ValueError as exc:
             raise HTTPException(status_code=415, detail=str(exc)) from exc
     candidate = HRCandidate(
-        candidate_code=f"WEB-{vacancy.idVacancy}-{uuid4().hex[:10]}",
+        candidate_code=supplied_or_generated(db, None, HRCandidate, "candidate_code", "CAN", scope_filters=[HRCandidate.company_id == vacancy.company_id]),
         full_name=normalized_name,
         email=normalized_email,
         phone=phone.strip() if phone else None,
@@ -335,12 +335,13 @@ def list_departments(db: Session = Depends(get_db), user: User = Depends(require
 
 @router.post("/departments", status_code=status.HTTP_201_CREATED)
 def create_department(payload: DepartmentCreate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
-    if db.query(HRDepartment).filter(HRDepartment.department_code == payload.department_code, HRDepartment.company_id == user.company_id).first():
+    department_code = supplied_or_generated(db, payload.department_code, HRDepartment, "department_code", "DEP", scope_filters=[HRDepartment.company_id == user.company_id])
+    if db.query(HRDepartment).filter(HRDepartment.department_code == department_code, HRDepartment.company_id == user.company_id).first():
         raise HTTPException(status_code=409, detail="Department code already exists")
     if payload.parent_id and not db.query(HRDepartment).filter(HRDepartment.idDepartment == payload.parent_id, HRDepartment.company_id == user.company_id).first():
         raise HTTPException(status_code=404, detail="Parent department not found")
     department = HRDepartment(
-        department_code=payload.department_code.strip(),
+        department_code=department_code,
         name=payload.name.strip(),
         parent_id=payload.parent_id,
         responsible_identification=payload.responsible_identification,
@@ -349,7 +350,7 @@ def create_department(payload: DepartmentCreate, request: Request, user: User = 
     )
     db.add(department)
     db.flush()
-    write_audit(db, action="hr_department_created", module="hr", user_id=user.identification, entity="hr_department", entity_id=department.idDepartment, new_values=payload.model_dump(), request=request)
+    write_audit(db, action="hr_department_created", module="hr", user_id=user.identification, entity="hr_department", entity_id=department.idDepartment, new_values=payload.model_dump() | {"department_code": department_code}, request=request)
     db.commit()
     db.refresh(department)
     return department
@@ -388,10 +389,11 @@ def list_positions(db: Session = Depends(get_db), user: User = Depends(require_p
 
 @router.post("/positions", status_code=status.HTTP_201_CREATED)
 def create_position(payload: PositionCreate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
-    if db.query(HRPosition).filter(HRPosition.position_code == payload.position_code, HRPosition.company_id == user.company_id).first():
+    position_code = supplied_or_generated(db, payload.position_code, HRPosition, "position_code", "CRG", scope_filters=[HRPosition.company_id == user.company_id])
+    if db.query(HRPosition).filter(HRPosition.position_code == position_code, HRPosition.company_id == user.company_id).first():
         raise HTTPException(status_code=409, detail="Position code already exists")
     item = HRPosition(
-        position_code=payload.position_code.strip(),
+        position_code=position_code,
         name=payload.name.strip(),
         level=payload.level.strip(),
         department=payload.department.strip(),
@@ -403,7 +405,7 @@ def create_position(payload: PositionCreate, request: Request, user: User = Depe
     )
     db.add(item)
     db.flush()
-    write_audit(db, action="hr_position_created", module="hr", user_id=user.identification, entity="hr_position", entity_id=item.idPosition, new_values=payload.model_dump(), request=request)
+    write_audit(db, action="hr_position_created", module="hr", user_id=user.identification, entity="hr_position", entity_id=item.idPosition, new_values=payload.model_dump() | {"position_code": position_code}, request=request)
     db.commit()
     db.refresh(item)
     return item
@@ -447,12 +449,13 @@ def list_vacancies(status_filter: str | None = None, db: Session = Depends(get_d
 
 @router.post("/vacancies", status_code=status.HTTP_201_CREATED)
 def create_vacancy(payload: VacancyCreate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
-    if db.query(HRVacancy).filter(HRVacancy.vacancy_code == payload.vacancy_code, HRVacancy.company_id == user.company_id).first():
+    vacancy_code = supplied_or_generated(db, payload.vacancy_code, HRVacancy, "vacancy_code", "VAC", scope_filters=[HRVacancy.company_id == user.company_id])
+    if db.query(HRVacancy).filter(HRVacancy.vacancy_code == vacancy_code, HRVacancy.company_id == user.company_id).first():
         raise HTTPException(status_code=409, detail="Vacancy code already exists")
     if payload.position_id and not db.query(HRPosition).filter(HRPosition.idPosition == payload.position_id, HRPosition.company_id == user.company_id).first():
         raise HTTPException(status_code=404, detail="Position not found")
     vacancy = HRVacancy(
-        vacancy_code=payload.vacancy_code,
+        vacancy_code=vacancy_code,
         title=payload.title,
         department=payload.department,
         ps1008IdPosition=payload.position_id,
@@ -468,7 +471,7 @@ def create_vacancy(payload: VacancyCreate, request: Request, user: User = Depend
     )
     db.add(vacancy)
     db.flush()
-    write_audit(db, action="hr_vacancy_created", module="hr", user_id=user.identification, entity="hr_vacancy", entity_id=vacancy.idVacancy, new_values=payload.model_dump(), request=request)
+    write_audit(db, action="hr_vacancy_created", module="hr", user_id=user.identification, entity="hr_vacancy", entity_id=vacancy.idVacancy, new_values=payload.model_dump() | {"vacancy_code": vacancy_code}, request=request)
     db.commit()
     db.refresh(vacancy)
     return _vacancy_out(vacancy)
@@ -504,14 +507,15 @@ def list_candidates(status_filter: str | None = None, db: Session = Depends(get_
 
 @router.post("/candidates", status_code=status.HTTP_201_CREATED)
 def create_candidate(payload: CandidateCreate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
-    if db.query(HRCandidate).filter(HRCandidate.candidate_code == payload.candidate_code, HRCandidate.company_id == user.company_id).first():
+    candidate_code = supplied_or_generated(db, payload.candidate_code, HRCandidate, "candidate_code", "CAN", scope_filters=[HRCandidate.company_id == user.company_id])
+    if db.query(HRCandidate).filter(HRCandidate.candidate_code == candidate_code, HRCandidate.company_id == user.company_id).first():
         raise HTTPException(status_code=409, detail="Candidate code already exists")
     if payload.email and db.query(HRCandidate).filter(HRCandidate.email == payload.email, HRCandidate.status != "rechazado", HRCandidate.company_id == user.company_id).first():
         raise HTTPException(status_code=409, detail="Candidate email already exists")
     if payload.resume_document_id and not db.query(Document).filter(Document.idDocument == payload.resume_document_id, Document.company_id == user.company_id).first():
         raise HTTPException(status_code=404, detail="Resume document not found")
     candidate = HRCandidate(
-        candidate_code=payload.candidate_code.strip(),
+        candidate_code=candidate_code,
         full_name=payload.full_name,
         email=payload.email,
         phone=payload.phone,
@@ -526,7 +530,7 @@ def create_candidate(payload: CandidateCreate, request: Request, user: User = De
     db.add(candidate)
     db.flush()
     _notify_hr(db, user.identification, f"Revisar candidato {candidate.full_name}", f"/hr?view=candidates&candidate={candidate.idCandidate}")
-    write_audit(db, action="hr_candidate_created", module="hr", user_id=user.identification, entity="hr_candidate", entity_id=candidate.idCandidate, new_values=payload.model_dump(), request=request)
+    write_audit(db, action="hr_candidate_created", module="hr", user_id=user.identification, entity="hr_candidate", entity_id=candidate.idCandidate, new_values=payload.model_dump() | {"candidate_code": candidate_code}, request=request)
     db.commit()
     db.refresh(candidate)
     return _candidate_out(candidate)
@@ -558,7 +562,7 @@ def hire_candidate(candidate_id: int, payload: CandidateHire, request: Request, 
         raise HTTPException(status_code=409, detail="Candidate must be approved before hiring")
     if db.get(Employee, payload.identification):
         raise HTTPException(status_code=409, detail="Employee already exists")
-    employee_code = payload.employee_code or f"EMP-{payload.identification}"
+    employee_code = supplied_or_generated(db, payload.employee_code, Employee, "employee_code", "EMP")
     if db.query(Employee).filter(Employee.employee_code == employee_code, Employee.company_id == user.company_id).first():
         raise HTTPException(status_code=409, detail="Employee code already exists")
     employee = Employee(
@@ -596,13 +600,16 @@ def list_employees(user: User = Depends(require_permission("hr.view")), db: Sess
 def create_employee(payload: EmployeeCreate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
     if db.get(Employee, payload.identification):
         raise HTTPException(status_code=409, detail="Employee already exists")
-    if db.query(Employee).filter(Employee.employee_code == payload.employee_code, Employee.company_id == user.company_id).first():
+    employee_code = supplied_or_generated(db, payload.employee_code, Employee, "employee_code", "EMP")
+    if db.query(Employee).filter(Employee.employee_code == employee_code, Employee.company_id == user.company_id).first():
         raise HTTPException(status_code=409, detail="Employee code already exists")
-    employee = Employee(**payload.model_dump(), company_id=user.company_id, status="active")
+    data = payload.model_dump()
+    data["employee_code"] = employee_code
+    employee = Employee(**data, company_id=user.company_id, status="active")
     db.add(employee)
     db.flush()
     _notify_hr(db, user.identification, f"Validar documentos obligatorios de {employee.full_name}", f"/hr?employee={employee.identification}")
-    write_audit(db, action="employee_created", module="hr", user_id=user.identification, entity="employee", entity_id=employee.identification, new_values=payload.model_dump(), request=request)
+    write_audit(db, action="employee_created", module="hr", user_id=user.identification, entity="employee", entity_id=employee.identification, new_values=data, request=request)
     db.commit()
     publish_event("employee.created", {"employee_id": employee.identification})
     db.refresh(employee)

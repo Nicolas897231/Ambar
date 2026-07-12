@@ -54,7 +54,7 @@ function CandidateCard({ c, onClick }) {
 function VacancyModal({ onClose, onCreated }) {
   const toast = useToast();
   const [payload, setPayload] = rcS({
-    vacancy_code: `VAC-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
+    vacancy_code: "",
     title: "",
     department: "",
     contract_type: "",
@@ -66,7 +66,6 @@ function VacancyModal({ onClose, onCreated }) {
   const setField = (key, value) => setPayload((current) => ({ ...current, [key]: value }));
   const submit = async () => {
     const missing = [];
-    if (!payload.vacancy_code.trim()) missing.push("código");
     if (!payload.title.trim()) missing.push("nombre de la vacante");
     if (!payload.department.trim()) missing.push("dependencia");
     if (missing.length) {
@@ -75,7 +74,7 @@ function VacancyModal({ onClose, onCreated }) {
     }
     try {
       const created = await AmbarAPI.post("/hr/vacancies", {
-        vacancy_code: payload.vacancy_code.trim(),
+        vacancy_code: payload.vacancy_code.trim() || null,
         title: payload.title.trim(),
         department: payload.department.trim(),
         contract_type: payload.contract_type.trim() || null,
@@ -95,7 +94,7 @@ function VacancyModal({ onClose, onCreated }) {
     <Modal title="Nueva vacante" sub="Se publica en el pipeline interno y en el portal público si queda abierta." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear vacante</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
-        <Field label="Código" required><input value={payload.vacancy_code} onChange={(e) => setField("vacancy_code", e.target.value)} /></Field>
+        <Field label="Código" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input value={payload.vacancy_code} onChange={(e) => setField("vacancy_code", e.target.value)} placeholder="Automático" /></Field>
         <Field label="Estado"><select value={payload.status} onChange={(e) => setField("status", e.target.value)}><option value="open">Abierta</option><option value="paused">Pausada</option><option value="closed">Cerrada</option></select></Field>
         <Field label="Cargo / vacante" required><input value={payload.title} onChange={(e) => setField("title", e.target.value)} placeholder="Ej. Auxiliar de archivo" /></Field>
         <Field label="Dependencia" required><input value={payload.department} onChange={(e) => setField("department", e.target.value)} placeholder="Ej. Talento Humano" /></Field>

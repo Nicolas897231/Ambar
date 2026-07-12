@@ -101,7 +101,7 @@ function EmployeeModal({ onClose, onCreated }) {
   const departments = AmbarAPI.listFrom(depsRaw);
   const setField = (key, value) => setPayload(p => ({ ...p, [key]: value }));
   const submit = async () => {
-    const missing = ["identification", "full_name", "employee_code", "position", "department", "hire_date"].filter(k => !String(payload[k] || "").trim());
+    const missing = ["identification", "full_name", "position", "department", "hire_date"].filter(k => !String(payload[k] || "").trim());
     if (missing.length) {
       toast(`Faltan campos obligatorios: ${missing.join(", ")}.`, { tone: "danger", title: "Empleado incompleto" });
       return;
@@ -120,7 +120,7 @@ function EmployeeModal({ onClose, onCreated }) {
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear empleado</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
         <Field label="Identificación" required><input inputMode="numeric" maxLength={12} value={payload.identification} onChange={e => setField("identification", e.target.value.replace(/\D/g, ""))} placeholder="1234567890" /></Field>
-        <Field label="Código empleado" required><input maxLength={40} value={payload.employee_code} onChange={e => setField("employee_code", e.target.value)} placeholder="EMP-001" /></Field>
+        <Field label="Código empleado" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input maxLength={40} value={payload.employee_code} onChange={e => setField("employee_code", e.target.value)} placeholder="Automático" /></Field>
         <Field label="Nombre completo" required><input maxLength={180} value={payload.full_name} onChange={e => setField("full_name", e.target.value.replace(/[0-9]/g, ""))} placeholder="Nombre y apellidos" /></Field>
         <Field label="Fecha de ingreso" required><input type="date" value={payload.hire_date} onChange={e => setField("hire_date", e.target.value)} /></Field>
         <Field label="Cargo" required><select value={payload.position} onChange={e => setField("position", e.target.value)}><option value="">Seleccionar cargo</option>{positions.map(p => <option key={p.idPosition || p.id || p.name} value={p.name || p.position_name}>{p.name || p.position_name}</option>)}</select></Field>
@@ -135,8 +135,8 @@ function PositionModal({ onClose, onCreated, departments }) {
   const [payload, setPayload] = hrS({ position_code: "", name: "", level: "operativo", department: "", description: "", required_documents: "hoja_vida\ncontrato_firmado\nexamen_ingreso", suggested_permissions: "" });
   const setField = (key, value) => setPayload(p => ({ ...p, [key]: value }));
   const submit = async () => {
-    if (!payload.position_code.trim() || !payload.name.trim() || !payload.department.trim()) {
-      toast("Código, nombre y dependencia son obligatorios.", { tone: "danger", title: "Cargo incompleto" });
+    if (!payload.name.trim() || !payload.department.trim()) {
+      toast("Nombre y dependencia son obligatorios. El código lo puede generar AMBAR.", { tone: "danger", title: "Cargo incompleto" });
       return;
     }
     try {
@@ -156,7 +156,7 @@ function PositionModal({ onClose, onCreated, departments }) {
     <Modal title="Nuevo perfil de cargo" sub="Los cargos alimentan usuarios, empleados y checklist documental." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear cargo</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
-        <Field label="Código" required><input maxLength={40} value={payload.position_code} onChange={e => setField("position_code", e.target.value)} placeholder="CAR-001" /></Field>
+        <Field label="Código" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input maxLength={40} value={payload.position_code} onChange={e => setField("position_code", e.target.value)} placeholder="Automático" /></Field>
         <Field label="Nombre" required><input maxLength={120} value={payload.name} onChange={e => setField("name", e.target.value)} placeholder="Analista documental" /></Field>
         <Field label="Nivel"><select value={payload.level} onChange={e => setField("level", e.target.value)}>{["operativo", "tecnico", "profesional", "coordinacion", "direccion"].map(x => <option key={x} value={x}>{x}</option>)}</select></Field>
         <Field label="Dependencia" required><select value={payload.department} onChange={e => setField("department", e.target.value)}><option value="">Seleccionar dependencia</option>{departments.map(d => <option key={d.idDepartment || d.id || d.name} value={d.name || d.department_name}>{d.name || d.department_name}</option>)}</select></Field>
@@ -173,8 +173,8 @@ function DepartmentModal({ onClose, onCreated }) {
   const [payload, setPayload] = hrS({ department_code: "", name: "", responsible_identification: "" });
   const setField = (key, value) => setPayload(p => ({ ...p, [key]: value }));
   const submit = async () => {
-    if (!payload.department_code.trim() || !payload.name.trim()) {
-      toast("Código y nombre son obligatorios.", { tone: "danger", title: "Dependencia incompleta" });
+    if (!payload.name.trim()) {
+      toast("El nombre es obligatorio. El código lo puede generar AMBAR.", { tone: "danger", title: "Dependencia incompleta" });
       return;
     }
     try {
@@ -191,7 +191,7 @@ function DepartmentModal({ onClose, onCreated }) {
     <Modal title="Nueva dependencia" sub="La dependencia organiza cargos y expedientes laborales." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear dependencia</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
-        <Field label="Código" required><input maxLength={40} value={payload.department_code} onChange={e => setField("department_code", e.target.value)} placeholder="RRHH" /></Field>
+        <Field label="Código" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input maxLength={40} value={payload.department_code} onChange={e => setField("department_code", e.target.value)} placeholder="Automático" /></Field>
         <Field label="Nombre" required><input maxLength={120} value={payload.name} onChange={e => setField("name", e.target.value)} placeholder="Talento Humano" /></Field>
         <Field label="Responsable"><input inputMode="numeric" maxLength={12} value={payload.responsible_identification} onChange={e => setField("responsible_identification", e.target.value.replace(/\D/g, ""))} placeholder="Identificación" /></Field>
       </div>

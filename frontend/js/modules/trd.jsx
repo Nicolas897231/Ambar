@@ -39,7 +39,6 @@ function CreateSeriesModal({ onClose, onCreated }) {
 
   const submit = async () => {
     const missing = [];
-    if (!payload.code.trim()) missing.push("codigo");
     if (!payload.name.trim()) missing.push("nombre");
     if (missing.length) {
       toast(`Falta: ${missing.join(", ")}.`, { tone: "danger", title: "Serie incompleta" });
@@ -60,7 +59,7 @@ function CreateSeriesModal({ onClose, onCreated }) {
     <Modal title="Nueva serie documental" sub="La serie queda gobernada por una dependencia TRD." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear serie</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
-        <Field label="Codigo" required><input maxLength={40} value={payload.code} onChange={e => setField("code", e.target.value)} placeholder="100" /></Field>
+        <Field label="Código" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input maxLength={40} value={payload.code} onChange={e => setField("code", e.target.value)} placeholder="Automático" /></Field>
         <Field label="Nombre" required><input maxLength={160} value={payload.name} onChange={e => setField("name", e.target.value)} placeholder="Historias laborales" /></Field>
         <Field label="Dependencia"><select value={payload.dependency_id} onChange={e => setField("dependency_id", e.target.value)}><option value="">Usar dependencia por defecto</option>{dependencies.map(d => <option key={d.idDependency || d.id} value={d.idDependency || d.id}>{d.name || d.code}</option>)}</select></Field>
         <Field label="Estado"><select value={payload.status} onChange={e => setField("status", e.target.value)}><option value="active">Activa</option><option value="inactive">Inactiva</option></select></Field>
@@ -76,8 +75,8 @@ function CreateDependencyModal({ onClose, onCreated }) {
   const setField = (key, value) => setPayload(p => ({ ...p, [key]: value }));
 
   const submit = async () => {
-    if (!payload.code.trim() || !payload.name.trim()) {
-      toast("Codigo y nombre son obligatorios.", { tone: "danger", title: "Dependencia incompleta" });
+    if (!payload.name.trim()) {
+      toast("El nombre es obligatorio. El código lo puede generar AMBAR.", { tone: "danger", title: "Dependencia incompleta" });
       return;
     }
     try {
@@ -94,7 +93,7 @@ function CreateDependencyModal({ onClose, onCreated }) {
     <Modal title="Nueva dependencia" sub="Toda serie debe pertenecer a una dependencia funcional." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear dependencia</Button></>}>
       <div className="grid cols-2">
-        <Field label="Codigo" required><input value={payload.code} maxLength={40} onChange={e => setField("code", e.target.value)} placeholder="TH" /></Field>
+        <Field label="Código" help="Opcional. Si lo dejas vacío AMBAR lo genera."><input value={payload.code} maxLength={40} onChange={e => setField("code", e.target.value)} placeholder="Automático" /></Field>
         <Field label="Nombre" required><input value={payload.name} maxLength={160} onChange={e => setField("name", e.target.value)} placeholder="Talento Humano" /></Field>
         <Field label="Estado"><select value={payload.status} onChange={e => setField("status", e.target.value)}><option value="active">Activa</option><option value="inactive">Inactiva</option></select></Field>
         <div style={{ gridColumn: "1 / -1" }}><Field label="Descripcion"><textarea value={payload.description} maxLength={500} onChange={e => setField("description", e.target.value)} placeholder="Funcion documental de la dependencia" /></Field></div>

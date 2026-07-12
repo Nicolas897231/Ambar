@@ -29,6 +29,7 @@ from app.db.models import (
 from app.db.session import get_db
 from app.domains.archives.router import _physical_location_path, _require_archive_access, allowed_archive_ids
 from app.services.audit import write_audit
+from app.services.codes import supplied_or_generated
 from app.services.events import publish_event
 from app.services.operational import create_operational_task, notify_action, resolve_notifications, resolve_related_tasks
 from app.services.storage import store_file
@@ -54,7 +55,7 @@ ACTIVE_LOAN_STATUSES = {"active", "due_today", "overdue"}
 
 
 class BatchCreate(BaseModel):
-    batch_code: str = Field(min_length=3, max_length=60)
+    batch_code: str | None = Field(default=None, min_length=3, max_length=60)
     origin_location: int | None = None
     destination_location: int | None = None
     origin_archive_id: int | None = None
@@ -136,23 +137,24 @@ def _location_from_archive(archive: Archive | None, fallback: int | None) -> int
 
 
 def _add_batch_kardex(db: Session, batch: TransferBatch, user: User, status: str, notes: str | None = None) -> None:
-    db.add(
-        KardexMovement(
-            movement_type="transfer",
-            entity_type="batch",
-            entity_id=batch.idBatch,
-            related_transfer_id=batch.idBatch,
-            ps930OriginArchiveId=batch.ps930OriginArchiveId,
-            ps930DestinationArchiveId=batch.ps930DestinationArchiveId,
-            origin_location_id=batch.origin_location,
-            destination_location_id=batch.destination_location,
-            ps405ActorIdentification=user.identification,
-            previous_status=batch.status if status != batch.status else None,
-            status=status,
-            observations=notes or f"Lote documental {batch.batch_code}: {status}",
-            metadata_json={"batch_code": batch.batch_code, "legacy_origin_location": batch.origin_location, "legacy_destination_location": batch.destination_location},
-        )
+    movement = KardexMovement(
+        movement_code=supplied_or_generated(db, None, KardexMovement, "movement_code", "MOV"),
+        movement_type="transfer",
+        entity_type="batch",
+        entity_id=batch.idBatch,
+        related_transfer_id=batch.idBatch,
+        ps930OriginArchiveId=batch.ps930OriginArchiveId,
+        ps930DestinationArchiveId=batch.ps930DestinationArchiveId,
+        origin_location_id=batch.origin_location,
+        destination_location_id=batch.destination_location,
+        ps405ActorIdentification=user.identification,
+        previous_status=batch.status if status != batch.status else None,
+        status=status,
+        observations=notes or f"Lote documental {batch.batch_code}: {status}",
+        metadata_json={"batch_code": batch.batch_code, "legacy_origin_location": batch.origin_location, "legacy_destination_location": batch.destination_location},
     )
+    db.add(movement)
+    db.flush()
 
 
 def _related_fields(entity_type: str, entity_id: int) -> dict:
@@ -166,6 +168,7 @@ def _related_fields(entity_type: str, entity_id: int) -> dict:
 
 def _add_reception_kardex(db: Session, batch: TransferBatch, item: TransferBatchItem, user: User, event: str, old_status: str, notes: str | None = None) -> KardexMovement:
     movement = KardexMovement(
+        movement_code=supplied_or_generated(db, None, KardexMovement, "movement_code", "MOV"),
         movement_type=event,
         entity_type=item.entity_type,
         entity_id=item.entity_id,
@@ -198,24 +201,25 @@ def _add_reception_kardex(db: Session, batch: TransferBatch, item: TransferBatch
     db.flush()
     if event == "reception.item.accepted" and item.entity_type in {"folder", "expedient", "box"}:
         for child_type, child_id in _child_entities(db, item.entity_type, item.entity_id):
-            db.add(
-                KardexMovement(
-                    movement_type="custody.changed",
-                    entity_type=child_type,
-                    entity_id=child_id,
-                    related_transfer_id=batch.idBatch,
-                    **_related_fields(child_type, child_id),
-                    ps930OriginArchiveId=batch.ps930OriginArchiveId,
-                    ps930DestinationArchiveId=batch.ps930DestinationArchiveId,
-                    origin_location_id=batch.origin_location,
-                    destination_location_id=batch.destination_location,
-                    ps405ActorIdentification=user.identification,
-                    previous_status=old_status,
-                    status="accepted",
-                    observations=f"Trazabilidad en cascada desde {item.entity_type} #{item.entity_id}",
-                    metadata_json={"parent_movement_id": movement.idMovement, "batch_id": batch.idBatch, "batch_item_id": item.idBatchItem},
-                )
+            child_movement = KardexMovement(
+                movement_code=supplied_or_generated(db, None, KardexMovement, "movement_code", "MOV"),
+                movement_type="custody.changed",
+                entity_type=child_type,
+                entity_id=child_id,
+                related_transfer_id=batch.idBatch,
+                **_related_fields(child_type, child_id),
+                ps930OriginArchiveId=batch.ps930OriginArchiveId,
+                ps930DestinationArchiveId=batch.ps930DestinationArchiveId,
+                origin_location_id=batch.origin_location,
+                destination_location_id=batch.destination_location,
+                ps405ActorIdentification=user.identification,
+                previous_status=old_status,
+                status="accepted",
+                observations=f"Trazabilidad en cascada desde {item.entity_type} #{item.entity_id}",
+                metadata_json={"parent_movement_id": movement.idMovement, "batch_id": batch.idBatch, "batch_item_id": item.idBatchItem},
             )
+            db.add(child_movement)
+            db.flush()
     return movement
 
 
@@ -497,7 +501,7 @@ def _ensure_batch_fuid(db: Session, batch: TransferBatch, user: User) -> Invento
         return existing
     items = db.query(TransferBatchItem).filter(TransferBatchItem.ps1070IdBatch == batch.idBatch).all()
     folio_total = sum(item.expected_folios or item.folio_total or 0 for item in items)
-    code = f"FUID-{batch.batch_code}-{int(datetime.now(UTC).timestamp())}"
+    code = supplied_or_generated(db, None, InventoryFuid, "fuid_code", "FUID")
     records = []
     for order, row in enumerate(items, start=1):
         records.append({
@@ -644,8 +648,9 @@ def create_batch(payload: BatchCreate, request: Request, user: User = Depends(re
         raise HTTPException(status_code=422, detail="Invalid location")
     if not origin_archive and not destination_archive and (payload.origin_location is None or payload.destination_location is None):
         raise HTTPException(status_code=422, detail="Batch requires archives or legacy locations")
+    batch_code = supplied_or_generated(db, payload.batch_code, TransferBatch, "batch_code", "TRF")
     batch = TransferBatch(
-        batch_code=payload.batch_code,
+        batch_code=batch_code,
         origin_location=origin_location,
         destination_location=destination_location,
         ps930OriginArchiveId=origin_archive.idArchive if origin_archive else None,
@@ -655,7 +660,7 @@ def create_batch(payload: BatchCreate, request: Request, user: User = Depends(re
     db.add(batch)
     db.flush()
     _add_batch_kardex(db, batch, user, "pending", "Lote documental creado")
-    write_audit(db, action="transfer_batch_created", module="transfers", user_id=user.identification, entity="transfer_batch", entity_id=batch.idBatch, new_values=payload.model_dump(), request=request)
+    write_audit(db, action="transfer_batch_created", module="transfers", user_id=user.identification, entity="transfer_batch", entity_id=batch.idBatch, new_values=payload.model_dump() | {"batch_code": batch_code}, request=request)
     db.commit()
     publish_event("transfer_batch.created", {"batch_id": batch.idBatch})
     db.refresh(batch)
