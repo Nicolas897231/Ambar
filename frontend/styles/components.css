@@ -129,10 +129,10 @@ table.tbl { width: 100%; min-width: 760px; border-collapse: collapse; font-size:
 
 /* ---------------- MODAL / DRAWER ---------------- */
 .scrim { position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(3px); z-index: 80; animation: fade-in var(--t-med) var(--ease-out); }
-.modal { position: fixed; z-index: 81; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(560px, calc(100vw - 32px)); max-height: min(90dvh, calc(100vh - 32px)); overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--shadow-xl); padding: 0; display: flex; flex-direction: column; animation: modal-in var(--t-med) var(--ease-spring); }
+.modal { position: fixed; z-index: 81; left: 50%; top: clamp(12px, 5dvh, 48px); transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 24px); overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--shadow-xl); padding: 0; display: flex; flex-direction: column; animation: modal-in var(--t-med) var(--ease-spring); }
 .modal.lg { width: min(820px, calc(100vw - 32px)); }
 .modal.wide { width: min(980px, calc(100vw - 32px)); }
-@keyframes modal-in { from { opacity: 0; transform: translate(-50%, -46%) scale(0.96); } to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
+@keyframes modal-in { from { opacity: 0; transform: translateX(-50%) translateY(18px) scale(0.98); } to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
 .drawer { position: fixed; z-index: 81; top: 0; right: 0; bottom: 0; width: min(560px, 96vw); background: var(--panel); border-left: 1px solid var(--line); box-shadow: var(--shadow-xl); overflow: auto; animation: drawer-in var(--t-med) var(--ease-out); }
 .drawer.wide { width: min(920px, 96vw); }
 @keyframes drawer-in { from { transform: translateX(40px); opacity: 0.4; } to { transform: translateX(0); opacity: 1; } }

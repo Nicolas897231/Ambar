@@ -6,6 +6,7 @@ from xml.etree import ElementTree
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_permission
@@ -39,6 +40,13 @@ class SeriesCreate(BaseModel):
         return _blank_to_none(value)
 
 
+class SeriesUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=3, max_length=160)
+    description: str | None = None
+    dependency_id: int | None = None
+    status: str | None = Field(default=None, pattern="^(active|inactive)$")
+
+
 class DependencyCreate(BaseModel):
     code: str | None = Field(default=None, min_length=2, max_length=40)
     name: str = Field(min_length=3, max_length=160)
@@ -55,6 +63,17 @@ class SubseriesCreate(BaseModel):
     series_id: int
     name: str = Field(min_length=3, max_length=160)
     retention_years: int = Field(ge=1, le=100)
+
+
+class SubseriesUpdate(BaseModel):
+    series_id: int | None = None
+    name: str | None = Field(default=None, min_length=3, max_length=160)
+    status: str | None = Field(default=None, pattern="^(active|inactive)$")
+    retention_years: int | None = Field(default=None, ge=1, le=100)
+    archive_management: int | None = Field(default=None, ge=0, le=100)
+    archive_central: int | None = Field(default=None, ge=0, le=100)
+    final_action: str | None = Field(default=None, min_length=1, max_length=120)
+    procedure: str | None = None
 
 
 class DispositionCreate(BaseModel):
@@ -751,9 +770,38 @@ def create_series(
     return _series_out(item)
 
 
+@router.patch("/series/{series_id}")
+def update_series(
+    series_id: int,
+    payload: SeriesUpdate,
+    request: Request,
+    user: User = Depends(require_permission("trd.manage")),
+    db: Session = Depends(get_db),
+):
+    item = db.get(TrdSeries, series_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Serie not found")
+    old_values = _series_out(item)
+    if payload.dependency_id is not None:
+        dependency = db.get(TrdDependency, payload.dependency_id)
+        if not dependency:
+            raise HTTPException(status_code=422, detail="La dependencia TRD no existe.")
+        item.ps608IdDependency = dependency.idDependency
+    if payload.name is not None:
+        item.name = payload.name.strip()
+    if payload.description is not None:
+        item.description = payload.description
+    if payload.status is not None:
+        item.status = payload.status
+    write_audit(db, action="trd_series_updated", module="trd", user_id=user.identification, entity="series", entity_id=item.idSeries, old_values=old_values, new_values=payload.model_dump(exclude_unset=True), request=request)
+    db.commit()
+    db.refresh(item)
+    return _series_out(item)
+
+
 @router.get("/subseries")
 def list_subseries(db: Session = Depends(get_db), _: User = Depends(require_permission("document.read"))):
-    return db.query(TrdSubseries).order_by(TrdSubseries.name.asc()).all()
+    return [_subseries_out(item) for item in db.query(TrdSubseries).order_by(TrdSubseries.name.asc()).all()]
 
 
 @router.get("/subseries/{subseries_id}/workspace")
@@ -837,13 +885,71 @@ def create_subseries(
 ):
     if not db.get(TrdSeries, payload.series_id):
         raise HTTPException(status_code=404, detail="Series not found")
-    item = TrdSubseries(ps610IdSeries=payload.series_id, name=payload.name, retention_years=payload.retention_years)
+    normalized_name = payload.name.strip()
+    existing = db.query(TrdSubseries).filter(
+        TrdSubseries.ps610IdSeries == payload.series_id,
+        func.lower(TrdSubseries.name) == normalized_name.lower(),
+    ).one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="Ya existe una subserie con ese nombre en la serie seleccionada.")
+    item = TrdSubseries(ps610IdSeries=payload.series_id, name=normalized_name, retention_years=payload.retention_years)
     db.add(item)
     db.flush()
     write_audit(db, action="trd_subseries_created", module="trd", user_id=user.identification, entity="subseries", entity_id=item.idSubseries, new_values=payload.model_dump(), request=request)
     db.commit()
     db.refresh(item)
-    return item
+    return _subseries_out(item)
+
+
+@router.patch("/subseries/{subseries_id}")
+def update_subseries(
+    subseries_id: int,
+    payload: SubseriesUpdate,
+    request: Request,
+    user: User = Depends(require_permission("trd.manage")),
+    db: Session = Depends(get_db),
+):
+    item = db.get(TrdSubseries, subseries_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Subseries not found")
+    old_values = _subseries_out(item)
+    target_series_id = payload.series_id if payload.series_id is not None else item.ps610IdSeries
+    if payload.series_id is not None and not db.get(TrdSeries, payload.series_id):
+        raise HTTPException(status_code=404, detail="Series not found")
+    if payload.name is not None:
+        normalized_name = payload.name.strip()
+        duplicate = db.query(TrdSubseries).filter(
+            TrdSubseries.idSubseries != subseries_id,
+            TrdSubseries.ps610IdSeries == target_series_id,
+            func.lower(TrdSubseries.name) == normalized_name.lower(),
+        ).one_or_none()
+        if duplicate:
+            raise HTTPException(status_code=409, detail="Ya existe una subserie con ese nombre en la serie seleccionada.")
+        item.name = normalized_name
+    if payload.series_id is not None:
+        item.ps610IdSeries = payload.series_id
+    if payload.status is not None:
+        item.status = payload.status
+    disposition = db.query(TrdDisposition).filter(TrdDisposition.ps612IdSubseries == subseries_id).order_by(TrdDisposition.idDisposition.desc()).first()
+    if payload.retention_years is not None:
+        item.retention_years = payload.retention_years
+    if payload.archive_management is not None or payload.archive_central is not None or payload.final_action is not None or payload.procedure is not None:
+        management = payload.archive_management if payload.archive_management is not None else (disposition.archive_management if disposition else 0)
+        central = payload.archive_central if payload.archive_central is not None else (disposition.archive_central if disposition else item.retention_years)
+        final_action = _normalize_final_action(payload.final_action or (disposition.final_action if disposition else None))
+        item.retention_years = management + central
+        if disposition:
+            disposition.archive_management = management
+            disposition.archive_central = central
+            disposition.final_action = final_action
+            if payload.procedure is not None:
+                disposition.procedure = payload.procedure
+        else:
+            db.add(TrdDisposition(ps612IdSubseries=subseries_id, archive_management=management, archive_central=central, final_action=final_action, procedure=payload.procedure))
+    write_audit(db, action="trd_subseries_updated", module="trd", user_id=user.identification, entity="subseries", entity_id=item.idSubseries, old_values=old_values, new_values=payload.model_dump(exclude_unset=True), request=request)
+    db.commit()
+    db.refresh(item)
+    return _subseries_out(item)
 
 
 @router.patch("/subseries/{subseries_id}/retention")

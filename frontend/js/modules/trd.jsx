@@ -20,8 +20,12 @@ function mapTrdRows(items) {
       id: seriesId,
       code,
       name,
+      description: series.description || item.description || "",
+      dependency_id: series.dependency_id || item.dependency_id || item.dependency?.idDependency || item.dependency?.id || series.dependency?.idDependency || "",
       dependency: item.dependency_name || item.dependency?.name || series.dependency?.name || "",
+      status: series.status || item.status || "active",
       sub: [],
+      subseriesDetails: [],
       typologies: [],
       gestion: 0,
       central: 0,
@@ -31,11 +35,27 @@ function mapTrdRows(items) {
     subseriesList.forEach((sub) => {
       const subName = sub.subseries_name || sub.name || item.subseries_name;
       if (subName && !current.sub.includes(subName)) current.sub.push(subName);
-      const management = sub.retention_management_years ?? sub.archive_management ?? item.retention_management_years ?? item.archive_management ?? item.gestion;
-      const central = sub.retention_central_years ?? sub.archive_central ?? item.retention_central_years ?? item.archive_central ?? item.central;
+      const subId = sub.idSubseries || sub.id || item.subseries_id || item.idSubseries;
+      const retention = item.retention || {};
+      const management = sub.retention_management_years ?? sub.archive_management ?? retention.management_years ?? item.retention_management_years ?? item.archive_management ?? item.gestion ?? 0;
+      const central = sub.retention_central_years ?? sub.archive_central ?? retention.central_years ?? item.retention_central_years ?? item.archive_central ?? item.central ?? 0;
       if (management !== undefined) current.gestion = Math.max(Number(current.gestion || 0), Number(management || 0));
       if (central !== undefined) current.central = Math.max(Number(current.central || 0), Number(central || 0));
-      current.final = normalizeDisposition(sub.final_disposition || sub.final_action || item.final_disposition || item.final_action || item.disposition || item.disposition_final || current.final);
+      current.final = normalizeDisposition(sub.final_disposition || sub.final_action || retention.final_action || item.final_disposition || item.final_action || item.disposition || item.disposition_final || current.final);
+      if (subId && subName && !current.subseriesDetails.some(item => Number(item.id) === Number(subId))) {
+        current.subseriesDetails.push({
+          id: subId,
+          series_id: seriesId,
+          series_code: code,
+          series_name: name,
+          name: subName,
+          archive_management: Number(management || 0),
+          archive_central: Number(central || 0),
+          final_action: sub.final_action || retention.final_action || item.final_action || item.disposition || "CT",
+          procedure: sub.procedure || retention.procedure || item.procedure || "",
+          status: sub.status || "active",
+        });
+      }
       const types = sub.document_types || sub.typologies || item.document_types || item.typologies || [];
       (Array.isArray(types) ? types : []).forEach((type) => {
         const label = type.name || type.type_name || type.type_code || type.code;
@@ -93,6 +113,50 @@ function CreateSeriesModal({ onClose, onCreated }) {
   );
 }
 
+function EditSeriesModal({ series, dependencies, onClose, onSaved }) {
+  const toast = useToast();
+  const [payload, setPayload] = tdS({
+    name: series.name || "",
+    description: series.description || "",
+    dependency_id: series.dependency_id || series.dependency?.idDependency || "",
+    status: series.status || "active",
+  });
+  const setField = (key, value) => setPayload(p => ({ ...p, [key]: value }));
+
+  const submit = async () => {
+    if (!payload.name.trim()) {
+      toast("Falta: nombre de la serie.", { tone: "danger", title: "Serie incompleta" });
+      return;
+    }
+    try {
+      await AmbarAPI.patch(`/trd/series/${series.id}`, {
+        name: payload.name.trim(),
+        description: payload.description.trim() || null,
+        dependency_id: payload.dependency_id ? Number(payload.dependency_id) : null,
+        status: payload.status,
+      });
+      toast("Serie actualizada.", { tone: "ok", title: "TRD actualizada" });
+      onSaved && onSaved();
+      onClose();
+    } catch (err) {
+      toast(err.message || "No fue posible actualizar la serie.", { tone: "danger", title: "Error" });
+    }
+  };
+
+  return (
+    <Modal title="Editar serie documental" sub="Actualiza nombre, dependencia y estado sin romper expedientes existentes." onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Guardar cambios</Button></>}>
+      <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
+        <Field label="Codigo"><AutoCodeInput value={series.code || ""} /></Field>
+        <Field label="Nombre" required><input maxLength={160} value={payload.name} onChange={e => setField("name", e.target.value)} /></Field>
+        <Field label="Dependencia"><select value={payload.dependency_id || ""} onChange={e => setField("dependency_id", e.target.value)}><option value="">Dependencia por defecto</option>{dependencies.map(d => <option key={d.idDependency || d.id} value={d.idDependency || d.id}>{d.name || d.code}</option>)}</select></Field>
+        <Field label="Estado"><select value={payload.status} onChange={e => setField("status", e.target.value)}><option value="active">Activa</option><option value="inactive">Inactiva</option></select></Field>
+        <div style={{ gridColumn: "1 / -1" }}><Field label="Descripcion"><textarea value={payload.description || ""} maxLength={500} onChange={e => setField("description", e.target.value)} /></Field></div>
+      </div>
+    </Modal>
+  );
+}
+
 function CreateDependencyModal({ onClose, onCreated }) {
   const toast = useToast();
   const [payload, setPayload] = tdS({ code: "", name: "", description: "", status: "active" });
@@ -121,6 +185,57 @@ function CreateDependencyModal({ onClose, onCreated }) {
         <Field label="Nombre" required><input value={payload.name} maxLength={160} onChange={e => setField("name", e.target.value)} placeholder="Talento Humano" /></Field>
         <Field label="Estado"><select value={payload.status} onChange={e => setField("status", e.target.value)}><option value="active">Activa</option><option value="inactive">Inactiva</option></select></Field>
         <div style={{ gridColumn: "1 / -1" }}><Field label="Descripcion"><textarea value={payload.description} maxLength={500} onChange={e => setField("description", e.target.value)} placeholder="Funcion documental de la dependencia" /></Field></div>
+      </div>
+    </Modal>
+  );
+}
+
+function EditSubseriesModal({ subseries, onClose, onSaved }) {
+  const toast = useToast();
+  const [payload, setPayload] = tdS({
+    name: subseries.name || "",
+    archive_management: subseries.archive_management ?? 0,
+    archive_central: subseries.archive_central ?? 0,
+    final_action: subseries.final_action || "CT",
+    procedure: subseries.procedure || "",
+    status: subseries.status || "active",
+  });
+  const setField = (key, value) => setPayload(p => ({ ...p, [key]: value }));
+
+  const submit = async () => {
+    const missing = [];
+    if (!payload.name.trim()) missing.push("nombre de subserie");
+    const management = Number(payload.archive_management || 0);
+    const central = Number(payload.archive_central || 0);
+    if (management + central < 1) missing.push("retencion minima de 1 ano");
+    if (missing.length) return toast(`Falta: ${missing.join(", ")}.`, { tone: "danger", title: "Subserie incompleta" });
+    try {
+      await AmbarAPI.patch(`/trd/subseries/${subseries.id}`, {
+        name: payload.name.trim(),
+        archive_management: management,
+        archive_central: central,
+        final_action: payload.final_action,
+        procedure: payload.procedure.trim() || null,
+        status: payload.status,
+      });
+      toast("Subserie y retencion actualizadas.", { tone: "ok", title: "TRD actualizada" });
+      onSaved && onSaved();
+      onClose();
+    } catch (err) {
+      toast(err.message || "No fue posible actualizar la subserie.", { tone: "danger", title: "Error" });
+    }
+  };
+
+  return (
+    <Modal lg title="Editar subserie y retencion" sub={`${subseries.series_code || ""} ${subseries.series_name || ""}`.trim()} onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Guardar cambios</Button></>}>
+      <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
+        <Field label="Subserie" required><input maxLength={160} value={payload.name} onChange={e => setField("name", e.target.value)} /></Field>
+        <Field label="Estado"><select value={payload.status} onChange={e => setField("status", e.target.value)}><option value="active">Activa</option><option value="inactive">Inactiva</option></select></Field>
+        <Field label="Retencion en gestion (anos)" required><input type="number" min="0" max="100" value={payload.archive_management} onChange={e => setField("archive_management", e.target.value)} /></Field>
+        <Field label="Retencion en central (anos)" required><input type="number" min="0" max="100" value={payload.archive_central} onChange={e => setField("archive_central", e.target.value)} /></Field>
+        <Field label="Disposicion final" required><select value={payload.final_action} onChange={e => setField("final_action", e.target.value)}><option value="CT">CT - Conservacion total</option><option value="E">E - Eliminacion</option><option value="S">S - Seleccion</option><option value="MT">MT - Medio tecnologico</option></select></Field>
+        <div style={{ gridColumn: "1 / -1" }}><Field label="Procedimiento"><textarea maxLength={800} value={payload.procedure} onChange={e => setField("procedure", e.target.value)} /></Field></div>
       </div>
     </Modal>
   );
@@ -303,6 +418,8 @@ function TRDPage({ user }) {
   const [creatingDep, setCreatingDep] = tdS(false);
   const [creatingSub, setCreatingSub] = tdS(false);
   const [creatingType, setCreatingType] = tdS(false);
+  const [editingSeries, setEditingSeries] = tdS(null);
+  const [editingSubseries, setEditingSubseries] = tdS(null);
   const liveSeries = window.useLiveData(
     () => window.AmbarAPI.endpoints.trdEditor().then(value => mapTrdRows(window.AmbarAPI.listFrom(value, ["rows", "items", "results"]))),
     [],
@@ -313,6 +430,7 @@ function TRDPage({ user }) {
   const series = liveSeries.data;
   const dependencies = window.AmbarAPI.listFrom(liveDependencies.data);
   const documentTypes = window.AmbarAPI.listFrom(liveTypes.data);
+  const retentionRows = series.flatMap(s => (s.subseriesDetails || []).map(sub => ({ ...sub, series_code: s.code, series_name: s.name })));
   const refreshTrd = async () => {
     const value = await window.AmbarAPI.endpoints.trdEditor();
     liveSeries.setData(mapTrdRows(window.AmbarAPI.listFrom(value, ["rows", "items", "results"])));
@@ -365,7 +483,7 @@ function TRDPage({ user }) {
         <Card flush className="an-rise">
           <div className="table-scroll">
             <table className="tbl">
-              <thead><tr><th>Codigo</th><th>Serie documental</th><th>Subseries</th><th>Tipologías</th><th>Disposicion final</th></tr></thead>
+              <thead><tr><th>Codigo</th><th>Serie documental</th><th>Subseries</th><th>Tipologías</th><th>Disposicion final</th><th>Acciones</th></tr></thead>
               <tbody>
                 {series.map(s => (
                   <tr key={s.code}>
@@ -374,6 +492,7 @@ function TRDPage({ user }) {
                     <td><div className="row wrap gap2">{(s.sub || []).map(x => <span key={x} className="tag-soft">{x}</span>)}</div></td>
                     <td><div className="row wrap gap2">{(s.typologies || []).slice(0, 4).map(x => <span key={x} className="tag-soft">{x}</span>)}{(s.typologies || []).length > 4 && <Badge tone="outline">+{s.typologies.length - 4}</Badge>}</div></td>
                     <td><Badge tone={dispositionTone(s.final)}>{s.final}</Badge></td>
+                    <td>{can(user, ["trd.manage"]) && <Button variant="subtle" size="sm" icon="pencil" onClick={() => setEditingSeries(s)}>Editar</Button>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -422,22 +541,26 @@ function TRDPage({ user }) {
             </div>
             {can(user, ["trd.manage"]) && <Button icon="plus" onClick={() => setCreatingSub(true)}>Nueva subserie</Button>}
           </div>
-          <div className="table-scroll">
-            <table className="tbl">
-              <thead><tr><th>Codigo</th><th>Serie</th><th>Archivo de Gestion</th><th>Archivo Central</th><th>Retencion total</th></tr></thead>
-              <tbody>
-                {series.map(s => (
-                  <tr key={s.code}>
-                    <td className="cell-mono">{s.code}</td>
-                    <td className="cell-strong">{s.name}</td>
-                    <td><Badge tone="info">{s.gestion} anos</Badge></td>
-                    <td><Badge tone="brand">{s.central} anos</Badge></td>
-                    <td className="mono">{Number(s.gestion || 0) + Number(s.central || 0)} anos</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {retentionRows.length === 0 ? <Empty icon="clock" title="Sin subseries">Crea una subserie para configurar tiempos de retencion y disposicion final.</Empty> : (
+            <div className="table-scroll">
+              <table className="tbl">
+                <thead><tr><th>Codigo serie</th><th>Serie</th><th>Subserie</th><th>Archivo de Gestion</th><th>Archivo Central</th><th>Retencion total</th><th>Acciones</th></tr></thead>
+                <tbody>
+                  {retentionRows.map(row => (
+                    <tr key={row.id}>
+                      <td className="cell-mono">{row.series_code}</td>
+                      <td className="cell-strong">{row.series_name}</td>
+                      <td>{row.name}</td>
+                      <td><Badge tone="info">{row.archive_management} anos</Badge></td>
+                      <td><Badge tone="brand">{row.archive_central} anos</Badge></td>
+                      <td className="mono">{Number(row.archive_management || 0) + Number(row.archive_central || 0)} anos</td>
+                      <td>{can(user, ["trd.manage"]) && <Button variant="subtle" size="sm" icon="pencil" onClick={() => setEditingSubseries(row)}>Editar</Button>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       )}
 
@@ -461,6 +584,8 @@ function TRDPage({ user }) {
       {creatingDep && <CreateDependencyModal onClose={() => setCreatingDep(false)} onCreated={(created) => liveDependencies.setData(current => [created, ...(current || [])])} />}
       {creatingSub && <CreateSubseriesModal onClose={() => setCreatingSub(false)} onCreated={refreshTrd} />}
       {creatingType && <CreateDocumentTypeModal onClose={() => setCreatingType(false)} onCreated={(created) => liveTypes.setData(current => [created, ...(current || [])])} />}
+      {editingSeries && <EditSeriesModal series={editingSeries} dependencies={dependencies} onClose={() => setEditingSeries(null)} onSaved={refreshTrd} />}
+      {editingSubseries && <EditSubseriesModal subseries={editingSubseries} onClose={() => setEditingSubseries(null)} onSaved={refreshTrd} />}
     </>
   );
 }
