@@ -75,21 +75,32 @@ function QuickSearch() {
 
 function TopologyView() {
   const { data, loading } = useLiveData(() => AmbarAPI.endpoints.locationsTree(), [], []);
-  const [pages, setPages] = arS({});
+  const [archivePage, setArchivePage] = arS(0);
+  const [locationPages, setLocationPages] = arS({});
   const archives = AmbarAPI.listFrom(data);
-  const pageSize = 8;
+  const archivePageSize = 5;
+  const locationPageSize = 5;
+  const archivePages = Math.max(1, Math.ceil(archives.length / archivePageSize));
+  const currentArchivePage = Math.min(Math.max(archivePage, 0), archivePages - 1);
+  const visibleArchives = archives.slice(
+    currentArchivePage * archivePageSize,
+    currentArchivePage * archivePageSize + archivePageSize
+  );
   if (loading) return <Skeleton rows={9} />;
   if (!archives.length) return <Card><Empty icon="warehouse" title="Sin topografía">Crea una sede, un archivo y una ubicación topográfica para empezar.</Empty></Card>;
   return (
-    <div className="grid cols-2 stagger">
-      {archives.map((archive, i) => {
+    <>
+      <div className="grid cols-2 stagger">
+      {visibleArchives.map((archive, i) => {
+        const archiveKey = archive.archive_id || archive.id || archive.archive_code || i;
         const shelves = archive.shelves || [];
         const boxes = shelves.flatMap(s => s.boxes || []);
         const occupancy = boxes.length ? Math.round(boxes.reduce((acc, b) => acc + Number(b.occupancy_percent || 0), 0) / boxes.length) : 0;
-        const page = pages[archive.archive_id] || 0;
-        const visibleShelves = shelves.slice(page * pageSize, page * pageSize + pageSize);
+        const shelfPages = Math.max(1, Math.ceil(shelves.length / locationPageSize));
+        const page = Math.min(Math.max(locationPages[archiveKey] || 0, 0), shelfPages - 1);
+        const visibleShelves = shelves.slice(page * locationPageSize, page * locationPageSize + locationPageSize);
         return (
-          <Card key={archive.archive_id} className="topology-card an-scale" style={{ "--i": i }}>
+          <Card key={archiveKey} className="topology-card an-scale" style={{ "--i": i }}>
             <div className="row between">
               <div>
                 <div className="eyebrow">{archive.archive_code}</div>
@@ -120,17 +131,29 @@ function TopologyView() {
                 </details>
               ))}
             </div>
-            <Pager
-              page={page}
-              pageSize={pageSize}
-              total={shelves.length}
-              label="ubicaciones"
-              onPage={(next) => setPages(state => ({ ...state, [archive.archive_id]: next }))}
-            />
+            {shelves.length > locationPageSize && (
+              <Pager
+                page={page}
+                pageSize={locationPageSize}
+                total={shelves.length}
+                label="ubicaciones"
+                onPage={(next) => setLocationPages(state => ({ ...state, [archiveKey]: next }))}
+              />
+            )}
           </Card>
         );
       })}
-    </div>
+      </div>
+      {archives.length > archivePageSize && (
+        <Pager
+          page={currentArchivePage}
+          pageSize={archivePageSize}
+          total={archives.length}
+          label="archivos"
+          onPage={setArchivePage}
+        />
+      )}
+    </>
   );
 }
 
