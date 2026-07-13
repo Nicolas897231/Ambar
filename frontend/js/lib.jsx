@@ -410,6 +410,24 @@ function Meter({ value, tone = "", showLabel }) {
   );
 }
 
+/* ---------- Pager ---------- */
+function Pager({ page = 0, pageSize = 20, total = 0, onPage, label = "registros" }) {
+  const pages = Math.max(1, Math.ceil(Number(total || 0) / Number(pageSize || 1)));
+  const current = Math.min(Math.max(Number(page || 0), 0), pages - 1);
+  const start = total ? current * pageSize + 1 : 0;
+  const end = Math.min((current + 1) * pageSize, total);
+  return (
+    <div className="pager">
+      <span className="muted">{start}-{end} de {total} {label}</span>
+      <div className="row gap2">
+        <Button variant="ghost" size="sm" icon="chevron-left" disabled={current <= 0} onClick={() => onPage && onPage(current - 1)}>Anterior</Button>
+        <Badge tone="outline">{current + 1}/{pages}</Badge>
+        <Button variant="ghost" size="sm" iconRight="chevron-right" disabled={current >= pages - 1} onClick={() => onPage && onPage(current + 1)}>Siguiente</Button>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Stepper ---------- */
 function Stepper({ steps, current }) {
   return (
@@ -425,5 +443,5 @@ function Stepper({ steps, current }) {
   );
 }
 
-Object.assign(window, { Icon, Button, Card, CardHead, FilterChip, Badge, Tabs, Segmented, Tip, HelpDot, AutoCodeInput, Switch, Field, Empty, Skeleton, Avatar, Modal, Drawer, ToastProvider, useToast, downloadCSV, downloadJSON, downloadText, safeFilename, Metric, Meter, Stepper, useCountUp,
+Object.assign(window, { Icon, Button, Card, CardHead, FilterChip, Badge, Tabs, Segmented, Tip, HelpDot, AutoCodeInput, Switch, Field, Empty, Skeleton, Avatar, Modal, Drawer, ToastProvider, useToast, downloadCSV, downloadJSON, downloadText, safeFilename, Metric, Meter, Pager, Stepper, useCountUp,
   React, useState, useEffect, useRef, useMemo, useCallback, createContext, useContext });

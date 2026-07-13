@@ -45,7 +45,7 @@ function CreateSeriesModal({ onClose, onCreated }) {
       return;
     }
     try {
-      const body = { ...payload, dependency_id: payload.dependency_id ? Number(payload.dependency_id) : null };
+      const body = { ...payload, code: null, dependency_id: payload.dependency_id ? Number(payload.dependency_id) : null };
       const created = await AmbarAPI.post("/trd/series", body);
       toast("Serie creada en la TRD.", { tone: "ok", title: "TRD actualizada" });
       onCreated(created);
@@ -80,7 +80,7 @@ function CreateDependencyModal({ onClose, onCreated }) {
       return;
     }
     try {
-      const created = await AmbarAPI.post("/trd/dependencies", payload);
+      const created = await AmbarAPI.post("/trd/dependencies", { ...payload, code: null });
       toast("Dependencia creada para gobernar series documentales.", { tone: "ok", title: "TRD actualizada" });
       onCreated(created);
       onClose();
@@ -102,10 +102,102 @@ function CreateDependencyModal({ onClose, onCreated }) {
   );
 }
 
+function CreateSubseriesModal({ onClose, onCreated }) {
+  const toast = useToast();
+  const [payload, setPayload] = tdS({
+    series_id: "",
+    name: "",
+    archive_management: 2,
+    archive_central: 8,
+    final_action: "CT",
+    procedure: "",
+  });
+  const { data: seriesRaw } = useLiveData(() => AmbarAPI.endpoints.trdSeries(), [], []);
+  const series = AmbarAPI.listFrom(seriesRaw);
+  const setField = (key, value) => setPayload(p => ({ ...p, [key]: value }));
+
+  const submit = async () => {
+    const missing = [];
+    if (!payload.series_id) missing.push("serie");
+    if (!payload.name.trim()) missing.push("nombre de subserie");
+    if (missing.length) {
+      toast(`Falta: ${missing.join(", ")}.`, { tone: "danger", title: "Subserie incompleta" });
+      return;
+    }
+    const management = Number(payload.archive_management || 0);
+    const central = Number(payload.archive_central || 0);
+    if (management + central < 1) {
+      toast("La retencion total debe ser minimo de 1 ano.", { tone: "danger", title: "Retencion invalida" });
+      return;
+    }
+    try {
+      const subseries = await AmbarAPI.post("/trd/subseries", {
+        series_id: Number(payload.series_id),
+        name: payload.name.trim(),
+        retention_years: management + central,
+      });
+      const subseriesId = subseries.idSubseries || subseries.id || subseries.subseries_id;
+      await AmbarAPI.post("/trd/dispositions", {
+        subseries_id: Number(subseriesId),
+        archive_management: management,
+        archive_central: central,
+        final_action: payload.final_action,
+        procedure: payload.procedure.trim() || null,
+      });
+      toast("Subserie, retencion y disposicion creadas.", { tone: "ok", title: "TRD actualizada" });
+      onCreated && onCreated();
+      onClose();
+    } catch (err) {
+      toast(err.message || "No fue posible crear la subserie.", { tone: "danger", title: "Error" });
+    }
+  };
+
+  return (
+    <Modal lg title="Nueva subserie y retencion" sub="Define la unidad documental que heredan expedientes y documentos." onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear subserie</Button></>}>
+      <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
+        <Field label="Serie documental" required>
+          <select value={payload.series_id} onChange={e => setField("series_id", e.target.value)}>
+            <option value="">Seleccionar serie</option>
+            {series.map(s => <option key={s.idSeries || s.id} value={s.idSeries || s.id}>{s.code ? `${s.code} - ` : ""}{s.name || s.series_name}</option>)}
+          </select>
+        </Field>
+        <Field label="Nombre de subserie" required>
+          <input value={payload.name} maxLength={160} onChange={e => setField("name", e.target.value)} placeholder="Empleados activos" />
+        </Field>
+        <Field label="Retencion en gestion (anos)" required>
+          <input type="number" min="0" max="100" value={payload.archive_management} onChange={e => setField("archive_management", e.target.value)} />
+        </Field>
+        <Field label="Retencion en central (anos)" required>
+          <input type="number" min="0" max="100" value={payload.archive_central} onChange={e => setField("archive_central", e.target.value)} />
+        </Field>
+        <Field label="Disposicion final" required>
+          <select value={payload.final_action} onChange={e => setField("final_action", e.target.value)}>
+            <option value="CT">CT - Conservacion total</option>
+            <option value="E">E - Eliminacion</option>
+            <option value="S">S - Seleccion</option>
+            <option value="MT">MT - Medio tecnologico</option>
+          </select>
+        </Field>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <Field label="Procedimiento">
+            <textarea value={payload.procedure} maxLength={800} onChange={e => setField("procedure", e.target.value)} placeholder="Regla archivistica o nota del comite de archivo" />
+          </Field>
+        </div>
+      </div>
+      <div className="info-callout" style={{ marginTop: "var(--s4)" }}>
+        <Icon name="info" size={16} />
+        <p>La retencion se define en la subserie. Cuando se cierre un expediente, AMBAR calcula automaticamente gestion, central y disposicion final.</p>
+      </div>
+    </Modal>
+  );
+}
+
 function TRDPage({ user }) {
   const [tab, setTab] = tdS("series");
   const [creating, setCreating] = tdS(false);
   const [creatingDep, setCreatingDep] = tdS(false);
+  const [creatingSub, setCreatingSub] = tdS(false);
   const liveSeries = window.useLiveData(
     () => window.AmbarAPI.endpoints.trdEditor().then(value => mapTrdRows(window.AmbarAPI.listFrom(value, ["rows", "items", "results"]))),
     [],
@@ -114,6 +206,10 @@ function TRDPage({ user }) {
   const liveDependencies = window.useLiveData(() => window.AmbarAPI.endpoints.trdDependencies(), [], []);
   const series = liveSeries.data;
   const dependencies = window.AmbarAPI.listFrom(liveDependencies.data);
+  const refreshTrd = async () => {
+    const value = await window.AmbarAPI.endpoints.trdEditor();
+    liveSeries.setData(mapTrdRows(window.AmbarAPI.listFrom(value, ["rows", "items", "results"])));
+  };
 
   return (
     <>
@@ -126,6 +222,7 @@ function TRDPage({ user }) {
         <div className="page-actions">
           <Button variant="ghost" icon="download" onClick={() => AmbarAPI.download("/trd/export?format=csv", "TRD_AMBAR.csv")}>Exportar TRD</Button>
           {can(user, ["trd.manage"]) && <Button variant="ghost" icon="building" onClick={() => setCreatingDep(true)}>Nueva dependencia</Button>}
+          {can(user, ["trd.manage"]) && <Button variant="ghost" icon="layers" onClick={() => setCreatingSub(true)}>Nueva subserie</Button>}
           {can(user, ["trd.manage"]) && <Button icon="plus" onClick={() => setCreating(true)}>Nueva serie</Button>}
         </div>
       </div>
@@ -178,6 +275,13 @@ function TRDPage({ user }) {
 
       {tab === "retention" && (
         <Card flush className="an-rise">
+          <div className="toolbar-card">
+            <div>
+              <b>Definir retencion documental</b>
+              <p className="muted" style={{ marginTop: 4 }}>La retencion se configura por subserie: archivo de gestion, archivo central y disposicion final.</p>
+            </div>
+            {can(user, ["trd.manage"]) && <Button icon="plus" onClick={() => setCreatingSub(true)}>Nueva subserie</Button>}
+          </div>
           <div className="table-scroll">
             <table className="tbl">
               <thead><tr><th>Codigo</th><th>Serie</th><th>Archivo de Gestion</th><th>Archivo Central</th><th>Retencion total</th></tr></thead>
@@ -215,6 +319,7 @@ function TRDPage({ user }) {
 
       {creating && <CreateSeriesModal onClose={() => setCreating(false)} onCreated={(created) => liveSeries.setData(current => [mapTrdRows([created])[0], ...(current || [])])} />}
       {creatingDep && <CreateDependencyModal onClose={() => setCreatingDep(false)} onCreated={(created) => liveDependencies.setData(current => [created, ...(current || [])])} />}
+      {creatingSub && <CreateSubseriesModal onClose={() => setCreatingSub(false)} onCreated={refreshTrd} />}
     </>
   );
 }

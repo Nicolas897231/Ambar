@@ -31,15 +31,35 @@ function eventLabel(value) {
 function KardexPage({ user }) {
   const [movementType, setMovementType] = kdxS("");
   const [entityType, setEntityType] = kdxS("");
+  const [status, setStatus] = kdxS("");
+  const [dateFrom, setDateFrom] = kdxS("");
+  const [dateTo, setDateTo] = kdxS("");
+  const [page, setPage] = kdxS(0);
+  const pageSize = 50;
+  const fromParam = dateFrom ? `${dateFrom}T00:00:00` : "";
+  const toParam = dateTo ? `${dateTo}T23:59:59` : "";
   const query = [
     movementType && `movement_type=${encodeURIComponent(movementType)}`,
     entityType && `entity_type=${encodeURIComponent(entityType)}`,
-    "limit=100",
+    status && `status=${encodeURIComponent(status)}`,
+    fromParam && `date_from=${encodeURIComponent(fromParam)}`,
+    toParam && `date_to=${encodeURIComponent(toParam)}`,
+    `skip=${page * pageSize}`,
+    `limit=${pageSize}`,
+  ].filter(Boolean).join("&");
+  const exportQuery = [
+    movementType && `movement_type=${encodeURIComponent(movementType)}`,
+    entityType && `entity_type=${encodeURIComponent(entityType)}`,
+    status && `status=${encodeURIComponent(status)}`,
+    fromParam && `date_from=${encodeURIComponent(fromParam)}`,
+    toParam && `date_to=${encodeURIComponent(toParam)}`,
   ].filter(Boolean).join("&");
   const { data: summary, loading: loadingSummary } = useLiveData(() => AmbarAPI.endpoints.kardexSummary(), {}, []);
-  const { data: rawRows, loading } = useLiveData(() => AmbarAPI.get(`/kardex/timeline?${query}`), [], [movementType, entityType]);
+  const { data: rawRows, loading } = useLiveData(() => AmbarAPI.get(`/kardex/timeline?${query}`), [], [movementType, entityType, status, dateFrom, dateTo, page]);
   const rows = AmbarAPI.listFrom(rawRows);
-  const exportCsv = () => AmbarAPI.download(`/kardex/export${query ? `?${query}` : ""}`, "ambar-kardex.csv");
+  const exportCsv = () => AmbarAPI.download(`/kardex/export${exportQuery ? `?${exportQuery}` : ""}`, "ambar-kardex.csv");
+  const estimatedTotal = page * pageSize + rows.length + (rows.length === pageSize ? 1 : 0);
+  const resetAnd = (setter) => (value) => { setPage(0); setter(value); };
 
   return (
     <>
@@ -64,8 +84,8 @@ function KardexPage({ user }) {
       <Card className="an-rise">
         <div className="row between wrap gap3" style={{ marginBottom: "var(--s4)" }}>
           <CardHead title="Timeline operacional" sub="Cada evento viene filtrado por archivos autorizados del usuario." icon="history" />
-          <div className="row gap2 wrap">
-            <select value={movementType} onChange={(event) => setMovementType(event.target.value)}>
+          <div className="filter-bar">
+            <select value={movementType} onChange={(event) => resetAnd(setMovementType)(event.target.value)}>
               <option value="">Todos los movimientos</option>
               <option value="transfer">Transferencias</option>
               <option value="reception.item.accepted">Recepción aceptada</option>
@@ -73,7 +93,7 @@ function KardexPage({ user }) {
               <option value="custody.changed">Custodia</option>
               <option value="location_change">Ubicación</option>
             </select>
-            <select value={entityType} onChange={(event) => setEntityType(event.target.value)}>
+            <select value={entityType} onChange={(event) => resetAnd(setEntityType)(event.target.value)}>
               <option value="">Todas las unidades</option>
               <option value="document">Documento</option>
               <option value="folder">Carpeta</option>
@@ -81,6 +101,15 @@ function KardexPage({ user }) {
               <option value="box">Caja</option>
               <option value="batch">Transferencia</option>
             </select>
+            <select value={status} onChange={(event) => resetAnd(setStatus)(event.target.value)}>
+              <option value="">Todos los estados</option>
+              <option value="pending">Pendiente</option>
+              <option value="accepted">Aceptado</option>
+              <option value="rejected">Rechazado</option>
+              <option value="completed">Completado</option>
+            </select>
+            <input type="date" value={dateFrom} onChange={(event) => resetAnd(setDateFrom)(event.target.value)} aria-label="Fecha desde" />
+            <input type="date" value={dateTo} onChange={(event) => resetAnd(setDateTo)(event.target.value)} aria-label="Fecha hasta" />
           </div>
         </div>
         {loading || loadingSummary ? <Skeleton rows={10} /> : rows.length === 0 ? (
@@ -110,6 +139,7 @@ function KardexPage({ user }) {
             ))}
           </div>
         )}
+        <Pager page={page} pageSize={pageSize} total={estimatedTotal} onPage={setPage} label="movimientos" />
       </Card>
     </>
   );

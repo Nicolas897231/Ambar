@@ -5,7 +5,7 @@ from unicodedata import normalize
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import or_
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
@@ -44,6 +44,15 @@ from app.services.storage import presigned_url
 router = APIRouter(prefix="/archives", tags=["archives"])
 
 
+def _blank_to_none(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    return value
+
+
 class ArchiveCreate(BaseModel):
     archive_code: str | None = Field(default=None, min_length=2, max_length=60)
     archive_name: str = Field(min_length=3, max_length=180)
@@ -55,6 +64,11 @@ class ArchiveCreate(BaseModel):
     capacity_units: int = 0
     physical_location: str | None = None
     metadata: dict = Field(default_factory=dict)
+
+    @field_validator("archive_code", "physical_location", mode="before")
+    @classmethod
+    def blank_optional_text_to_none(cls, value):
+        return _blank_to_none(value)
 
 
 class ArchiveOut(BaseModel):
@@ -93,6 +107,11 @@ class ExpedientCreate(BaseModel):
     digital_location: str | None = None
     metadata: dict = Field(default_factory=dict)
 
+    @field_validator("expedient_code", "responsible_identification", "physical_location", "digital_location", mode="before")
+    @classmethod
+    def blank_optional_text_to_none(cls, value):
+        return _blank_to_none(value)
+
 
 class FolderCreate(BaseModel):
     folder_code: str | None = Field(default=None, min_length=1, max_length=80)
@@ -101,6 +120,11 @@ class FolderCreate(BaseModel):
     box_id: int | None = None
     physical_location: str | None = None
     metadata: dict = Field(default_factory=dict)
+
+    @field_validator("folder_code", "physical_location", mode="before")
+    @classmethod
+    def blank_optional_text_to_none(cls, value):
+        return _blank_to_none(value)
 
 
 class ShelfCreate(BaseModel):
@@ -116,6 +140,11 @@ class ShelfCreate(BaseModel):
     capacity_boxes: int = 0
     physical_location: str | None = None
 
+    @field_validator("shelf_code", "aisle", "floor", "module", "bay", "body", "level", "physical_location", mode="before")
+    @classmethod
+    def blank_optional_text_to_none(cls, value):
+        return _blank_to_none(value)
+
 
 class BoxCreate(BaseModel):
     archive_id: int
@@ -123,6 +152,11 @@ class BoxCreate(BaseModel):
     box_code: str | None = Field(default=None, min_length=1, max_length=60)
     box_name: str | None = None
     capacity_folders: int = 0
+
+    @field_validator("box_code", "box_name", mode="before")
+    @classmethod
+    def blank_optional_text_to_none(cls, value):
+        return _blank_to_none(value)
 
 
 class PhysicalStructureBulkCreate(BaseModel):
@@ -1952,16 +1986,19 @@ def create_physical_structure_bulk(payload: PhysicalStructureBulkCreate, request
     shelves = [_clean_location_part(item) for item in payload.shelves]
     bodies = [_clean_location_part(item) for item in payload.bodies or ["A"]]
     levels = [_clean_location_part(item) for item in payload.levels or ["1"]]
-    created: list[dict] = []
+    created_items: list[Shelf] = []
     skipped: list[str] = []
+    existing_codes = {
+        row.shelf_code
+        for row in db.query(Shelf.shelf_code).filter(Shelf.ps930IdArchive == payload.archive_id).all()
+    }
     for floor in floors:
         for aisle in aisles:
             for shelf_value in shelves:
                 for body in bodies:
                     for level in levels:
                         code = _shelf_code_for_parts(aisle, shelf_value, body, level)
-                        existing = db.query(Shelf).filter(Shelf.ps930IdArchive == payload.archive_id, Shelf.shelf_code == code).one_or_none()
-                        if existing:
+                        if code in existing_codes:
                             skipped.append(code)
                             continue
                         item = Shelf(
@@ -1976,9 +2013,23 @@ def create_physical_structure_bulk(payload: PhysicalStructureBulkCreate, request
                         )
                         item.physical_location = _shelf_topographic_path(item)
                         db.add(item)
-                        db.flush()
-                        _location_movement(db, request, user, movement_type="shelf.created", entity_type="box", entity_id=0, archive_id=payload.archive_id, previous=None, current=item.physical_location, observation=f"Ubicacion creada por estructura masiva: {code}")
-                        created.append(_shelf_out(db, item))
+                        existing_codes.add(code)
+                        created_items.append(item)
+    db.flush()
+    created = [_shelf_out(db, item) for item in created_items]
+    if created_items:
+        _location_movement(
+            db,
+            request,
+            user,
+            movement_type="shelf.created",
+            entity_type="box",
+            entity_id=0,
+            archive_id=payload.archive_id,
+            previous=None,
+            current=f"{len(created_items)} ubicaciones creadas",
+            observation=f"Estructura topografica masiva creada: {len(created_items)} ubicaciones; {len(skipped)} omitidas por existir.",
+        )
     write_audit(db, action="physical_structure_bulk_created", module="archives", user_id=user.identification, entity="shelf", entity_id=0, new_values={"archive_id": payload.archive_id, "created": len(created), "skipped": len(skipped)}, request=request)
     db.commit()
     return {"created": created, "created_count": len(created), "skipped": skipped, "skipped_count": len(skipped)}
@@ -2332,13 +2383,31 @@ def locations_unassigned(archive_id: int | None = None, user: User = Depends(req
 
 
 @router.get("/locations/movements")
-def locations_movements(archive_id: int | None = None, user: User = Depends(require_permission("document.read")), db: Session = Depends(get_db)):
+def locations_movements(
+    archive_id: int | None = None,
+    movement_type: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=250),
+    user: User = Depends(require_permission("document.read")),
+    db: Session = Depends(get_db),
+):
     ids = allowed_archive_ids(db, user)
     if archive_id:
         _require_archive_access(db, user, archive_id)
         ids = [archive_id]
     physical_events = ["location.assigned", "location.changed", "location.removed", "box.moved", "folder.moved", "document.moved", "box.created", "box.closed", "box.reopened", "shelf.created", "shelf.updated", "box.updated"]
-    rows = db.query(KardexMovement).filter(or_(KardexMovement.ps930OriginArchiveId.in_(ids), KardexMovement.ps930DestinationArchiveId.in_(ids)), KardexMovement.movement_type.in_(physical_events)).order_by(KardexMovement.created_at.desc()).limit(100).all()
+    query = db.query(KardexMovement).filter(or_(KardexMovement.ps930OriginArchiveId.in_(ids), KardexMovement.ps930DestinationArchiveId.in_(ids)), KardexMovement.movement_type.in_(physical_events))
+    if movement_type:
+        if movement_type not in physical_events:
+            raise HTTPException(status_code=422, detail="Tipo de movimiento fisico no permitido.")
+        query = query.filter(KardexMovement.movement_type == movement_type)
+    if date_from:
+        query = query.filter(KardexMovement.created_at >= date_from)
+    if date_to:
+        query = query.filter(KardexMovement.created_at <= date_to)
+    rows = query.order_by(KardexMovement.created_at.desc()).offset(skip).limit(limit).all()
     return rows
 
 

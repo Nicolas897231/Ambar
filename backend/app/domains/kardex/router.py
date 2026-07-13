@@ -214,12 +214,15 @@ def export_kardex(
     entity_type: str | None = None,
     movement_type: str | None = None,
     status: str | None = None,
+    user_id: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
     user: User = Depends(require_permission("document.read")),
     db: Session = Depends(get_db),
 ):
     if archive_id:
         _require_archive_access(db, user, archive_id)
-    rows = _apply_filters(_base_query(db, user), archive_id=archive_id, entity_type=entity_type, movement_type=movement_type, status=status, user_id=None, date_from=None, date_to=None, transfer_id=None, expedient_id=None, folder_id=None, box_id=None, loan_id=None, rejection_reason=None, evidence=None).order_by(KardexMovement.created_at.desc()).limit(1000).all()
+    rows = _apply_filters(_base_query(db, user), archive_id=archive_id, entity_type=entity_type, movement_type=movement_type, status=status, user_id=user_id, date_from=date_from, date_to=date_to, transfer_id=None, expedient_id=None, folder_id=None, box_id=None, loan_id=None, rejection_reason=None, evidence=None).order_by(KardexMovement.created_at.desc()).limit(1000).all()
     lines = ["movement_code,event_type,entity_type,entity_id,origin_archive_id,destination_archive_id,status,action_by,created_at,rejection_reason,observation"]
     for item in rows:
         lines.append(",".join([
@@ -235,6 +238,6 @@ def export_kardex(
             (item.reason or "").replace(",", " "),
             (item.observations or "").replace(",", " "),
         ]))
-    write_audit(db, action="kardex_exported", module="kardex", user_id=user.identification, entity="kardex", new_values={"archive_id": archive_id, "entity_type": entity_type, "movement_type": movement_type, "status": status}, request=request)
+    write_audit(db, action="kardex_exported", module="kardex", user_id=user.identification, entity="kardex", new_values={"archive_id": archive_id, "entity_type": entity_type, "movement_type": movement_type, "status": status, "date_from": date_from.isoformat() if date_from else None, "date_to": date_to.isoformat() if date_to else None}, request=request)
     db.commit()
     return Response("\n".join(lines), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=ambar-kardex.csv"})

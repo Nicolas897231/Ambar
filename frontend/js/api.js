@@ -169,7 +169,7 @@
       locationsSummary: () => request("/archives/locations/summary"),
       locationsTree: () => request("/archives/locations/tree"),
       locationsUnassigned: () => request("/archives/locations/unassigned"),
-      locationsMovements: () => request("/archives/locations/movements"),
+      locationsMovements: (params = {}) => request(`/archives/locations/movements${query(params)}`),
       trdEditor: () => request("/trd/editor"),
       trdSeries: () => request("/trd/series"),
       trdSubseries: () => request("/trd/subseries"),

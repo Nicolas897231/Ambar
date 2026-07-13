@@ -5,7 +5,7 @@ from zipfile import ZipFile
 from xml.etree import ElementTree
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_permission
@@ -17,6 +17,15 @@ from app.services.codes import supplied_or_generated
 router = APIRouter(prefix="/trd", tags=["trd"])
 
 
+def _blank_to_none(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    return value
+
+
 class SeriesCreate(BaseModel):
     code: str | None = Field(default=None, min_length=2, max_length=40)
     name: str = Field(min_length=3, max_length=160)
@@ -24,12 +33,22 @@ class SeriesCreate(BaseModel):
     dependency_id: int | None = None
     status: str = Field(default="active", pattern="^(active|inactive)$")
 
+    @field_validator("code", mode="before")
+    @classmethod
+    def blank_code_to_none(cls, value):
+        return _blank_to_none(value)
+
 
 class DependencyCreate(BaseModel):
     code: str | None = Field(default=None, min_length=2, max_length=40)
     name: str = Field(min_length=3, max_length=160)
     description: str | None = None
     status: str = Field(default="active", pattern="^(active|inactive)$")
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def blank_code_to_none(cls, value):
+        return _blank_to_none(value)
 
 
 class SubseriesCreate(BaseModel):

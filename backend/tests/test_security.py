@@ -10,7 +10,7 @@ from app.services.crypto import sign_payload
 
 
 def test_password_policy_accepts_strong_password():
-    enforce_password_policy("ChangeMe123!")
+    enforce_password_policy("AmbarVault2026!Z")
 
 
 def test_password_policy_rejects_weak_password():

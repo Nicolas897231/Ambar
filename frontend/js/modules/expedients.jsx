@@ -181,7 +181,15 @@ function CreateExpedientModal({ onClose, onCreated }) {
       return;
     }
     try {
-      const created = await AmbarAPI.post("/archives/expedients", payload);
+      const created = await AmbarAPI.post("/archives/expedients", {
+        ...payload,
+        expedient_code: null,
+        archive_id: Number(payload.archive_id),
+        series_id: Number(payload.series_id),
+        subseries_id: Number(payload.subseries_id),
+        dependency_id: payload.dependency_id ? Number(payload.dependency_id) : null,
+        digital_location: payload.digital_location?.trim() || null,
+      });
       toast("Expediente creado y asociado a TRD.", { tone: "ok", title: "Expediente creado" });
       onCreated(created);
       onClose();
@@ -201,7 +209,7 @@ function CreateExpedientModal({ onClose, onCreated }) {
         <Field label="Dependencia TRD"><select value={payload.dependency_id || ""} onChange={e => setField("dependency_id", Number(e.target.value) || null)}><option value="">Heredar de la serie</option>{dependencies.map(d => <option key={d.idDependency || d.id} value={d.idDependency || d.id}>{d.name || d.dependency_name || d.code}</option>)}</select></Field>
         <Field label="Serie" required><select value={payload.series_id || ""} onChange={e => { setField("series_id", Number(e.target.value) || null); setField("subseries_id", null); }}><option value="">Seleccionar serie</option>{series.map(s => <option key={s.idSeries || s.id} value={s.idSeries || s.id}>{s.code ? `${s.code} - ` : ""}{s.name || s.series_name}</option>)}</select></Field>
         <Field label="Subserie" required><select value={payload.subseries_id || ""} onChange={e => setField("subseries_id", Number(e.target.value) || null)}><option value="">Seleccionar subserie</option>{subseries.map(s => <option key={s.idSubseries || s.id} value={s.idSubseries || s.id}>{s.name || s.subseries_name}</option>)}</select></Field>
-        <Field label="Ubicacion digital"><input value={payload.digital_location || ""} maxLength={180} placeholder="Repositorio / ruta logica" onChange={e => setField("digital_location", e.target.value)} /></Field>
+        <Field label="Ruta digital opcional" hint="Referencia logica del repositorio. No es una ruta interna del servidor."><input value={payload.digital_location || ""} maxLength={180} placeholder="Repositorio/RRHH/2026/Juan Perez" onChange={e => setField("digital_location", e.target.value)} /></Field>
       </div>
     </Modal>
   );
