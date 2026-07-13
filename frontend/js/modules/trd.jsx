@@ -10,17 +10,41 @@ function normalizeDisposition(value) {
 }
 
 function mapTrdRows(items) {
-  return (items || []).map((item, i) => ({
-    id: item.idSeries || item.series_id || item.id || i,
-    code: item.series_code || item.code || String(i + 1).padStart(3, "0"),
-    name: item.series_name || item.name || item.subseries_name || "Serie documental",
-    sub: Array.isArray(item.subseries)
-      ? item.subseries.map(s => s.subseries_name || s.name || s.code).filter(Boolean)
-      : item.subseries_name ? [item.subseries_name] : [],
-    gestion: item.retention_management_years ?? item.management_retention_years ?? item.gestion ?? 0,
-    central: item.retention_central_years ?? item.central_retention_years ?? item.central ?? 0,
-    final: normalizeDisposition(item.final_disposition || item.disposition || item.disposition_final),
-  }));
+  const grouped = new Map();
+  (items || []).forEach((item, i) => {
+    const series = item.series || item;
+    const seriesId = series.idSeries || item.series_id || item.ps610IdSeries || item.idSeries || item.id || i;
+    const code = series.series_code || series.code || item.series_code || item.code || String(i + 1).padStart(3, "0");
+    const name = series.series_name || series.name || item.series_name || item.name || "Serie documental";
+    const current = grouped.get(seriesId) || {
+      id: seriesId,
+      code,
+      name,
+      dependency: item.dependency_name || item.dependency?.name || series.dependency?.name || "",
+      sub: [],
+      typologies: [],
+      gestion: 0,
+      central: 0,
+      final: "Conservacion total",
+    };
+    const subseriesList = Array.isArray(item.subseries) ? item.subseries : [item.subseries || item].filter(Boolean);
+    subseriesList.forEach((sub) => {
+      const subName = sub.subseries_name || sub.name || item.subseries_name;
+      if (subName && !current.sub.includes(subName)) current.sub.push(subName);
+      const management = sub.retention_management_years ?? sub.archive_management ?? item.retention_management_years ?? item.archive_management ?? item.gestion;
+      const central = sub.retention_central_years ?? sub.archive_central ?? item.retention_central_years ?? item.archive_central ?? item.central;
+      if (management !== undefined) current.gestion = Math.max(Number(current.gestion || 0), Number(management || 0));
+      if (central !== undefined) current.central = Math.max(Number(current.central || 0), Number(central || 0));
+      current.final = normalizeDisposition(sub.final_disposition || sub.final_action || item.final_disposition || item.final_action || item.disposition || item.disposition_final || current.final);
+      const types = sub.document_types || sub.typologies || item.document_types || item.typologies || [];
+      (Array.isArray(types) ? types : []).forEach((type) => {
+        const label = type.name || type.type_name || type.type_code || type.code;
+        if (label && !current.typologies.includes(label)) current.typologies.push(label);
+      });
+    });
+    grouped.set(seriesId, current);
+  });
+  return Array.from(grouped.values());
 }
 
 function dispositionTone(value) {
@@ -59,7 +83,7 @@ function CreateSeriesModal({ onClose, onCreated }) {
     <Modal title="Nueva serie documental" sub="La serie queda gobernada por una dependencia TRD." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear serie</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
-        <Field label="Código" help="AMBAR genera este código automáticamente al guardar la serie."><AutoCodeInput /></Field>
+        <Field label="Código" hint="AMBAR genera este código automáticamente al guardar la serie."><AutoCodeInput /></Field>
         <Field label="Nombre" required><input maxLength={160} value={payload.name} onChange={e => setField("name", e.target.value)} placeholder="Historias laborales" /></Field>
         <Field label="Dependencia"><select value={payload.dependency_id} onChange={e => setField("dependency_id", e.target.value)}><option value="">Usar dependencia por defecto</option>{dependencies.map(d => <option key={d.idDependency || d.id} value={d.idDependency || d.id}>{d.name || d.code}</option>)}</select></Field>
         <Field label="Estado"><select value={payload.status} onChange={e => setField("status", e.target.value)}><option value="active">Activa</option><option value="inactive">Inactiva</option></select></Field>
@@ -93,7 +117,7 @@ function CreateDependencyModal({ onClose, onCreated }) {
     <Modal title="Nueva dependencia" sub="Toda serie debe pertenecer a una dependencia funcional." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear dependencia</Button></>}>
       <div className="grid cols-2">
-        <Field label="Código" help="AMBAR genera este código automáticamente al guardar la dependencia."><AutoCodeInput /></Field>
+        <Field label="Código" hint="AMBAR genera este código automáticamente al guardar la dependencia."><AutoCodeInput /></Field>
         <Field label="Nombre" required><input value={payload.name} maxLength={160} onChange={e => setField("name", e.target.value)} placeholder="Talento Humano" /></Field>
         <Field label="Estado"><select value={payload.status} onChange={e => setField("status", e.target.value)}><option value="active">Activa</option><option value="inactive">Inactiva</option></select></Field>
         <div style={{ gridColumn: "1 / -1" }}><Field label="Descripcion"><textarea value={payload.description} maxLength={500} onChange={e => setField("description", e.target.value)} placeholder="Funcion documental de la dependencia" /></Field></div>
@@ -193,19 +217,102 @@ function CreateSubseriesModal({ onClose, onCreated }) {
   );
 }
 
+function CreateDocumentTypeModal({ onClose, onCreated }) {
+  const toast = useToast();
+  const [payload, setPayload] = tdS({
+    type_code: "",
+    name: "",
+    description: "",
+    series_id: "",
+    subseries_id: "",
+    sector: "general",
+    required_in_expedient: true,
+    required_metadata: "",
+    optional_metadata: "",
+  });
+  const { data: seriesRaw } = useLiveData(() => AmbarAPI.endpoints.trdSeries(), [], []);
+  const { data: subseriesRaw } = useLiveData(() => AmbarAPI.endpoints.trdSubseries(), [], []);
+  const series = AmbarAPI.listFrom(seriesRaw);
+  const subseries = AmbarAPI.listFrom(subseriesRaw).filter((item) => {
+    const seriesRef = item.ps610IdSeries || item.series_id || item.series?.idSeries || item.series?.id;
+    return !payload.series_id || !seriesRef || Number(seriesRef) === Number(payload.series_id);
+  });
+  const setField = (key, value) => setPayload(p => ({ ...p, [key]: value, ...(key === "series_id" ? { subseries_id: "" } : {}) }));
+  const lines = (value) => String(value || "").split(/\n|,/).map((item) => item.trim()).filter(Boolean);
+
+  const submit = async () => {
+    const missing = [];
+    if (!payload.name.trim()) missing.push("nombre");
+    if (!payload.subseries_id) missing.push("subserie");
+    if (missing.length) {
+      toast(`Falta: ${missing.join(", ")}.`, { tone: "danger", title: "Tipología incompleta" });
+      return;
+    }
+    try {
+      const created = await AmbarAPI.post("/documents/types", {
+        type_code: null,
+        name: payload.name.trim(),
+        description: payload.description.trim() || null,
+        series_id: payload.series_id ? Number(payload.series_id) : null,
+        subseries_id: Number(payload.subseries_id),
+        sector: payload.sector.trim() || "general",
+        required_in_expedient: Boolean(payload.required_in_expedient),
+        required_metadata: lines(payload.required_metadata),
+        optional_metadata: lines(payload.optional_metadata),
+        validation_schema: {},
+      });
+      toast("Tipología documental creada.", { tone: "ok", title: "TRD actualizada" });
+      onCreated(created);
+      onClose();
+    } catch (err) {
+      toast(err.message || "No fue posible crear la tipología.", { tone: "danger", title: "Error" });
+    }
+  };
+
+  return (
+    <Modal lg title="Nueva tipología documental" sub="La tipología define qué documento se exige y qué metadatos captura AMBAR." onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear tipología</Button></>}>
+      <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
+        <Field label="Código" hint="AMBAR genera este código automáticamente al guardar la tipología."><AutoCodeInput /></Field>
+        <Field label="Nombre" required><input maxLength={140} value={payload.name} onChange={e => setField("name", e.target.value)} placeholder="Contrato laboral" /></Field>
+        <Field label="Serie documental">
+          <select value={payload.series_id} onChange={e => setField("series_id", e.target.value)}>
+            <option value="">Seleccionar serie</option>
+            {series.map(s => <option key={s.idSeries || s.id} value={s.idSeries || s.id}>{s.code ? `${s.code} - ` : ""}{s.name || s.series_name}</option>)}
+          </select>
+        </Field>
+        <Field label="Subserie" required>
+          <select value={payload.subseries_id} onChange={e => setField("subseries_id", e.target.value)}>
+            <option value="">Seleccionar subserie</option>
+            {subseries.map(s => <option key={s.idSubseries || s.id} value={s.idSubseries || s.id}>{s.name || s.subseries_name}</option>)}
+          </select>
+        </Field>
+        <Field label="Sector"><input maxLength={80} value={payload.sector} onChange={e => setField("sector", e.target.value)} placeholder="RRHH, Transporte, Juridica" /></Field>
+        <Field label="Obligatoriedad"><select value={payload.required_in_expedient ? "yes" : "no"} onChange={e => setField("required_in_expedient", e.target.value === "yes")}><option value="yes">Obligatoria en expediente</option><option value="no">Opcional</option></select></Field>
+        <div style={{ gridColumn: "1 / -1" }}><Field label="Descripción"><textarea maxLength={500} value={payload.description} onChange={e => setField("description", e.target.value)} placeholder="Uso documental de esta tipología" /></Field></div>
+        <Field label="Metadatos requeridos" hint="Uno por línea o separados por coma. Ejemplo: fecha inicio, salario, cargo"><textarea value={payload.required_metadata} onChange={e => setField("required_metadata", e.target.value)} /></Field>
+        <Field label="Metadatos opcionales" hint="Campos que ayudan, pero no bloquean la creación."><textarea value={payload.optional_metadata} onChange={e => setField("optional_metadata", e.target.value)} /></Field>
+      </div>
+    </Modal>
+  );
+}
+
 function TRDPage({ user }) {
   const [tab, setTab] = tdS("series");
   const [creating, setCreating] = tdS(false);
   const [creatingDep, setCreatingDep] = tdS(false);
   const [creatingSub, setCreatingSub] = tdS(false);
+  const [creatingType, setCreatingType] = tdS(false);
   const liveSeries = window.useLiveData(
     () => window.AmbarAPI.endpoints.trdEditor().then(value => mapTrdRows(window.AmbarAPI.listFrom(value, ["rows", "items", "results"]))),
     [],
     []
   );
   const liveDependencies = window.useLiveData(() => window.AmbarAPI.endpoints.trdDependencies(), [], []);
+  const liveTypes = window.useLiveData(() => window.AmbarAPI.endpoints.documentTypes(), [], []);
   const series = liveSeries.data;
   const dependencies = window.AmbarAPI.listFrom(liveDependencies.data);
+  const documentTypes = window.AmbarAPI.listFrom(liveTypes.data);
   const refreshTrd = async () => {
     const value = await window.AmbarAPI.endpoints.trdEditor();
     liveSeries.setData(mapTrdRows(window.AmbarAPI.listFrom(value, ["rows", "items", "results"])));
@@ -223,6 +330,7 @@ function TRDPage({ user }) {
           <Button variant="ghost" icon="download" onClick={() => AmbarAPI.download("/trd/export?format=csv", "TRD_AMBAR.csv")}>Exportar TRD</Button>
           {can(user, ["trd.manage"]) && <Button variant="ghost" icon="building" onClick={() => setCreatingDep(true)}>Nueva dependencia</Button>}
           {can(user, ["trd.manage"]) && <Button variant="ghost" icon="layers" onClick={() => setCreatingSub(true)}>Nueva subserie</Button>}
+          {can(user, ["trd.manage"]) && <Button variant="ghost" icon="file-plus" onClick={() => setCreatingType(true)}>Nueva tipología</Button>}
           {can(user, ["trd.manage"]) && <Button icon="plus" onClick={() => setCreating(true)}>Nueva serie</Button>}
         </div>
       </div>
@@ -233,7 +341,7 @@ function TRDPage({ user }) {
           <p>Es el instrumento que organiza dependencias, series, subseries y tipologias. AMBAR la usa como motor para clasificar documentos, calcular retencion y preparar transferencias.</p>
         </div>
       </div>
-      <Tabs value={tab} onChange={setTab} tabs={[{ key: "dependencies", label: "Dependencias", icon: "building" }, { key: "series", label: "Series y subseries", icon: "table" }, { key: "retention", label: "Retencion", icon: "clock" }, { key: "disposition", label: "Disposicion final", icon: "package-check" }]} />
+      <Tabs value={tab} onChange={setTab} tabs={[{ key: "dependencies", label: "Dependencias", icon: "building" }, { key: "series", label: "Series y subseries", icon: "table" }, { key: "types", label: "Tipologías", icon: "file-plus" }, { key: "retention", label: "Retencion", icon: "clock" }, { key: "disposition", label: "Disposicion final", icon: "package-check" }]} />
 
       {tab === "dependencies" && (
         <Card flush className="an-rise">
@@ -257,19 +365,51 @@ function TRDPage({ user }) {
         <Card flush className="an-rise">
           <div className="table-scroll">
             <table className="tbl">
-              <thead><tr><th>Codigo</th><th>Serie documental</th><th>Subseries</th><th>Disposicion final</th></tr></thead>
+              <thead><tr><th>Codigo</th><th>Serie documental</th><th>Subseries</th><th>Tipologías</th><th>Disposicion final</th></tr></thead>
               <tbody>
                 {series.map(s => (
                   <tr key={s.code}>
                     <td className="cell-mono cell-strong">{s.code}</td>
                     <td className="cell-strong">{s.name}</td>
                     <td><div className="row wrap gap2">{(s.sub || []).map(x => <span key={x} className="tag-soft">{x}</span>)}</div></td>
+                    <td><div className="row wrap gap2">{(s.typologies || []).slice(0, 4).map(x => <span key={x} className="tag-soft">{x}</span>)}{(s.typologies || []).length > 4 && <Badge tone="outline">+{s.typologies.length - 4}</Badge>}</div></td>
                     <td><Badge tone={dispositionTone(s.final)}>{s.final}</Badge></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        </Card>
+      )}
+
+      {tab === "types" && (
+        <Card flush className="an-rise">
+          <div className="toolbar-card">
+            <div>
+              <b>Tipologías documentales</b>
+              <p className="muted" style={{ marginTop: 4 }}>Son los tipos reales de documentos que puede exigir una subserie: contrato, hoja de vida, remesa, manifiesto, demanda, factura.</p>
+            </div>
+            {can(user, ["trd.manage"]) && <Button icon="plus" onClick={() => setCreatingType(true)}>Nueva tipología</Button>}
+          </div>
+          {liveTypes.loading ? <div style={{ padding: "var(--s5)" }}><Skeleton rows={6} /></div> : documentTypes.length === 0 ? <Empty icon="file-plus" title="Sin tipologías">Crea tipologías para que documentos y cargos no usen textos libres.</Empty> : (
+            <div className="table-scroll">
+              <table className="tbl">
+                <thead><tr><th>Código</th><th>Tipología</th><th>Sector</th><th>Obligatoria</th><th>Metadatos</th><th>Estado</th></tr></thead>
+                <tbody>{documentTypes.map(type => {
+                  const required = (type.required_metadata && (type.required_metadata.fields || type.required_metadata.items)) || [];
+                  const optional = (type.optional_metadata && (type.optional_metadata.fields || type.optional_metadata.items)) || [];
+                  return <tr key={type.idDocumentType || type.id || type.type_code}>
+                    <td className="cell-mono cell-strong">{type.type_code || type.code}</td>
+                    <td className="cell-strong">{type.name}</td>
+                    <td>{type.sector || type.template_sector || "general"}</td>
+                    <td><Badge tone={type.required_in_expedient ? "warning" : "outline"}>{type.required_in_expedient ? "Obligatoria" : "Opcional"}</Badge></td>
+                    <td><div className="row wrap gap2"><Badge tone="brand">{required.length} requeridos</Badge><Badge tone="outline">{optional.length} opcionales</Badge></div></td>
+                    <td><Badge tone={type.status === "active" ? "success" : "neutral"}>{type.status || "active"}</Badge></td>
+                  </tr>;
+                })}</tbody>
+              </table>
+            </div>
+          )}
         </Card>
       )}
 
@@ -320,6 +460,7 @@ function TRDPage({ user }) {
       {creating && <CreateSeriesModal onClose={() => setCreating(false)} onCreated={(created) => liveSeries.setData(current => [mapTrdRows([created])[0], ...(current || [])])} />}
       {creatingDep && <CreateDependencyModal onClose={() => setCreatingDep(false)} onCreated={(created) => liveDependencies.setData(current => [created, ...(current || [])])} />}
       {creatingSub && <CreateSubseriesModal onClose={() => setCreatingSub(false)} onCreated={refreshTrd} />}
+      {creatingType && <CreateDocumentTypeModal onClose={() => setCreatingType(false)} onCreated={(created) => liveTypes.setData(current => [created, ...(current || [])])} />}
     </>
   );
 }

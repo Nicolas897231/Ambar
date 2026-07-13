@@ -50,7 +50,7 @@ function DigitizationPage({ user }) {
   return (
     <>
       <div className="page-head">
-        <div><div className="eyebrow">Gestion Documental</div><h1>Digitalizacion y OCR</h1><p className="lead">Cola OCR conectada al backend. Los resultados se muestran solo cuando existen trabajos reales.</p></div>
+        <div><div className="eyebrow">Gestion Documental</div><h1>Digitalizacion y OCR</h1><p className="lead">Convierte documentos fisicos en digitales: selecciona un documento registrado, envia el trabajo a OCR y valida resultados reales del backend.</p></div>
         <div className="page-actions"><Button icon="scan-line" onClick={() => setTab("scan")}>Nuevo escaneo</Button></div>
       </div>
       <div className="statstrip an-rise">
@@ -85,7 +85,7 @@ function DigitizationPage({ user }) {
       ))}
       {tab === "scan" && (
         <Card className="an-rise">
-          <CardHead title="Nuevo trabajo OCR" sub="Selecciona un documento ya registrado. La carga del archivo digital se hace desde Documentos/Repositorio." icon="scan-line" />
+          <CardHead title="Nuevo trabajo OCR" sub="Selecciona un documento ya registrado. El archivo digital se carga y versiona desde Documentos/Repositorio." icon="scan-line" />
           <div className="grid cols-2">
             <Field label="Documento" required>
               <select value={ocrPayload.document_id} onChange={e => setOcrPayload(p => ({ ...p, document_id: e.target.value }))}>

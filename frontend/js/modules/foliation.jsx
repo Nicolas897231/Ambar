@@ -18,7 +18,23 @@ function FoliationPage({ user }) {
   const expedients = AmbarAPI.listFrom(expedientsLive.data);
   const documents = AmbarAPI.listFrom(docsLive.data);
   const folders = AmbarAPI.listFrom(foldersLive.data);
-  const folios = foliationRowsFrom(foliosLive.data);
+  const storedFolios = foliationRowsFrom(foliosLive.data);
+  const documentFolioRows = documents
+    .filter((doc) => Number(doc.folio_start || 0) > 0 && Number(doc.folio_end || 0) >= Number(doc.folio_start || 0))
+    .map((doc) => ({
+      idFoliation: `doc-${doc.idDocument || doc.id}`,
+      document_id: doc.idDocument || doc.id,
+      document_name: doc.document_name || doc.name,
+      folder_id: doc.ps952IdFolder || doc.folder_id,
+      folder_code: doc.folder_code || doc.folder_name || doc.ps952IdFolder || doc.folder_id,
+      folio_start: doc.folio_start,
+      folio_end: doc.folio_end,
+      folio_total: doc.folio_total || (Number(doc.folio_end) - Number(doc.folio_start) + 1),
+    }));
+  const folios = [...storedFolios];
+  documentFolioRows.forEach((row) => {
+    if (!folios.some((stored) => Number(stored.document_id || stored.ps520IdDocument) === Number(row.document_id))) folios.push(row);
+  });
   const totalFolios = folios.reduce((acc, row) => acc + Number(row.folio_total || row.total || 0), 0);
   const missing = documents.filter(doc => !folios.some(row => Number(row.document_id || row.ps520IdDocument) === Number(doc.idDocument || doc.id))).length;
 
@@ -70,6 +86,11 @@ function FoliationPage({ user }) {
         <Metric label="Documentos del expediente" value={documents.length} icon="file-text" tone="brand" accent />
         <Metric label="Total folios" value={totalFolios} icon="hash" tone="ok" accent />
         <Metric label="Pendientes por foliar" value={missing} icon="alert-triangle" tone={missing ? "warn" : "ok"} accent />
+      </div>
+
+      <div className="info-callout" style={{ marginBottom: "var(--s4)" }}>
+        <Icon name="info" size={16} />
+        <p>Un folio es cada hoja numerada del expediente. Si el documento ya fue registrado con folio inicial y final, AMBAR lo muestra aquí; si falta, puedes registrar el rango manualmente para cerrar saltos o duplicados.</p>
       </div>
 
       <div className="grid cols-2" style={{ alignItems: "start" }}>

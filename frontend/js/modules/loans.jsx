@@ -20,7 +20,7 @@ function mapLoans(items) {
     rawId: item.idLoan || item.id || item.loan_id,
     id: item.loan_code || item.code || `PRE-${i + 1}`,
     doc: item.entity_label || item.document_name || item.expedient_name || item.entity_type || "Unidad documental",
-    who: item.requester_name || item.borrower_name || "Solicitante",
+    who: item.requester_name || item.requested_by || item.borrower_name || "Solicitante",
     area: item.requester_area || item.area || item.archive_name || "Archivo",
     out: item.loan_date ? String(item.loan_date).slice(0, 10) : item.created_at ? String(item.created_at).slice(0, 10) : "-",
     due: item.expected_return_date ? String(item.expected_return_date).slice(0, 10) : "-",
@@ -32,11 +32,24 @@ function RequestLoan({ onClose, onCreated }) {
   const toast = useToast();
   const [payload, setPayload] = loS({ entity_type: "expedient", entity_id: "", archive_id: "", requested_by: "", requester_area: "", due_at: "", reason: "" });
   const liveArchives = window.useLiveData(() => window.AmbarAPI.endpoints.archives().then(window.AmbarAPI.listFrom), [], []);
+  const liveExpedients = window.useLiveData(() => window.AmbarAPI.endpoints.expedients().then(window.AmbarAPI.listFrom), [], []);
+  const liveFolders = window.useLiveData(() => window.AmbarAPI.endpoints.folders().then(window.AmbarAPI.listFrom), [], []);
+  const liveBoxes = window.useLiveData(() => window.AmbarAPI.endpoints.boxes().then(window.AmbarAPI.listFrom), [], []);
+  const liveDocuments = window.useLiveData(() => window.AmbarAPI.endpoints.documents().then(window.AmbarAPI.listFrom), [], []);
   const archives = liveArchives.data;
   const setField = (key, value) => setPayload((current) => ({ ...current, [key]: value }));
+  const entitySource = {
+    document: liveDocuments.data.map((item) => ({ id: item.idDocument || item.id, archiveId: item.ps930IdArchive || item.archive_id, label: `${item.document_name || item.name || "Documento"} (${item.document_type || item.type || "sin tipo"})` })),
+    folder: liveFolders.data.map((item) => ({ id: item.idFolder || item.id, archiveId: item.ps930IdArchive || item.archive_id, label: `${item.folder_code || item.code || "CAR"} - ${item.folder_name || item.name || "Carpeta"}` })),
+    expedient: liveExpedients.data.map((item) => ({ id: item.idExpedient || item.id, archiveId: item.ps930IdArchive || item.archive_id, label: `${item.expedient_code || item.code || "EXP"} - ${item.expedient_name || item.name || "Expediente"}` })),
+    box: liveBoxes.data.map((item) => ({ id: item.idBox || item.id, archiveId: item.ps930IdArchive || item.archive_id, label: `${item.box_code || item.code || "Caja"} - ${item.status || "activa"}` })),
+  };
+  const entityOptions = (entitySource[payload.entity_type] || []).filter((item) => !payload.archive_id || !item.archiveId || Number(item.archiveId) === Number(payload.archive_id));
+  const changeArchive = (value) => setPayload((current) => ({ ...current, archive_id: value, entity_id: "" }));
+  const changeType = (value) => setPayload((current) => ({ ...current, entity_type: value, entity_id: "" }));
   const submit = async () => {
     if (!payload.entity_id || !payload.archive_id || !payload.requested_by.trim() || !payload.due_at || !payload.reason.trim()) {
-      toast("Selecciona tipo, ID de unidad, archivo, solicitante, fecha y motivo.", { tone: "danger", title: "Faltan datos" });
+      toast("Selecciona archivo, unidad documental, solicitante, fecha y motivo.", { tone: "danger", title: "Faltan datos" });
       return;
     }
     try {
@@ -61,9 +74,9 @@ function RequestLoan({ onClose, onCreated }) {
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="send" onClick={submit}>Enviar solicitud</Button></>}>
       <div className="col gap4">
         <div className="grid cols-2" style={{ gap: "var(--s3)" }}>
-          <Field label="Tipo de unidad" required><select value={payload.entity_type} onChange={(e) => setField("entity_type", e.target.value)}><option value="document">Documento</option><option value="folder">Carpeta</option><option value="expedient">Expediente</option><option value="box">Caja</option></select></Field>
-          <Field label="ID interno de la unidad" required><input type="number" min="1" value={payload.entity_id} onChange={(e) => setField("entity_id", e.target.value)} placeholder="Ej. 12" /></Field>
-          <Field label="Archivo custodio" required><select value={payload.archive_id} onChange={(e) => setField("archive_id", e.target.value)}><option value="">Seleccionar archivo</option>{archives.map((archive) => <option key={archive.idArchive || archive.id} value={archive.idArchive || archive.id}>{archive.name || archive.archive_name || archive.code}</option>)}</select></Field>
+          <Field label="Archivo custodio" required><select value={payload.archive_id} onChange={(e) => changeArchive(e.target.value)}><option value="">Seleccionar archivo</option>{archives.map((archive) => <option key={archive.idArchive || archive.id} value={archive.idArchive || archive.id}>{archive.name || archive.archive_name || archive.code}</option>)}</select></Field>
+          <Field label="Tipo de unidad" required><select value={payload.entity_type} onChange={(e) => changeType(e.target.value)}><option value="document">Documento</option><option value="folder">Carpeta</option><option value="expedient">Expediente</option><option value="box">Caja</option></select></Field>
+          <Field label="Unidad documental" required><select value={payload.entity_id} onChange={(e) => setField("entity_id", e.target.value)}><option value="">Seleccionar unidad</option>{entityOptions.map((item) => <option key={`${payload.entity_type}-${item.id}`} value={item.id}>{item.label}</option>)}</select></Field>
           <Field label="Fecha esperada de devolucion" required><input type="date" value={payload.due_at} onChange={(e) => setField("due_at", e.target.value)} /></Field>
           <Field label="Solicitante" required><input value={payload.requested_by} onChange={(e) => setField("requested_by", e.target.value)} placeholder="Nombre de quien solicita" maxLength={160} /></Field>
           <Field label="Area solicitante"><input value={payload.requester_area} onChange={(e) => setField("requester_area", e.target.value)} placeholder="Dependencia o area" maxLength={120} /></Field>

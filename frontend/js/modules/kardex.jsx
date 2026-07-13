@@ -35,7 +35,7 @@ function KardexPage({ user }) {
   const [dateFrom, setDateFrom] = kdxS("");
   const [dateTo, setDateTo] = kdxS("");
   const [page, setPage] = kdxS(0);
-  const pageSize = 50;
+  const pageSize = 10;
   const fromParam = dateFrom ? `${dateFrom}T00:00:00` : "";
   const toParam = dateTo ? `${dateTo}T23:59:59` : "";
   const query = [

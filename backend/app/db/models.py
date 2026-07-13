@@ -366,6 +366,7 @@ class Employee(Base):
 
     identification: Mapped[str] = mapped_column(String(40), primary_key=True)
     employee_code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    document_type: Mapped[str] = mapped_column(String(40), default="cc", nullable=False)
     full_name: Mapped[str] = mapped_column(String(180), nullable=False)
     position: Mapped[str] = mapped_column(String(120), nullable=False)
     department: Mapped[str] = mapped_column(String(120), nullable=False)

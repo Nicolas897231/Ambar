@@ -34,6 +34,7 @@ function normalizeExam(e, i) {
     next: e.due_date ? String(e.due_date).slice(0, 10) : e.next_exam_date ? String(e.next_exam_date).slice(0, 10) : "-",
     state: e.status_label || e.status || parsed.result || "Programado",
     note: parsed.note || e.description || "",
+    rawDescription: e.description || "",
   };
 }
 
@@ -92,6 +93,7 @@ function ExamModal({ onClose, onCreated }) {
 function MedicalPage({ user }) {
   const [tab, setTab] = meS("Todos");
   const [creating, setCreating] = meS(false);
+  const toast = useToast();
   const liveExams = useLiveData(() => AmbarAPI.endpoints.medicalExams(), [], []);
   const { data: rawAlerts } = useLiveData(() => AmbarAPI.endpoints.sstAlerts(), [], []);
   const exams = AmbarAPI.listFrom(liveExams.data).map(normalizeExam);
@@ -99,6 +101,21 @@ function MedicalPage({ user }) {
   const rows = exams.filter((exam) => tab === "Todos" || String(exam.state).toLowerCase().includes(tab.toLowerCase()));
   const overdue = exams.filter((exam) => String(exam.state).toLowerCase().includes("venc") || String(exam.state).toLowerCase().includes("overdue")).length;
   const next = exams.filter((exam) => String(exam.state).toLowerCase().includes("prox") || String(exam.state).toLowerCase().includes("due") || String(exam.state).toLowerCase().includes("programado")).length;
+  const markDone = async (exam) => {
+    const description = String(exam.rawDescription || "")
+      .split("\n")
+      .filter((line) => !/^Resultado:/i.test(line))
+      .concat("Resultado: realizado")
+      .join("\n")
+      .trim();
+    try {
+      const updated = await AmbarAPI.patch(`/hr/incidents/${exam.id}`, { description });
+      liveExams.setData((current) => (current || []).map((item) => (item.idIncident || item.id) === exam.id ? updated : item));
+      toast("Examen marcado como realizado.", { tone: "ok", title: "SST actualizado" });
+    } catch (err) {
+      toast(err.message || "No fue posible actualizar el examen.", { tone: "danger", title: "Error" });
+    }
+  };
   return (
     <>
       <div className="page-head"><div><div className="eyebrow">Talento Humano - SST</div><h1>Exámenes Médicos Ocupacionales</h1><p className="lead">Programación y seguimiento interno conectados al backend. No se muestran exámenes ni alertas ficticias.</p></div><div className="page-actions">{can(user, ["medical.manage"]) && <Button icon="plus" onClick={() => setCreating(true)}>Programar examen</Button>}</div></div>
@@ -111,8 +128,8 @@ function MedicalPage({ user }) {
       <Tabs value={tab} onChange={setTab} tabs={[{ key: "Todos", label: "Todos" }, { key: "Vigente", label: "Vigentes" }, { key: "Proximo", label: "Por vencer" }, { key: "Vencido", label: "Vencidos" }]} />
       <Card flush className="an-rise">
         {liveExams.loading ? <div style={{ padding: "var(--s5)" }}><Skeleton rows={6} /></div> : rows.length === 0 ? <Empty icon="stethoscope" title="Sin exámenes">No hay exámenes reales para este filtro.</Empty> : (
-          <div className="table-scroll"><table className="tbl"><thead><tr><th>Empleado</th><th>Tipo</th><th>IPS</th><th>Resultado</th><th>Programado</th><th>Vence</th><th>Estado</th></tr></thead><tbody>
-            {rows.map((exam) => (<tr key={exam.id}><td><div className="t-avatar"><Avatar size="sm" name={exam.emp} color="var(--viz-amber)" />{exam.emp}</div></td><td><Badge tone={EX_TYPE[exam.type] || "outline"}>{humanizeExam(exam.type)}</Badge></td><td>{exam.ips}</td><td>{exam.result}</td><td className="mono" style={{ fontSize: "var(--fs-xs)" }}>{exam.date}</td><td className="mono" style={{ fontSize: "var(--fs-xs)" }}>{exam.next}</td><td><Badge tone={EX_STATE[exam.state] || "neutral"} dot>{exam.state}</Badge></td></tr>))}
+          <div className="table-scroll"><table className="tbl"><thead><tr><th>Empleado</th><th>Tipo</th><th>IPS</th><th>Resultado</th><th>Programado</th><th>Vence</th><th>Estado</th><th>Acción</th></tr></thead><tbody>
+            {rows.map((exam) => (<tr key={exam.id}><td><div className="t-avatar"><Avatar size="sm" name={exam.emp} color="var(--viz-amber)" />{exam.emp}</div></td><td><Badge tone={EX_TYPE[exam.type] || "outline"}>{humanizeExam(exam.type)}</Badge></td><td>{exam.ips}</td><td>{exam.result}</td><td className="mono" style={{ fontSize: "var(--fs-xs)" }}>{exam.date}</td><td className="mono" style={{ fontSize: "var(--fs-xs)" }}>{exam.next}</td><td><Badge tone={EX_STATE[exam.state] || "neutral"} dot>{exam.state}</Badge></td><td>{can(user, ["medical.manage"]) && !String(exam.result).toLowerCase().includes("realizado") ? <Button variant="ghost" size="sm" icon="check" onClick={() => markDone(exam)}>Marcar realizado</Button> : <span className="tag-soft">Cerrado</span>}</td></tr>))}
           </tbody></table></div>
         )}
       </Card>

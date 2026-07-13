@@ -241,6 +241,17 @@ def ensure_audit_enhanced_columns() -> None:
 def ensure_hr_company_isolation() -> None:
     inspector = inspect(engine)
     dialect = engine.dialect.name
+    if "ps1010_employees" in inspector.get_table_names():
+        existing = {c["name"] for c in inspector.get_columns("ps1010_employees")}
+        existing_idx = {idx["name"] for idx in inspector.get_indexes("ps1010_employees")}
+        with engine.begin() as conn:
+            if "document_type" not in existing:
+                conn.execute(text("ALTER TABLE `ps1010_employees` ADD COLUMN document_type VARCHAR(40) NOT NULL DEFAULT 'cc'"))
+            if "ix_employees_company_document_type" not in existing_idx:
+                if dialect == "sqlite":
+                    conn.execute(text('CREATE INDEX IF NOT EXISTS "ix_employees_company_document_type" ON "ps1010_employees" (company_id, document_type)'))
+                else:
+                    conn.execute(text("ALTER TABLE `ps1010_employees` ADD INDEX `ix_employees_company_document_type` (company_id, document_type)"))
     hr_tables = [
         "ps1008_hr_positions",
         "ps1006_hr_departments",

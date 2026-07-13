@@ -18,13 +18,26 @@ router = APIRouter(prefix="/hr", tags=["hr"])
 MANDATORY_FILES = {"hoja_vida", "contrato_firmado", "arl", "examen_ingreso"}
 
 
+def _blank_to_none(value):
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    return value
+
+
 class EmployeeCreate(BaseModel):
     identification: str = Field(min_length=6, max_length=12)
     employee_code: str | None = Field(default=None, min_length=2, max_length=40)
+    document_type: str = Field(default="cc", pattern="^(cc|ce|pep|pasaporte|nit|otro)$")
     full_name: str = Field(min_length=3, max_length=180)
     position: str = Field(min_length=2, max_length=120)
     department: str = Field(min_length=2, max_length=120)
     hire_date: datetime
+
+    @field_validator("employee_code", mode="before")
+    @classmethod
+    def normalize_employee_code(cls, value):
+        return _blank_to_none(value)
 
     @field_validator("identification")
     @classmethod
@@ -38,6 +51,11 @@ class EmployeeCreate(BaseModel):
     @classmethod
     def strip_catalog_text(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("document_type")
+    @classmethod
+    def normalize_document_type(cls, value: str) -> str:
+        return value.strip().lower()
 
     @field_validator("full_name")
     @classmethod
@@ -65,6 +83,11 @@ class IncidentCreate(BaseModel):
     description: str = Field(min_length=3)
 
 
+class IncidentUpdate(BaseModel):
+    incident_type: str | None = Field(default=None, min_length=2, max_length=80)
+    description: str | None = Field(default=None, min_length=3)
+
+
 class PositionCreate(BaseModel):
     position_code: str | None = Field(default=None, min_length=2, max_length=40)
     name: str = Field(min_length=2, max_length=120)
@@ -74,12 +97,22 @@ class PositionCreate(BaseModel):
     suggested_permissions: list[str] = Field(default_factory=list)
     required_documents: list[str] = Field(default_factory=lambda: ["hoja_vida", "contrato_firmado"])
 
+    @field_validator("position_code", mode="before")
+    @classmethod
+    def normalize_position_code(cls, value):
+        return _blank_to_none(value)
+
 
 class DepartmentCreate(BaseModel):
     department_code: str | None = Field(default=None, min_length=2, max_length=40)
     name: str = Field(min_length=2, max_length=120)
     parent_id: int | None = None
     responsible_identification: str | None = None
+
+    @field_validator("department_code", "responsible_identification", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value):
+        return _blank_to_none(value)
 
 
 class CandidateCreate(BaseModel):
@@ -717,6 +750,28 @@ def create_incident(identification: str, payload: IncidentCreate, request: Reque
     db.add(incident)
     db.flush()
     write_audit(db, action="employee_incident_created", module="hr", user_id=user.identification, entity="incident", entity_id=incident.idIncident, new_values=payload.model_dump(), request=request)
+    db.commit()
+    db.refresh(incident)
+    return incident
+
+
+@router.patch("/incidents/{incident_id}")
+def update_incident(incident_id: int, payload: IncidentUpdate, request: Request, user: User = Depends(require_permission("hr.manage")), db: Session = Depends(get_db)):
+    incident = (
+        db.query(EmployeeIncident)
+        .join(Employee, Employee.identification == EmployeeIncident.ps1010Identification)
+        .filter(EmployeeIncident.idIncident == incident_id, Employee.company_id == user.company_id)
+        .first()
+    )
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    old_values = {"incident_type": incident.incident_type, "description": incident.description}
+    data = payload.model_dump(exclude_unset=True)
+    if "incident_type" in data and data["incident_type"]:
+        incident.incident_type = data["incident_type"].strip()
+    if "description" in data and data["description"]:
+        incident.description = data["description"].strip()
+    write_audit(db, action="employee_incident_updated", module="hr", user_id=user.identification, entity="incident", entity_id=incident.idIncident, old_values=old_values, new_values=data, request=request)
     db.commit()
     db.refresh(incident)
     return incident

@@ -69,6 +69,13 @@
     return [];
   }
 
+  function query(params) {
+    const entries = Object.entries(params || {})
+      .filter(([, value]) => value !== undefined && value !== null && value !== "")
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+    return entries.length ? `?${entries.join("&")}` : "";
+  }
+
   function firstNumber(source, keys) {
     for (const key of keys) {
       const value = source?.[key];

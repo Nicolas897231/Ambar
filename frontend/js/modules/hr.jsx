@@ -94,7 +94,7 @@ function EmployeeProfile({ emp, onClose, navigate }) {
 
 function EmployeeModal({ onClose, onCreated }) {
   const toast = useToast();
-  const [payload, setPayload] = hrS({ identification: "", full_name: "", employee_code: "", position: "", department: "", hire_date: new Date().toISOString().slice(0, 10) });
+  const [payload, setPayload] = hrS({ document_type: "cc", identification: "", full_name: "", employee_code: "", position: "", department: "", hire_date: new Date().toISOString().slice(0, 10) });
   const { data: positionsRaw } = useLiveData(() => AmbarAPI.endpoints.positions(), [], []);
   const { data: depsRaw } = useLiveData(() => AmbarAPI.endpoints.departments(), [], []);
   const positions = AmbarAPI.listFrom(positionsRaw);
@@ -107,7 +107,7 @@ function EmployeeModal({ onClose, onCreated }) {
       return;
     }
     try {
-      const created = await AmbarAPI.post("/hr/employees", { ...payload, hire_date: new Date(payload.hire_date).toISOString() });
+      const created = await AmbarAPI.post("/hr/employees", { ...payload, employee_code: null, hire_date: new Date(payload.hire_date).toISOString() });
       toast("Empleado creado en RRHH.", { tone: "ok", title: "Empleado creado" });
       onCreated(created);
       onClose();
@@ -119,8 +119,9 @@ function EmployeeModal({ onClose, onCreated }) {
     <Modal title="Nuevo empleado" sub="RRHH crea la persona laboral; el acceso al sistema se gestiona desde Seguridad." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear empleado</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
+        <Field label="Tipo de documento" required><select value={payload.document_type} onChange={e => setField("document_type", e.target.value)}><option value="cc">Cedula de ciudadania</option><option value="ce">Cedula de extranjeria</option><option value="pep">PEP</option><option value="pasaporte">Pasaporte</option><option value="nit">NIT</option><option value="otro">Otro</option></select></Field>
         <Field label="Identificación" required><input inputMode="numeric" maxLength={12} value={payload.identification} onChange={e => setField("identification", e.target.value.replace(/\D/g, ""))} placeholder="1234567890" /></Field>
-        <Field label="Código empleado" help="AMBAR genera este código automáticamente al guardar el empleado."><AutoCodeInput /></Field>
+        <Field label="Código empleado" hint="AMBAR genera este código automáticamente al guardar el empleado."><AutoCodeInput /></Field>
         <Field label="Nombre completo" required><input maxLength={180} value={payload.full_name} onChange={e => setField("full_name", e.target.value.replace(/[0-9]/g, ""))} placeholder="Nombre y apellidos" /></Field>
         <Field label="Fecha de ingreso" required><input type="date" value={payload.hire_date} onChange={e => setField("hire_date", e.target.value)} /></Field>
         <Field label="Cargo" required><select value={payload.position} onChange={e => setField("position", e.target.value)}><option value="">Seleccionar cargo</option>{positions.map(p => <option key={p.idPosition || p.id || p.name} value={p.name || p.position_name}>{p.name || p.position_name}</option>)}</select></Field>
@@ -132,8 +133,16 @@ function EmployeeModal({ onClose, onCreated }) {
 
 function PositionModal({ onClose, onCreated, departments }) {
   const toast = useToast();
-  const [payload, setPayload] = hrS({ position_code: "", name: "", level: "operativo", department: "", description: "", required_documents: "hoja_vida\ncontrato_firmado\nexamen_ingreso", suggested_permissions: "" });
+  const [payload, setPayload] = hrS({ position_code: "", name: "", level: "operativo", department: "", description: "", required_documents: ["hoja_vida", "contrato_firmado", "examen_ingreso"], suggested_permissions: "" });
+  const { data: typesRaw } = useLiveData(() => AmbarAPI.endpoints.documentTypes(), [], []);
+  const documentTypes = AmbarAPI.listFrom(typesRaw);
   const setField = (key, value) => setPayload(p => ({ ...p, [key]: value }));
+  const toggleRequired = (code) => setPayload(p => {
+    const current = new Set(p.required_documents || []);
+    if (current.has(code)) current.delete(code);
+    else current.add(code);
+    return { ...p, required_documents: Array.from(current) };
+  });
   const submit = async () => {
     if (!payload.name.trim() || !payload.department.trim()) {
       toast("Nombre y dependencia son obligatorios. El código lo puede generar AMBAR.", { tone: "danger", title: "Cargo incompleto" });
@@ -142,7 +151,8 @@ function PositionModal({ onClose, onCreated, departments }) {
     try {
       const created = await AmbarAPI.post("/hr/positions", {
         ...payload,
-        required_documents: payload.required_documents.split("\n").map((item) => item.trim()).filter(Boolean),
+        position_code: null,
+        required_documents: payload.required_documents,
         suggested_permissions: payload.suggested_permissions.split("\n").map((item) => item.trim()).filter(Boolean),
       });
       toast("Perfil de cargo creado.", { tone: "ok", title: "Cargo creado" });
@@ -156,12 +166,22 @@ function PositionModal({ onClose, onCreated, departments }) {
     <Modal title="Nuevo perfil de cargo" sub="Los cargos alimentan usuarios, empleados y checklist documental." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear cargo</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
-        <Field label="Código" help="AMBAR genera este código automáticamente al guardar el cargo."><AutoCodeInput /></Field>
+        <Field label="Código" hint="AMBAR genera este código automáticamente al guardar el cargo."><AutoCodeInput /></Field>
         <Field label="Nombre" required><input maxLength={120} value={payload.name} onChange={e => setField("name", e.target.value)} placeholder="Analista documental" /></Field>
         <Field label="Nivel"><select value={payload.level} onChange={e => setField("level", e.target.value)}>{["operativo", "tecnico", "profesional", "coordinacion", "direccion"].map(x => <option key={x} value={x}>{x}</option>)}</select></Field>
         <Field label="Dependencia" required><select value={payload.department} onChange={e => setField("department", e.target.value)}><option value="">Seleccionar dependencia</option>{departments.map(d => <option key={d.idDepartment || d.id || d.name} value={d.name || d.department_name}>{d.name || d.department_name}</option>)}</select></Field>
         <div style={{ gridColumn: "1 / -1" }}><Field label="Descripción"><textarea maxLength={500} value={payload.description} onChange={e => setField("description", e.target.value)} /></Field></div>
-        <Field label="Documentos obligatorios" help="Uno por línea"><textarea value={payload.required_documents} onChange={e => setField("required_documents", e.target.value)} /></Field>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <Field label="Documentos obligatorios" hint="Selecciona tipologías documentales ya creadas en TRD. El empleado heredará este checklist.">
+            <div className="chip-grid">
+              {(documentTypes.length ? documentTypes : [{ type_code: "hoja_vida", name: "Hoja de vida" }, { type_code: "contrato_firmado", name: "Contrato firmado" }, { type_code: "examen_ingreso", name: "Examen de ingreso" }]).map((type) => {
+                const code = type.type_code || type.code || type.name;
+                const selected = (payload.required_documents || []).includes(code);
+                return <button type="button" key={code} className={`chip-option ${selected ? "selected" : ""}`} onClick={() => toggleRequired(code)}><Icon name={selected ? "check" : "plus"} size={13} />{type.name || code}</button>;
+              })}
+            </div>
+          </Field>
+        </div>
         <Field label="Permisos sugeridos" help="Uno por línea"><textarea value={payload.suggested_permissions} onChange={e => setField("suggested_permissions", e.target.value)} placeholder={"document.read\nhr.view"} /></Field>
       </div>
     </Modal>
@@ -178,7 +198,7 @@ function DepartmentModal({ onClose, onCreated }) {
       return;
     }
     try {
-      const body = { ...payload, responsible_identification: payload.responsible_identification || null };
+      const body = { ...payload, department_code: null, responsible_identification: payload.responsible_identification || null };
       const created = await AmbarAPI.post("/hr/departments", body);
       toast("Dependencia creada.", { tone: "ok", title: "Dependencia creada" });
       onCreated(created);
@@ -191,7 +211,7 @@ function DepartmentModal({ onClose, onCreated }) {
     <Modal title="Nueva dependencia" sub="La dependencia organiza cargos y expedientes laborales." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear dependencia</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
-        <Field label="Código" help="AMBAR genera este código automáticamente al guardar la dependencia."><AutoCodeInput /></Field>
+        <Field label="Código" hint="AMBAR genera este código automáticamente al guardar la dependencia."><AutoCodeInput /></Field>
         <Field label="Nombre" required><input maxLength={120} value={payload.name} onChange={e => setField("name", e.target.value)} placeholder="Talento Humano" /></Field>
         <Field label="Responsable"><input inputMode="numeric" maxLength={12} value={payload.responsible_identification} onChange={e => setField("responsible_identification", e.target.value.replace(/\D/g, ""))} placeholder="Identificación" /></Field>
       </div>

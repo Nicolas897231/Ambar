@@ -234,7 +234,7 @@ function UnassignedView() {
 function MovementsView() {
   const [filters, setFilters] = arS({ movement_type: "", date_from: "", date_to: "" });
   const [page, setPage] = arS(0);
-  const pageSize = 30;
+  const pageSize = 5;
   const query = arM(() => ({
     ...(filters.movement_type ? { movement_type: filters.movement_type } : {}),
     ...(filters.date_from ? { date_from: `${filters.date_from}T00:00:00` } : {}),
@@ -417,7 +417,7 @@ function CreatePhysicalModal({ mode, onClose, onCreated }) {
       {kind === "archive" && <div className="grid cols-2">
         <Field label="Sede" required><select value={payload.location_id || ""} onChange={e => setField("location_id", e.target.value)}><option value="">Seleccionar sede</option>{locations.map(l => <option key={l.idLocation || l.id} value={l.idLocation || l.id}>{l.location_name}</option>)}</select></Field>
         <Field label="Tipo" required><select value={payload.archive_type} onChange={e => setField("archive_type", e.target.value)}><option value="gestion">Gestion</option><option value="central">Central</option><option value="historico">Historico</option><option value="satelite">Satelite</option></select></Field>
-        <Field label="Codigo" help="AMBAR genera este codigo automaticamente al guardar el archivo."><AutoCodeInput /></Field>
+        <Field label="Codigo" hint="AMBAR genera este codigo automaticamente al guardar el archivo."><AutoCodeInput /></Field>
         <Field label="Nombre" required><input value={payload.archive_name || ""} onChange={e => setField("archive_name", e.target.value)} placeholder="Archivo Central Cali" /></Field>
         <Field label="Capacidad cajas"><input type="number" min="0" value={payload.capacity_units || 0} onChange={e => setField("capacity_units", e.target.value)} /></Field>
       </div>}
@@ -446,7 +446,7 @@ function CreatePhysicalModal({ mode, onClose, onCreated }) {
       {kind === "box" && <div className="grid cols-2">
         <Field label="Archivo" required><select value={payload.archive_id || ""} onChange={e => { setField("archive_id", e.target.value); setField("shelf_id", ""); }}><option value="">Seleccionar archivo</option>{archives.map(a => <option key={a.idArchive || a.id} value={a.idArchive || a.id}>{a.archive_name}</option>)}</select></Field>
         <Field label="Ubicacion topografica" required><select value={payload.shelf_id || ""} onChange={e => setField("shelf_id", e.target.value)}><option value="">Seleccionar pasillo / estanteria / nivel</option>{shelves.map(s => <option key={s.idShelf || s.id} value={s.idShelf || s.id}>{shelfLabel(s)}</option>)}</select></Field>
-        <Field label="Codigo caja" help="AMBAR genera este codigo automaticamente al guardar la caja."><AutoCodeInput /></Field>
+        <Field label="Codigo caja" hint="AMBAR genera este codigo automaticamente al guardar la caja."><AutoCodeInput /></Field>
         <Field label="Nombre"><input value={payload.box_name || ""} onChange={e => setField("box_name", e.target.value)} placeholder="Contratos 2026" /></Field>
         <Field label="Capacidad carpetas"><input type="number" min="0" value={payload.capacity_folders || 0} onChange={e => setField("capacity_folders", e.target.value)} /></Field>
       </div>}

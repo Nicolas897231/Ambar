@@ -152,6 +152,10 @@ table.tbl { width: 100%; min-width: 760px; border-collapse: collapse; font-size:
 .info-callout p { margin: 0; color: var(--muted); line-height: 1.55; }
 .filter-bar { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; margin: var(--s4) 0; }
 .filter-bar > * { min-width: 180px; }
+.chip-grid { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.chip-option { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); font-size: var(--fs-sm); font-weight: 650; cursor: pointer; transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), transform var(--t-fast); }
+.chip-option:hover { transform: translateY(-1px); border-color: color-mix(in oklab, var(--brand) 38%, var(--line)); color: var(--text); }
+.chip-option.selected { background: var(--brand-ghost); border-color: color-mix(in oklab, var(--brand) 48%, var(--line)); color: var(--brand-strong); }
 .drawer-head { position: sticky; top: 0; background: var(--panel); padding: var(--s5) var(--s6); border-bottom: 1px solid var(--line); display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s4); z-index: 2; }
 .drawer-body { padding: var(--s6); display: grid; gap: var(--s5); }
 
