@@ -77,6 +77,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         settings = get_settings()
         path = request.url.path
+        host = request.headers.get("host", "")
+        proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",", 1)[0].strip()
+        is_trustworthy_origin = proto == "https" or host.startswith("localhost") or host.startswith("127.0.0.1")
 
         # Universal security headers
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -85,8 +88,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
         response.headers["X-DNS-Prefetch-Control"] = "off"
-        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
-        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+        if is_trustworthy_origin:
+            response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+            response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
 
         # API paths and health checks: strict CSP + no caching (pure JSON, no scripts)
         if path.startswith("/api/") or path in ("/health", "/health/live", "/health/ready", "/metrics"):

@@ -2,7 +2,7 @@ const ROUTE_TITLES = {
   dashboard: ["Inicio operativo", "Centro operacional"], expedients: ["Gestionar documentos", "Expedientes"], documents: ["Gestionar documentos", "Documentos"],
   digitization: ["Gestionar documentos", "Digitalización"], trd: ["Gestionar documentos", "TRD & Retención"],
   archive: ["Operar custodia", "Archivo Físico"], transfers: ["Operar custodia", "Transferencias"], loans: ["Operar custodia", "Préstamos"],
-  correspondence: ["Operar custodia", "Correspondencia"], hr: ["Talento humano", "Empleados"], medical: ["Talento humano", "Exámenes Médicos"],
+  correspondence: ["Operar custodia", "Radicación"], hr: ["Talento humano", "Empleados"], medical: ["Talento humano", "Exámenes Médicos"],
   recruitment: ["Talento humano", "Reclutamiento"], reports: ["Inteligencia", "Reportes & BI"], audit: ["Inteligencia", "Auditoría"],
   security: ["Administración", "Seguridad"], settings: ["Administración", "Configuración"],
 };

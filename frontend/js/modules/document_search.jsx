@@ -1,5 +1,5 @@
 /* ============================================================
-   AMBAR - Gestión Documental: Búsqueda documental
+   AMBAR - Gestion Documental: Busqueda documental
    ============================================================ */
 
 function normalizeSearchResult(item, i) {
@@ -12,6 +12,17 @@ function normalizeSearchResult(item, i) {
     summary: item.summary || item.description || item.snippet || "",
     url: item.url || item.action_url || "",
   };
+}
+
+function resultsFromSearchResponse(response) {
+  if (response?.engine === "opensearch") {
+    return (response.raw?.hits?.hits || []).map((hit, i) => {
+      const source = hit._source || {};
+      const highlight = Object.values(hit.highlight || {}).flat().join(" ");
+      return normalizeSearchResult({ ...source, id: hit._id || i, summary: highlight || source.summary || source.description }, i);
+    });
+  }
+  return AmbarAPI.listFrom(response, ["items", "results", "data"]).map(normalizeSearchResult);
 }
 
 function DocumentSearchPage({ navigate }) {
@@ -39,9 +50,9 @@ function DocumentSearchPage({ navigate }) {
         size: 50,
       };
       const response = await AmbarAPI.endpoints.searchDocuments(payload);
-      setResults(AmbarAPI.listFrom(response, ["items", "results", "data"]).map(normalizeSearchResult));
+      setResults(resultsFromSearchResponse(response));
     } catch (err) {
-      toast(err.message || "No fue posible buscar documentos.", { tone: "danger", title: "Búsqueda fallida" });
+      toast(err.message || "No fue posible buscar documentos.", { tone: "danger", title: "Busqueda fallida" });
     } finally {
       setLoading(false);
     }
@@ -61,16 +72,16 @@ function DocumentSearchPage({ navigate }) {
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">Gestión Documental</div>
-          <h1>Búsqueda documental</h1>
-          <p className="lead">Busca documentos y expedientes respetando permisos por archivo. Puedes filtrar por estado, archivo y metadatos de tipología.</p>
+          <div className="eyebrow">Gestion Documental</div>
+          <h1>Busqueda documental</h1>
+          <p className="lead">Busca documentos y expedientes respetando permisos por archivo. Puedes filtrar por estado, archivo y metadatos de tipologia.</p>
         </div>
         <div className="page-actions"><Button icon="search" onClick={search}>Buscar</Button></div>
       </div>
 
       <Card>
         <div className="grid cols-3">
-          <Field label="Texto libre"><input value={filters.q} onChange={e => setField("q", e.target.value)} onKeyDown={e => e.key === "Enter" && search()} placeholder="Contrato, cédula, placa, manifiesto..." /></Field>
+          <Field label="Texto libre"><input value={filters.q} onChange={e => setField("q", e.target.value)} onKeyDown={e => e.key === "Enter" && search()} placeholder="Contrato, cedula, placa, manifiesto..." /></Field>
           <Field label="Entidad">
             <select value={filters.entity_type} onChange={e => setField("entity_type", e.target.value)}>
               <option value="">Todas</option>
@@ -94,11 +105,11 @@ function DocumentSearchPage({ navigate }) {
 
       <Card flush className="an-rise">
         <div className="row between wrap" style={{ padding: "var(--s4)", borderBottom: "1px solid var(--line)" }}>
-          <div><strong>Resultados</strong><div className="muted" style={{ fontSize: "var(--fs-sm)" }}>{searched ? `${results.length} coincidencias` : "Ejecuta una búsqueda para consultar la base documental"}</div></div>
+          <div><strong>Resultados</strong><div className="muted" style={{ fontSize: "var(--fs-sm)" }}>{searched ? `${results.length} coincidencias` : "Ejecuta una busqueda para consultar la base documental"}</div></div>
           <Button variant="ghost" icon="download" onClick={() => downloadCSV("busqueda-documental", results)} disabled={!results.length}>Exportar CSV</Button>
         </div>
         {loading ? <div style={{ padding: "var(--s5)" }}><Skeleton rows={7} /></div> : !searched ? (
-          <Empty icon="search" title="Lista para buscar">AMBAR consultará solo entidades permitidas por tu rol y archivos autorizados.</Empty>
+          <Empty icon="search" title="Lista para buscar">AMBAR consultara solo entidades permitidas por tu rol y archivos autorizados.</Empty>
         ) : results.length === 0 ? (
           <Empty icon="inbox" title="Sin resultados">No hay coincidencias reales para estos filtros.</Empty>
         ) : (

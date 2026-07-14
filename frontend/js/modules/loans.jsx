@@ -38,13 +38,19 @@ function RequestLoan({ onClose, onCreated }) {
   const liveDocuments = window.useLiveData(() => window.AmbarAPI.endpoints.documents().then(window.AmbarAPI.listFrom), [], []);
   const archives = liveArchives.data;
   const setField = (key, value) => setPayload((current) => ({ ...current, [key]: value }));
-  const entitySource = {
-    document: liveDocuments.data.map((item) => ({ id: item.idDocument || item.id, archiveId: item.ps930IdArchive || item.archive_id, label: `${item.document_name || item.name || "Documento"} (${item.document_type || item.type || "sin tipo"})` })),
-    folder: liveFolders.data.map((item) => ({ id: item.idFolder || item.id, archiveId: item.ps930IdArchive || item.archive_id, label: `${item.folder_code || item.code || "CAR"} - ${item.folder_name || item.name || "Carpeta"}` })),
-    expedient: liveExpedients.data.map((item) => ({ id: item.idExpedient || item.id, archiveId: item.ps930IdArchive || item.archive_id, label: `${item.expedient_code || item.code || "EXP"} - ${item.expedient_name || item.name || "Expediente"}` })),
-    box: liveBoxes.data.map((item) => ({ id: item.idBox || item.id, archiveId: item.ps930IdArchive || item.archive_id, label: `${item.box_code || item.code || "Caja"} - ${item.status || "activa"}` })),
+  const hasContext = (item, type) => {
+    if (type === "document") {
+      return Boolean((item.ps930IdArchive || item.archive_id) && (item.ps950IdExpedient || item.expedient_id) && (item.ps952IdFolder || item.folder_id));
+    }
+    return Boolean(item.ps930IdArchive || item.archive_id);
   };
-  const entityOptions = (entitySource[payload.entity_type] || []).filter((item) => !payload.archive_id || !item.archiveId || Number(item.archiveId) === Number(payload.archive_id));
+  const entitySource = {
+    document: liveDocuments.data.map((item) => ({ id: item.idDocument || item.id, archiveId: item.ps930IdArchive || item.archive_id, ready: hasContext(item, "document"), label: `${item.document_name || item.name || "Documento"} (${item.document_type || item.type || "sin tipo"})` })),
+    folder: liveFolders.data.map((item) => ({ id: item.idFolder || item.id, archiveId: item.ps930IdArchive || item.archive_id, ready: hasContext(item, "folder"), label: `${item.folder_code || item.code || "CAR"} - ${item.folder_name || item.name || "Carpeta"}` })),
+    expedient: liveExpedients.data.map((item) => ({ id: item.idExpedient || item.id, archiveId: item.ps930IdArchive || item.archive_id, ready: hasContext(item, "expedient"), label: `${item.expedient_code || item.code || "EXP"} - ${item.expedient_name || item.name || "Expediente"}` })),
+    box: liveBoxes.data.map((item) => ({ id: item.idBox || item.id, archiveId: item.ps930IdArchive || item.archive_id, ready: hasContext(item, "box"), label: `${item.box_code || item.code || "Caja"} - ${item.status || "activa"}` })),
+  };
+  const entityOptions = (entitySource[payload.entity_type] || []).filter((item) => item.ready && (!payload.archive_id || !item.archiveId || Number(item.archiveId) === Number(payload.archive_id)));
   const changeArchive = (value) => setPayload((current) => ({ ...current, archive_id: value, entity_id: "" }));
   const changeType = (value) => setPayload((current) => ({ ...current, entity_type: value, entity_id: "" }));
   const submit = async () => {
@@ -76,12 +82,13 @@ function RequestLoan({ onClose, onCreated }) {
         <div className="grid cols-2" style={{ gap: "var(--s3)" }}>
           <Field label="Archivo custodio" required><select value={payload.archive_id} onChange={(e) => changeArchive(e.target.value)}><option value="">Seleccionar archivo</option>{archives.map((archive) => <option key={archive.idArchive || archive.id} value={archive.idArchive || archive.id}>{archive.name || archive.archive_name || archive.code}</option>)}</select></Field>
           <Field label="Tipo de unidad" required><select value={payload.entity_type} onChange={(e) => changeType(e.target.value)}><option value="document">Documento</option><option value="folder">Carpeta</option><option value="expedient">Expediente</option><option value="box">Caja</option></select></Field>
-          <Field label="Unidad documental" required><select value={payload.entity_id} onChange={(e) => setField("entity_id", e.target.value)}><option value="">Seleccionar unidad</option>{entityOptions.map((item) => <option key={`${payload.entity_type}-${item.id}`} value={item.id}>{item.label}</option>)}</select></Field>
+          <Field label="Unidad documental" required><select value={payload.entity_id} onChange={(e) => setField("entity_id", e.target.value)}><option value="">Seleccionar unidad prestable</option>{entityOptions.map((item) => <option key={`${payload.entity_type}-${item.id}`} value={item.id}>{item.label}</option>)}</select></Field>
           <Field label="Fecha esperada de devolucion" required><input type="date" value={payload.due_at} onChange={(e) => setField("due_at", e.target.value)} /></Field>
           <Field label="Solicitante" required><input value={payload.requested_by} onChange={(e) => setField("requested_by", e.target.value)} placeholder="Nombre de quien solicita" maxLength={160} /></Field>
           <Field label="Area solicitante"><input value={payload.requester_area} onChange={(e) => setField("requester_area", e.target.value)} placeholder="Dependencia o area" maxLength={120} /></Field>
         </div>
         <Field label="Motivo" required><textarea value={payload.reason} onChange={(e) => setField("reason", e.target.value)} placeholder="Para que se requiere la unidad documental" /></Field>
+        {payload.archive_id && entityOptions.length === 0 && <div className="info-callout warn"><Icon name="alert-triangle" size={16} /><p>No hay unidades prestables con contexto completo para este archivo. Un documento debe tener archivo, expediente y carpeta antes de poder prestarse.</p></div>}
         <div className="page-intro" style={{ background: "var(--info-bg)" }}><span className="pi-ico" style={{ background: "var(--info)" }}><Icon name="info" size={16} /></span><div><h4>Flujo del prestamo</h4><p>Solicitud, aprobacion, entrega con evidencia, devolucion y cierre. AMBAR genera alertas y Kardex cuando aplica.</p></div></div>
       </div>
     </Modal>

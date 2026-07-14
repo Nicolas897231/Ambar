@@ -1,5 +1,5 @@
 /* ============================================================
-   AMBAR - Gestión Documental: Foliación
+   AMBAR - Gestion Documental: Foliacion
    ============================================================ */
 
 function foliationRowsFrom(value) {
@@ -35,10 +35,37 @@ function FoliationPage({ user }) {
   documentFolioRows.forEach((row) => {
     if (!folios.some((stored) => Number(stored.document_id || stored.ps520IdDocument) === Number(row.document_id))) folios.push(row);
   });
+  const pendingFolioRows = documents
+    .filter((doc) => !folios.some((row) => Number(row.document_id || row.ps520IdDocument) === Number(doc.idDocument || doc.id)))
+    .map((doc) => ({
+      idFoliation: `pending-${doc.idDocument || doc.id}`,
+      document_id: doc.idDocument || doc.id,
+      document_name: doc.document_name || doc.name,
+      folder_id: doc.ps952IdFolder || doc.folder_id,
+      folder_code: doc.folder_code || doc.folder_name || doc.ps952IdFolder || doc.folder_id || "Sin carpeta",
+      folio_start: 0,
+      folio_end: 0,
+      folio_total: 0,
+      pending: true,
+    }));
+  pendingFolioRows.forEach((row) => folios.push(row));
   const totalFolios = folios.reduce((acc, row) => acc + Number(row.folio_total || row.total || 0), 0);
-  const missing = documents.filter(doc => !folios.some(row => Number(row.document_id || row.ps520IdDocument) === Number(doc.idDocument || doc.id))).length;
+  const missing = pendingFolioRows.length;
 
   const setField = (key, value) => setPayload(prev => ({ ...prev, [key]: value }));
+  const selectDocumentForFoliation = (documentId) => {
+    const doc = documents.find(item => Number(item.idDocument || item.id) === Number(documentId));
+    const existing = [...storedFolios, ...documentFolioRows].find(row => Number(row.document_id || row.ps520IdDocument) === Number(documentId));
+    setPayload(prev => ({
+      ...prev,
+      document_id: String(documentId || ""),
+      folder_id: String((existing?.folder_id || existing?.ps952IdFolder || doc?.ps952IdFolder || doc?.folder_id || "") || ""),
+      folio_start: existing?.folio_start ? String(existing.folio_start) : "",
+      folio_end: existing?.folio_end ? String(existing.folio_end) : "",
+      electronic_folios: existing?.electronic_folios || existing?.digital_folios || doc?.electronic_folios || 0,
+      annexes: existing?.annexes || doc?.annexes || "",
+    }));
+  };
   const submit = async () => {
     if (!expedientId || !payload.document_id || !payload.folder_id || !payload.folio_start || !payload.folio_end) {
       toast("Selecciona expediente, documento, carpeta y rango de folios.", { tone: "danger", title: "Faltan datos" });
@@ -54,7 +81,7 @@ function FoliationPage({ user }) {
         electronic_folios: Number(payload.electronic_folios || 0),
         annexes: payload.annexes || null,
       });
-      toast("Rango de folios registrado y auditado.", { tone: "ok", title: "Foliación actualizada" });
+      toast("Rango de folios registrado y auditado.", { tone: "ok", title: "Foliacion actualizada" });
       setPayload({ document_id: "", folder_id: "", folio_start: "", folio_end: "", electronic_folios: 0, annexes: "" });
       foliosLive.setData(await AmbarAPI.endpoints.expedientFoliation(expedientId));
     } catch (err) {
@@ -66,8 +93,8 @@ function FoliationPage({ user }) {
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">Gestión Documental</div>
-          <h1>Foliación documental</h1>
+          <div className="eyebrow">Gestion Documental</div>
+          <h1>Foliacion documental</h1>
           <p className="lead">Controla hojas numeradas por expediente. AMBAR valida duplicados, saltos, carpeta y contexto documental antes de guardar.</p>
         </div>
         <div className="page-actions"><Button variant="ghost" icon="refresh" onClick={() => expedientId && AmbarAPI.endpoints.expedientFoliation(expedientId).then(foliosLive.setData)}>Validar</Button></div>
@@ -90,16 +117,16 @@ function FoliationPage({ user }) {
 
       <div className="info-callout" style={{ marginBottom: "var(--s4)" }}>
         <Icon name="info" size={16} />
-        <p>Un folio es cada hoja numerada del expediente. Si el documento ya fue registrado con folio inicial y final, AMBAR lo muestra aquí; si falta, puedes registrar el rango manualmente para cerrar saltos o duplicados.</p>
+        <p>Un folio es cada hoja numerada del expediente. Si el documento ya fue registrado con folio inicial y final, AMBAR lo muestra aqui; si falta, puedes registrar el rango manualmente para cerrar saltos o duplicados.</p>
       </div>
 
       <div className="grid cols-2" style={{ alignItems: "start" }}>
         <Card>
-          <CardHead title="Registrar foliación" sub="Selecciona, no escribas contexto manual" icon="list-checks" />
+          <CardHead title="Registrar foliacion" sub="Selecciona, no escribas contexto manual" icon="list-checks" />
           {!expedientId ? <Empty icon="folder-kanban" title="Selecciona un expediente">El mapa de folios se carga cuando hay expediente activo.</Empty> : (
             <div className="grid cols-2">
               <Field label="Documento" required>
-                <select value={payload.document_id} onChange={e => setField("document_id", e.target.value)}>
+                <select value={payload.document_id} onChange={e => selectDocumentForFoliation(e.target.value)}>
                   <option value="">Seleccionar documento</option>
                   {documents.map(doc => <option key={doc.idDocument || doc.id} value={doc.idDocument || doc.id}>{doc.document_name || doc.name}</option>)}
                 </select>
@@ -112,7 +139,7 @@ function FoliationPage({ user }) {
               </Field>
               <Field label="Folio inicial" required><input type="number" min="1" value={payload.folio_start} onChange={e => setField("folio_start", e.target.value)} /></Field>
               <Field label="Folio final" required><input type="number" min="1" value={payload.folio_end} onChange={e => setField("folio_end", e.target.value)} /></Field>
-              <Field label="Folios electrónicos"><input type="number" min="0" value={payload.electronic_folios} onChange={e => setField("electronic_folios", e.target.value)} /></Field>
+              <Field label="Folios electronicos"><input type="number" min="0" value={payload.electronic_folios} onChange={e => setField("electronic_folios", e.target.value)} /></Field>
               <Field label="Anexos"><input value={payload.annexes} onChange={e => setField("annexes", e.target.value)} placeholder="Opcional" /></Field>
               <div style={{ gridColumn: "1 / -1" }}><Button className="btn-block" icon="plus" onClick={submit} disabled={!can(user, ["document.update"])}>Registrar folios</Button></div>
             </div>
@@ -120,17 +147,18 @@ function FoliationPage({ user }) {
         </Card>
 
         <Card>
-          <CardHead title="Mapa de folios" sub="Rangos reales guardados en backend" icon="hash" action={<Badge tone={missing ? "warning" : "success"}>{missing ? "Con pendientes" : "Íntegra"}</Badge>} />
-          {foliosLive.loading ? <Skeleton rows={5} /> : folios.length === 0 ? <Empty icon="hash" title="Sin foliación">No hay rangos registrados para este expediente.</Empty> : (
+          <CardHead title="Mapa de folios" sub="Rangos reales guardados en backend" icon="hash" action={<Badge tone={missing ? "warning" : "success"}>{missing ? "Con pendientes" : "Integra"}</Badge>} />
+          {foliosLive.loading ? <Skeleton rows={5} /> : folios.length === 0 ? <Empty icon="hash" title="Sin foliacion">No hay rangos registrados para este expediente.</Empty> : (
             <div className="table-scroll">
               <table className="tbl">
-                <thead><tr><th>Documento</th><th>Carpeta</th><th>Inicio</th><th>Final</th><th>Total</th></tr></thead>
+                <thead><tr><th>Documento</th><th>Carpeta</th><th>Inicio</th><th>Final</th><th>Total</th><th></th></tr></thead>
                 <tbody>{folios.map(row => <tr key={row.idFoliation || `${row.document_id}-${row.folio_start}`}>
                   <td className="cell-strong">{row.document_name || row.ps520IdDocument || row.document_id}</td>
                   <td>{row.folder_code || row.ps952IdFolder || row.folder_id}</td>
                   <td>{row.folio_start}</td>
                   <td>{row.folio_end}</td>
                   <td>{row.folio_total || row.total || 0}</td>
+                  <td>{row.pending ? <Button variant="subtle" size="sm" icon="edit-3" onClick={() => selectDocumentForFoliation(row.document_id)}>Foliar</Button> : <Badge tone="success">OK</Badge>}</td>
                 </tr>)}</tbody>
               </table>
             </div>
@@ -142,3 +170,4 @@ function FoliationPage({ user }) {
 }
 
 window.FoliationPage = FoliationPage;
+

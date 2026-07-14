@@ -10,7 +10,11 @@
     const response = await fetch(`${API_BASE}${path}`, Object.assign({ credentials: "include" }, options, { headers: headers(options.headers) }));
     if (!response.ok) {
       let detail = response.statusText;
-      try { detail = (await response.json()).detail || detail; } catch {}
+      try {
+        const payload = await response.json();
+        detail = payload.detail?.message || payload.message || payload.detail || detail;
+        if (typeof detail !== "string") detail = JSON.stringify(detail);
+      } catch {}
       const error = new Error(detail);
       error.status = response.status;
       if (response.status === 401 && !path.startsWith("/auth/login")) {
@@ -210,6 +214,8 @@
       signatures: () => request("/signatures/requests"),
       notifications: () => request("/notifications"),
       notificationsSummary: () => request("/notifications/summary"),
+      correspondence: (params = {}) => request(`/correspondence${query(params)}`),
+      correspondenceSummary: () => request("/correspondence/summary"),
       tasks: () => request("/workflows/tasks"),
       tasksSummary: () => request("/workflows/tasks/summary"),
       ocrJobs: () => request("/ocr/jobs"),

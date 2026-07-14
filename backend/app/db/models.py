@@ -302,6 +302,69 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class CorrespondenceRecord(Base, TimestampMixin):
+    __tablename__ = "ps1260_correspondence_records"
+    __table_args__ = (
+        UniqueConstraint("company_id", "radicado_code"),
+        Index("ix_correspondence_company_direction_status", "company_id", "direction", "status"),
+        Index("ix_correspondence_assigned_status", "assigned_to", "status"),
+        Index("ix_correspondence_due", "company_id", "due_at", "status"),
+    )
+
+    idRecord: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    radicado_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    direction: Mapped[str] = mapped_column(String(20), default="inbound", index=True)
+    sender_type: Mapped[str | None] = mapped_column(String(40))
+    sender_name: Mapped[str | None] = mapped_column(String(180))
+    sender_document: Mapped[str | None] = mapped_column(String(60))
+    sender_email: Mapped[str | None] = mapped_column(String(255))
+    sender_phone: Mapped[str | None] = mapped_column(String(40))
+    recipient_name: Mapped[str | None] = mapped_column(String(180))
+    recipient_document: Mapped[str | None] = mapped_column(String(60))
+    recipient_email: Mapped[str | None] = mapped_column(String(255))
+    subject: Mapped[str] = mapped_column(String(240), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    communication_type: Mapped[str] = mapped_column(String(60), default="carta", index=True)
+    reception_channel: Mapped[str | None] = mapped_column(String(60))
+    ps608IdDependency: Mapped[int | None] = mapped_column(ForeignKey("ps608_trd_dependencies.idDependency"), index=True)
+    assigned_to: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"), index=True)
+    ps950IdExpedient: Mapped[int | None] = mapped_column(ForeignKey("ps950_expedients.idExpedient"), index=True)
+    ps520IdDocument: Mapped[int | None] = mapped_column(ForeignKey("ps520_documents.idDocument"), index=True)
+    priority: Mapped[str] = mapped_column(String(30), default="normal", index=True)
+    status: Mapped[str] = mapped_column(String(40), default="radicado", index=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(ForeignKey("ps405_users.identification"), nullable=False)
+    company_id: Mapped[str] = mapped_column(String(40), default="default", index=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    dependency: Mapped["TrdDependency | None"] = relationship()
+    assignee: Mapped["User | None"] = relationship(foreign_keys=[assigned_to])
+    creator: Mapped[User] = relationship(foreign_keys=[created_by])
+    expedient: Mapped["Expedient | None"] = relationship()
+    document: Mapped["Document | None"] = relationship()
+    events: Mapped[list["CorrespondenceEvent"]] = relationship(back_populates="record", cascade="all, delete-orphan")
+
+
+class CorrespondenceEvent(Base):
+    __tablename__ = "ps1262_correspondence_events"
+    __table_args__ = (Index("ix_correspondence_events_record_created", "ps1260IdRecord", "created_at"),)
+
+    idEvent: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ps1260IdRecord: Mapped[int] = mapped_column(ForeignKey("ps1260_correspondence_records.idRecord"), nullable=False)
+    action: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    ps405Identification: Mapped[str | None] = mapped_column(ForeignKey("ps405_users.identification"))
+    notes: Mapped[str | None] = mapped_column(Text)
+    old_values: Mapped[dict | None] = mapped_column(JSON)
+    new_values: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    record: Mapped[CorrespondenceRecord] = relationship(back_populates="events")
+    user: Mapped["User | None"] = relationship()
+
+
 class Workflow(Base):
     __tablename__ = "ps910_workflows"
 

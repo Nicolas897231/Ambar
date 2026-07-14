@@ -6,6 +6,16 @@ const { useState: trS } = React;
 const BATCH_STATE = { Aceptada: "success", "En transito": "info", Borrador: "warning", Rechazada: "danger", closed: "success", received: "success", rejected: "danger", draft: "warning" };
 const TR_STEPS = ["Seleccion", "Validacion", "FUID", "Envio", "Recepcion", "Cierre"];
 
+function transferUnitLabel(type) {
+  return { expedient: "Expediente", folder: "Carpeta", box: "Caja", document: "Documento" }[type] || "Unidad";
+}
+
+function transferUnitContext(item) {
+  const route = item.location_path || item.physical_location || item.physical_location_path;
+  const archive = item.archive_name || item.archive || "";
+  return [archive, route].filter(Boolean).join(" / ") || "Sin ruta fisica registrada";
+}
+
 function mapTransfers(items) {
   return window.AmbarAPI.listFrom(items).map((item, i) => ({
     idBatch: item.idBatch || item.id || null,
@@ -46,19 +56,20 @@ function TransferWizard({ onClose, onCreated }) {
   const liveDocuments = window.useLiveData(() => window.AmbarAPI.endpoints.documents().then(window.AmbarAPI.listFrom), [], []);
   const archives = liveArchives.data.map(a => ({
     id: a.idArchive || a.id || a.archive_id,
-    label: a.archive_name || a.name || a.archive_code || "Archivo"
+    label: `${a.archive_name || a.name || a.archive_code || "Archivo"}${a.archive_code ? ` (${a.archive_code})` : ""}`
   })).filter(a => a.id);
   const entitySource = {
-    expedient: liveExpedients.data.map(e => ({ id: e.idExpedient || e.id, label: `${e.expedient_code || e.code || e.idExpedient} - ${e.expedient_name || e.name || "Expediente"}`, archive_id: e.archive_id || e.ps930IdArchive })),
-    folder: liveFolders.data.map(f => ({ id: f.idFolder || f.id, label: `${f.folder_code || f.code || f.idFolder} - ${f.folder_name || f.name || "Carpeta"}`, archive_id: f.archive_id || f.ps930IdArchive })),
-    box: liveBoxes.data.map(b => ({ id: b.idBox || b.id, label: `${b.box_code || b.code || b.idBox} - ${b.location_path || "Caja"}`, archive_id: b.archive_id || b.ps930IdArchive })),
-    document: liveDocuments.data.map(d => ({ id: d.idDocument || d.id, label: `${d.document_code || d.code || d.idDocument} - ${d.document_name || d.title || "Documento"}`, archive_id: d.archive_id || d.ps930IdArchive })),
+    expedient: liveExpedients.data.map(e => ({ id: e.idExpedient || e.id, label: `${e.expedient_code || e.code || e.idExpedient} - ${e.expedient_name || e.name || "Expediente"}`, archive_id: e.archive_id || e.ps930IdArchive, context: transferUnitContext(e) })),
+    folder: liveFolders.data.map(f => ({ id: f.idFolder || f.id, label: `${f.folder_code || f.code || f.idFolder} - ${f.folder_name || f.name || "Carpeta"}`, archive_id: f.archive_id || f.ps930IdArchive, context: transferUnitContext(f) })),
+    box: liveBoxes.data.map(b => ({ id: b.idBox || b.id, label: `${b.box_code || b.code || b.idBox} - ${b.box_name || b.status || "Caja"}`, archive_id: b.archive_id || b.ps930IdArchive, context: transferUnitContext(b) })),
+    document: liveDocuments.data.map(d => ({ id: d.idDocument || d.id, label: `${d.document_code || d.code || d.idDocument} - ${d.document_name || d.title || "Documento"}`, archive_id: d.archive_id || d.ps930IdArchive, context: transferUnitContext(d) })),
   };
   const entityOptions = (entitySource[payload.entity_type] || []).filter(item => {
     if (!payload.origin_archive_id) return true;
     if (!item.archive_id) return true;
     return Number(item.archive_id) === Number(payload.origin_archive_id);
   });
+  const selectedUnit = entityOptions.find(item => String(item.id) === String(payload.entity_id));
   const setField = (key, value) => setPayload(prev => ({ ...prev, [key]: value, ...(key === "entity_type" || key === "origin_archive_id" ? { entity_id: "" } : {}) }));
 
   const submit = async () => {
@@ -79,8 +90,12 @@ function TransferWizard({ onClose, onCreated }) {
         entity_type: payload.entity_type,
         entity_id: Number(payload.entity_id),
       });
-      await AmbarAPI.post(`/archives/fuid/from-transfer/${batch.idBatch}`, {});
-      toast("Transferencia creada con FUID y Kardex.", { tone: "ok", title: "Proceso preparado" });
+      try {
+        await AmbarAPI.post(`/archives/fuid/from-transfer/${batch.idBatch}`, {});
+        toast("Transferencia creada con FUID y Kardex.", { tone: "ok", title: "Proceso preparado" });
+      } catch (fuidErr) {
+        toast("El lote fue creado. El FUID queda pendiente de generacion o permiso.", { tone: "warn", title: "FUID pendiente" });
+      }
       onCreated && onCreated(batch);
       onClose();
     } catch (err) {
@@ -94,24 +109,28 @@ function TransferWizard({ onClose, onCreated }) {
     else submit();
   };
   return (
-    <Modal lg wide title="Asistente de transferencia documental" sub="Flujo operativo con validacion, FUID, envío y recepcion" onClose={onClose}
+    <Modal lg wide title="Asistente de transferencia documental" sub="Flujo operativo con validacion, FUID, envio y recepcion" onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><div className="row gap2">{step > 0 && <Button variant="secondary" icon="arrow-left" onClick={() => setStep(step - 1)}>Atras</Button>}<Button icon={step < TR_STEPS.length - 1 ? "arrow-right" : "check"} onClick={next} disabled={busy}>{step < TR_STEPS.length - 1 ? "Siguiente" : busy ? "Creando" : "Crear transferencia"}</Button></div></>}>
       <div style={{ marginBottom: "var(--s5)", overflowX: "auto" }}><Stepper steps={TR_STEPS} current={step} /></div>
       {step === 0 && <div className="col gap4">
-        <div className="page-intro"><span className="pi-ico"><Icon name="folder-kanban" size={18} /></span><div><h4>Selecciona la unidad documental</h4><p>Elige expediente, carpeta, caja o documento real. AMBAR validará préstamo activo, TRD, foliación y permisos en backend.</p></div></div>
+        <div className="page-intro"><span className="pi-ico"><Icon name="folder-kanban" size={18} /></span><div><h4>Selecciona la unidad documental</h4><p>Elige que se transfiere: expediente, carpeta, caja o documento. AMBAR valida prestamo activo, TRD, foliacion, archivo origen y permisos en backend.</p></div></div>
         {archives.length === 0 ? <Empty icon="archive" title="Sin archivos parametrizados">Crea archivos autorizados antes de preparar transferencias.</Empty> : <div className="grid cols-2" style={{ gap: "var(--s3)" }}>
-          <Field label="Código de lote" hint="AMBAR genera este código automáticamente al crear la transferencia."><AutoCodeInput /></Field>
+          <Field label="Codigo de lote" hint="AMBAR genera este codigo automaticamente al crear la transferencia."><AutoCodeInput /></Field>
           <Field label="Tipo de unidad"><select value={payload.entity_type} onChange={e => setField("entity_type", e.target.value)}><option value="expedient">Expediente</option><option value="folder">Carpeta</option><option value="box">Caja</option><option value="document">Documento</option></select></Field>
           <Field label="Archivo origen" required><select value={payload.origin_archive_id} onChange={e => setField("origin_archive_id", e.target.value)}><option value="">Seleccionar origen</option>{archives.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}</select></Field>
           <Field label="Archivo destino" required><select value={payload.destination_archive_id} onChange={e => setField("destination_archive_id", e.target.value)}><option value="">Seleccionar destino</option>{archives.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}</select></Field>
-          <Field label="Unidad documental" required><select value={payload.entity_id} onChange={e => setField("entity_id", e.target.value)}><option value="">Seleccionar unidad</option>{entityOptions.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>
+          <Field label="Unidad documental" required><select value={payload.entity_id} onChange={e => setField("entity_id", e.target.value)}><option value="">Seleccionar unidad</option>{entityOptions.map(item => <option key={item.id} value={item.id}>{item.label} / {item.context}</option>)}</select></Field>
+          <Card pad="sm" style={{ background: "var(--panel-2)", gridColumn: "1 / -1" }}>
+            <CardHead title={selectedUnit ? `${transferUnitLabel(payload.entity_type)} seleccionado` : "Que vas a transferir"} sub={selectedUnit ? selectedUnit.label : "Primero selecciona archivo origen y unidad documental."} icon="route" />
+            <p className="muted" style={{ marginTop: 6 }}>{selectedUnit ? selectedUnit.context : "Si la unidad no tiene ruta fisica, puedes transferirla como registro documental, pero la recepcion debe validar el contexto antes de cerrar."}</p>
+          </Card>
         </div>}
       </div>}
-      {step === 1 && <div className="col center gap4" style={{ padding: "var(--s6)" }}><div className="mfa-badge" style={{ background: "var(--ok-bg)", color: "var(--ok)" }}><Icon name="shield-check" size={26} /></div><h3>Validacion en backend</h3><p className="muted" style={{ textAlign: "center", maxWidth: "54ch" }}>Al crear el lote se bloquearán unidades prestadas, unidades de otro archivo, errores TRD e inconsistencias críticas.</p><div className="row wrap gap2"><Badge tone="info" icon="shield-check">Permisos por archivo</Badge><Badge tone="info" icon="clipboard">TRD y FUID</Badge><Badge tone="info" icon="package-check">Recepcion controlada</Badge></div></div>}
-      {step === 2 && <div className="col gap4"><div className="page-intro"><span className="pi-ico"><Icon name="clipboard" size={18} /></span><div><h4>FUID automatico</h4><p>El inventario se genera desde la unidad seleccionada, TRD, folios, soporte y ubicación física.</p></div></div><Card flush><table className="tbl"><thead><tr><th>Lote</th><th>Unidad</th><th>Origen</th><th>Destino</th></tr></thead><tbody><tr><td className="cell-mono">{payload.batch_code || "Automático al crear"}</td><td>{payload.entity_type} #{payload.entity_id || "-"}</td><td>{archives.find(a => String(a.id) === String(payload.origin_archive_id))?.label || "-"}</td><td>{archives.find(a => String(a.id) === String(payload.destination_archive_id))?.label || "-"}</td></tr></tbody></table></Card></div>}
-      {step === 3 && <div className="grid cols-2" style={{ gap: "var(--s3)" }}><Card pad="sm"><CardHead title="Entrega" sub="La evidencia documental se carga desde el detalle de transferencia si aplica." icon="paperclip" /></Card><Card pad="sm"><CardHead title="Kardex" sub="La creación del lote deja movimiento y auditoría automáticamente." icon="history" /></Card></div>}
-      {step === 4 && <div className="col gap4"><div className="page-intro"><span className="pi-ico"><Icon name="package-check" size={18} /></span><div><h4>Recepcion controlada</h4><p>El destino compara lo declarado en FUID contra lo recibido y puede aceptar, rechazar o recibir parcial desde la bandeja de recepcion.</p></div></div></div>}
-      {step === 5 && <div className="col center gap4" style={{ padding: "var(--s6)" }}><div className="mfa-badge pulse"><Icon name="archive" size={26} /></div><h3>Listo para crear</h3><p className="muted" style={{ textAlign: "center", maxWidth: "50ch" }}>Al confirmar se creará el lote, se agregará la unidad, se generará FUID y quedará trazabilidad en Kardex y auditoría.</p></div>}
+      {step === 1 && <div className="col center gap4" style={{ padding: "var(--s6)" }}><div className="mfa-badge" style={{ background: "var(--ok-bg)", color: "var(--ok)" }}><Icon name="shield-check" size={26} /></div><h3>Validacion en backend</h3><p className="muted" style={{ textAlign: "center", maxWidth: "54ch" }}>Aqui AMBAR confirma permisos sobre origen y destino, que la unidad pertenece al archivo origen, que no esta prestada y que no tiene bloqueos criticos.</p><div className="row wrap gap2"><Badge tone="info" icon="shield-check">Permisos por archivo</Badge><Badge tone="info" icon="clipboard">TRD y FUID</Badge><Badge tone="info" icon="package-check">Recepcion controlada</Badge></div></div>}
+      {step === 2 && <div className="col gap4"><div className="page-intro"><span className="pi-ico"><Icon name="clipboard" size={18} /></span><div><h4>FUID automatico</h4><p>El FUID es el inventario de entrega: unidad, TRD, folios, soporte, origen, destino y ubicacion fisica si existe.</p></div></div><Card flush><table className="tbl"><thead><tr><th>Lote</th><th>Unidad</th><th>Origen</th><th>Destino</th></tr></thead><tbody><tr><td className="cell-mono">{payload.batch_code || "Automatico al crear"}</td><td>{selectedUnit?.label || `${payload.entity_type} #${payload.entity_id || "-"}`}</td><td>{archives.find(a => String(a.id) === String(payload.origin_archive_id))?.label || "-"}</td><td>{archives.find(a => String(a.id) === String(payload.destination_archive_id))?.label || "-"}</td></tr></tbody></table></Card></div>}
+      {step === 3 && <div className="grid cols-2" style={{ gap: "var(--s3)" }}><Card pad="sm"><CardHead title="Entrega" sub="Cuando el lote existe, se puede cargar evidencia de salida desde el detalle de transferencia." icon="paperclip" /></Card><Card pad="sm"><CardHead title="Kardex" sub="La creacion del lote deja movimiento y auditoria. Al recibir, el destino cierra la trazabilidad." icon="history" /></Card></div>}
+      {step === 4 && <div className="col gap4"><div className="page-intro"><span className="pi-ico"><Icon name="package-check" size={18} /></span><div><h4>Recepcion controlada</h4><p>El archivo destino revisa lo declarado en FUID contra lo recibido. Puede aceptar, rechazar o recibir parcial desde la bandeja de recepcion.</p></div></div></div>}
+      {step === 5 && <div className="col center gap4" style={{ padding: "var(--s6)" }}><div className="mfa-badge pulse"><Icon name="archive" size={26} /></div><h3>Listo para crear</h3><p className="muted" style={{ textAlign: "center", maxWidth: "50ch" }}>Al confirmar se crea el lote, se agrega la unidad, se intenta generar FUID y queda trazabilidad en Kardex y auditoria.</p></div>}
     </Modal>
   );
 }

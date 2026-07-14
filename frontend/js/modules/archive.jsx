@@ -8,9 +8,9 @@ function pathTone(value) {
 }
 
 function shelfLabel(shelf) {
-  return [shelf.floor, shelf.aisle && `Pasillo ${shelf.aisle}`, shelf.shelf_code && `Estantería ${shelf.shelf_code}`, shelf.module && `Cuerpo ${shelf.module}`, shelf.bay && `Nivel ${shelf.bay}`]
+  return [shelf.floor, shelf.aisle && `Pasillo ${shelf.aisle}`, shelf.shelf_code && `Estanteria ${shelf.shelf_code}`, shelf.module && `Cuerpo ${shelf.module}`, shelf.bay && `Nivel ${shelf.bay}`]
     .filter(Boolean)
-    .join(" / ") || shelf.shelf_name || shelf.shelf_code || "Ubicación sin ruta";
+    .join(" / ") || shelf.shelf_name || shelf.shelf_code || "Ubicacion sin ruta";
 }
 
 function parseLocationList(value, fallback = []) {
@@ -47,14 +47,14 @@ function QuickSearch() {
     <Card className="an-rise topography-hero">
       <div className="topography-hero-grid">
         <div>
-          <div className="eyebrow">Consulta física</div>
-          <h3>¿Dónde está una unidad documental?</h3>
-          <p>Busca por documento, expediente, código o identificación. AMBAR responde con la ruta heredada desde la caja si existe.</p>
+          <div className="eyebrow">Consulta fisica</div>
+          <h3>Donde esta una unidad documental?</h3>
+          <p>Busca por documento, expediente, codigo o identificacion. AMBAR responde con la ruta heredada desde la caja si existe.</p>
         </div>
         <div className="topography-search">
           <div className="search-box grow">
             <Icon name="search" size={18} />
-            <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && run()} placeholder="Ej. Juan Pérez, DOC-2026, BX-001" />
+            <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && run()} placeholder="Ej. Juan Perez, DOC-2026, BX-001" />
           </div>
           <Button size="lg" icon="search" onClick={run} disabled={loading}>{loading ? "Buscando" : "Buscar"}</Button>
         </div>
@@ -63,12 +63,12 @@ function QuickSearch() {
         <Card pad="sm" className="an-scale location-result">
           <div className="row between">
             <div className="row gap2"><Icon name="map-pin" size={18} style={{ color: "var(--brand)" }} /><b>{result.title || result.document_name || result.name || result.code}</b></div>
-            <Badge tone={path ? "success" : "warning"} dot>{path ? "Localizado" : "Sin ubicación"}</Badge>
+            <Badge tone={path ? "success" : "warning"} dot>{path ? "Localizado" : "Sin ubicacion"}</Badge>
           </div>
-          <p className="mono muted">{path || "La entidad existe, pero aún no hereda una ubicación física desde caja."}</p>
+          <p className="mono muted">{path || "La entidad existe, pero aun no hereda una ubicacion fisica desde caja."}</p>
         </Card>
       )}
-      {!loading && q && result === null && <Empty icon="search" title="Sin resultados">No se encontraron unidades con ubicación para esa búsqueda.</Empty>}
+      {!loading && q && result === null && <Empty icon="search" title="Sin resultados">No se encontraron unidades con ubicacion para esa busqueda.</Empty>}
     </Card>
   );
 }
@@ -87,7 +87,7 @@ function TopologyView() {
     currentArchivePage * archivePageSize + archivePageSize
   );
   if (loading) return <Skeleton rows={9} />;
-  if (!archives.length) return <Card><Empty icon="warehouse" title="Sin topografía">Crea una sede, un archivo y una ubicación topográfica para empezar.</Empty></Card>;
+  if (!archives.length) return <Card><Empty icon="warehouse" title="Sin topografia">Crea una sede, un archivo y una ubicacion topografica para empezar.</Empty></Card>;
   return (
     <>
       <div className="grid cols-2 stagger">
@@ -106,10 +106,10 @@ function TopologyView() {
                 <div className="eyebrow">{archive.archive_code}</div>
                 <h3>{archive.archive_name}</h3>
               </div>
-              <Badge tone={pathTone(occupancy)}>{occupancy}% ocupación</Badge>
+              <Badge tone={pathTone(occupancy)}>{occupancy}% ocupacion</Badge>
             </div>
             <div className="topology-tree">
-              {shelves.length === 0 && <div className="tree-empty">Sin pasillos o estanterías parametrizadas.</div>}
+              {shelves.length === 0 && <div className="tree-empty">Sin pasillos o estanterias parametrizadas.</div>}
               {visibleShelves.map((shelf) => (
                 <details key={shelf.idShelf} open>
                   <summary>
@@ -118,7 +118,7 @@ function TopologyView() {
                     <Badge tone={pathTone(shelf.occupancy_percent)}>{shelf.current_boxes || 0}/{shelf.capacity_boxes || 0}</Badge>
                   </summary>
                   <div className="tree-branch">
-                    {(shelf.boxes || []).length === 0 && <div className="tree-empty">Sin cajas en esta ubicación.</div>}
+                    {(shelf.boxes || []).length === 0 && <div className="tree-empty">Sin cajas en esta ubicacion.</div>}
                     {(shelf.boxes || []).map((box) => (
                       <div className="tree-row" key={box.idBox}>
                         <Icon name="boxes" size={15} />
@@ -169,7 +169,7 @@ function BoxesView() {
     cap: b.occupancy_percent || (b.capacity_folders ? Math.round(((b.current_folders || 0) / b.capacity_folders) * 100) : 0),
     folders: b.current_folders || 0,
     docs: b.current_documents || 0,
-    loc: b.physical_location_path || b.location_path || b.shelf_name || "Sin ubicación topográfica",
+    loc: b.physical_location_path || b.location_path || b.shelf_name || "Sin ubicacion topografica",
     state: b.status || "active"
   }));
   const boxes = allBoxes.filter((b) => {
@@ -215,8 +215,8 @@ function BoxDetail({ box, onClose }) {
     <Drawer wide title={box.box_code} sub={box.location_path || "Caja sin ruta"} onClose={onClose}
       headExtra={<Badge tone={pathTone(box.occupancy_percent)}>{box.occupancy_percent || 0}%</Badge>}>
       <Card pad="sm">
-        <CardHead title="Contenido de caja" sub="Carpetas y documentos heredando esta ubicación" icon="boxes" action={<Badge tone="outline">{folders.length} carpetas</Badge>} />
-        {loading ? <Skeleton rows={5} /> : folders.length === 0 ? <Empty icon="folder" title="Caja vacía">No hay carpetas asignadas a esta caja.</Empty> : (
+        <CardHead title="Contenido de caja" sub="Carpetas y documentos heredando esta ubicacion" icon="boxes" action={<Badge tone="outline">{folders.length} carpetas</Badge>} />
+        {loading ? <Skeleton rows={5} /> : folders.length === 0 ? <Empty icon="folder" title="Caja vacia">No hay carpetas asignadas a esta caja.</Empty> : (
           <div className="table-scroll">
             <table className="tbl">
               <thead><tr><th>Carpeta</th><th>Documentos</th><th>Folios</th><th>Ruta heredada</th></tr></thead>
@@ -229,28 +229,118 @@ function BoxDetail({ box, onClose }) {
   );
 }
 
+function AssignBoxShelfModal({ box, onClose, onDone }) {
+  const toast = useToast();
+  const [shelfId, setShelfId] = arS("");
+  const [observation, setObservation] = arS("");
+  const archiveId = box.archive_id || box.ps930IdArchive || box.ps930IdArchiveId;
+  const { data: shelvesRaw, loading } = useLiveData(() => archiveId ? AmbarAPI.get(`/archives/shelves?archive_id=${encodeURIComponent(archiveId)}`) : AmbarAPI.get("/archives/shelves"), [], [archiveId]);
+  const shelves = AmbarAPI.listFrom(shelvesRaw);
+  const submit = async () => {
+    if (!shelfId) {
+      toast("Selecciona una estanteria para ubicar la caja.", { tone: "danger", title: "Falta ubicacion" });
+      return;
+    }
+    try {
+      await AmbarAPI.post(`/archives/boxes/${box.idBox || box.id}/move`, { shelf_id: Number(shelfId), observation: observation || "Asignacion desde pendientes sin ubicacion." });
+      toast("Caja ubicada y trazabilidad actualizada.", { tone: "ok", title: "Ubicacion asignada" });
+      onDone && onDone();
+      onClose();
+    } catch (err) {
+      toast(err.message || "No fue posible mover la caja.", { tone: "danger", title: "Movimiento bloqueado" });
+    }
+  };
+  return (
+    <Modal title="Asignar estanteria" sub={box.box_code || "Caja sin ubicacion"} onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Guardar ubicacion</Button></>}>
+      {loading ? <Skeleton rows={3} /> : <div className="col gap4">
+        <Field label="Estanteria / nivel" required>
+          <select value={shelfId} onChange={e => setShelfId(e.target.value)}>
+            <option value="">Seleccionar ubicacion</option>
+            {shelves.map(shelf => <option key={shelf.idShelf || shelf.id} value={shelf.idShelf || shelf.id}>{shelf.location_path || shelfLabel(shelf)}</option>)}
+          </select>
+        </Field>
+        <Field label="Observacion"><textarea value={observation} onChange={e => setObservation(e.target.value)} placeholder="Motivo o referencia del movimiento" /></Field>
+      </div>}
+    </Modal>
+  );
+}
+
+function AssignFolderBoxModal({ folder, onClose, onDone }) {
+  const toast = useToast();
+  const [boxId, setBoxId] = arS("");
+  const [observation, setObservation] = arS("");
+  const archiveId = folder.archive_id || folder.ps930IdArchive;
+  const { data: boxesRaw, loading } = useLiveData(() => archiveId ? AmbarAPI.get(`/archives/boxes?archive_id=${encodeURIComponent(archiveId)}`) : AmbarAPI.endpoints.boxes(), [], [archiveId]);
+  const boxes = AmbarAPI.listFrom(boxesRaw);
+  const submit = async () => {
+    if (!boxId) {
+      toast("Selecciona una caja para ubicar la carpeta.", { tone: "danger", title: "Falta caja" });
+      return;
+    }
+    try {
+      await AmbarAPI.post(`/archives/folders/${folder.idFolder || folder.folder_id || folder.id}/assign-location`, { box_id: Number(boxId), observation: observation || "Asignacion desde pendientes sin ubicacion." });
+      toast("Carpeta ubicada. Expedientes y documentos heredaron la ruta.", { tone: "ok", title: "Ubicacion asignada" });
+      onDone && onDone();
+      onClose();
+    } catch (err) {
+      toast(err.message || "No fue posible asignar la caja.", { tone: "danger", title: "Asignacion bloqueada" });
+    }
+  };
+  return (
+    <Modal title="Asignar caja" sub={folder.folder_code || folder.document_name || "Unidad sin ubicacion"} onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Guardar ubicacion</Button></>}>
+      {loading ? <Skeleton rows={3} /> : <div className="col gap4">
+        <Field label="Caja" required>
+          <select value={boxId} onChange={e => setBoxId(e.target.value)}>
+            <option value="">Seleccionar caja</option>
+            {boxes.map(box => <option key={box.idBox || box.id} value={box.idBox || box.id}>{box.box_code || box.code} / {box.location_path || "Sin ruta topografica"}</option>)}
+          </select>
+        </Field>
+        <Field label="Observacion"><textarea value={observation} onChange={e => setObservation(e.target.value)} placeholder="Motivo o referencia de asignacion" /></Field>
+      </div>}
+    </Modal>
+  );
+}
+
 function UnassignedView() {
-  const { data, loading } = useLiveData(() => AmbarAPI.endpoints.locationsUnassigned(), {}, []);
+  const [reloadKey, setReloadKey] = arS(0);
+  const [assignBox, setAssignBox] = arS(null);
+  const [assignFolder, setAssignFolder] = arS(null);
+  const { data, loading } = useLiveData(() => AmbarAPI.endpoints.locationsUnassigned(), {}, [reloadKey]);
   const groups = [
     ["Cajas sin estanteria", data.boxes_without_shelf || [], "boxes"],
     ["Carpetas sin caja", data.folders_without_box || [], "folder"],
-    ["Expedientes sin ubicación", data.expedients_without_location || [], "folder-kanban"],
-    ["Documentos sin ubicación", data.documents_without_location || [], "file-text"],
+    ["Expedientes sin ubicacion", data.expedients_without_location || [], "folder-kanban"],
+    ["Documentos sin ubicacion", data.documents_without_location || [], "file-text"],
   ];
   if (loading) return <Skeleton rows={8} />;
   return (
+    <>
     <div className="grid cols-2">
-      {groups.map(([title, rows, icon]) => (
+      {groups.map(([title, rows, icon], groupIndex) => (
         <Card key={title}>
           <CardHead title={title} icon={icon} action={<Badge tone={rows.length ? "warning" : "success"}>{rows.length}</Badge>} />
           {rows.length === 0 ? <Empty icon="check-circle" title="Todo al dia">No hay pendientes en este grupo.</Empty> : (
             <div className="mini-list">
-              {rows.slice(0, 10).map((row, i) => <div key={row.idBox || row.idFolder || row.idExpedient || row.idDocument || i} className="mini-row"><Icon name={icon} size={15} /><span className="grow">{row.box_code || row.folder_code || row.expedient_code || row.document_name}</span><Badge tone="warning">pendiente</Badge></div>)}
+              {rows.slice(0, 10).map((row, i) => {
+                const folderTarget = groupIndex === 1 ? row : groupIndex === 3 && row.folder_id ? { ...row, idFolder: row.folder_id, folder_code: row.folder_code || row.document_name } : null;
+                return (
+                  <div key={row.idBox || row.idFolder || row.idExpedient || row.idDocument || i} className="mini-row">
+                    <Icon name={icon} size={15} />
+                    <span className="grow">{row.box_code || row.folder_code || row.expedient_code || row.document_name}</span>
+                    {groupIndex === 0 ? <Button variant="subtle" size="sm" icon="map-pin" onClick={() => setAssignBox(row)}>Mover caja</Button> : folderTarget ? <Button variant="subtle" size="sm" icon="archive" onClick={() => setAssignFolder(folderTarget)}>Asignar caja</Button> : groupIndex === 2 ? <Badge tone="warning">Ubicar carpetas</Badge> : <Badge tone="warning">pendiente</Badge>}
+                  </div>
+                );
+              })}
             </div>
           )}
         </Card>
       ))}
     </div>
+    {assignBox && <AssignBoxShelfModal box={assignBox} onClose={() => setAssignBox(null)} onDone={() => setReloadKey(k => k + 1)} />}
+    {assignFolder && <AssignFolderBoxModal folder={assignFolder} onClose={() => setAssignFolder(null)} onDone={() => setReloadKey(k => k + 1)} />}
+    </>
   );
 }
 
@@ -486,18 +576,18 @@ function ArchivePage({ user }) {
     { key: "quick", label: "Consulta rapida", icon: "search" },
     { key: "map", label: "Mapa topografico", icon: "warehouse" },
     { key: "boxes", label: "Cajas", icon: "boxes" },
-    { key: "unassigned", label: "Sin ubicación", icon: "alert-triangle", count: dash.folders_without_box || 0 },
+    { key: "unassigned", label: "Sin ubicacion", icon: "alert-triangle", count: dash.folders_without_box || 0 },
     { key: "movements", label: "Movimientos", icon: "route" },
   ], [dash.folders_without_box]);
   return (
     <>
       <div className="page-head">
-        <div><div className="eyebrow">Archivo & Custodia</div><h1>Archivo Físico</h1><p className="lead">Parametriza sede, archivo, pasillo, estantería, cuerpo, nivel y caja. Las carpetas, expedientes y documentos heredan la ruta física.</p></div>
+        <div><div className="eyebrow">Archivo & Custodia</div><h1>Archivo Fisico</h1><p className="lead">Parametriza sede, archivo, pasillo, estanteria, cuerpo, nivel y caja. Las carpetas, expedientes y documentos heredan la ruta fisica.</p></div>
         <div className="page-actions">{canManage ? <Button icon="plus" onClick={() => setCreating(true)}>Parametrizar</Button> : <Button variant="ghost" icon="lock" disabled>Sin permiso</Button>}</div>
       </div>
       <div className="grid cols-4 stagger">
         <Metric label="Archivos" value={dash.archives || 0} icon="warehouse" tone="brand" accent />
-        <Metric label="Estanterías" value={dash.shelves || 0} icon="table" tone="info" accent />
+        <Metric label="Estanterias" value={dash.shelves || 0} icon="table" tone="info" accent />
         <Metric label="Cajas" value={dash.boxes || 0} icon="boxes" tone="ok" accent />
         <Metric label="Unidades sin caja" value={dash.folders_without_box || 0} icon="alert-triangle" tone="warn" accent />
       </div>

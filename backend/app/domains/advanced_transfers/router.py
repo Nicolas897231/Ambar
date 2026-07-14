@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -132,8 +133,30 @@ def _item_to_dict(item: TransferBatchItem) -> dict:
     }
 
 
-def _location_from_archive(archive: Archive | None, fallback: int | None) -> int:
-    return archive.ps700IdLocation if archive and archive.ps700IdLocation else fallback or 1
+def _ensure_company_location(db: Session, user: User) -> int:
+    location = db.query(Location).filter(Location.company_id == user.company_id).order_by(Location.idLocation.asc()).first()
+    if location:
+        return location.idLocation
+    location = Location(
+        location_name="Ubicacion operativa AMBAR",
+        address="Generada automaticamente para trazabilidad de transferencias.",
+        company_id=user.company_id,
+    )
+    db.add(location)
+    db.flush()
+    return location.idLocation
+
+
+def _resolve_transfer_location(db: Session, user: User, archive: Archive | None, supplied_location: int | None, label: str) -> int:
+    if supplied_location:
+        if not db.get(Location, supplied_location):
+            raise HTTPException(status_code=422, detail=f"La ubicacion {label} no existe.")
+        return supplied_location
+    if archive and archive.ps700IdLocation and db.get(Location, archive.ps700IdLocation):
+        return archive.ps700IdLocation
+    if user.location_id and db.get(Location, user.location_id):
+        return user.location_id
+    return _ensure_company_location(db, user)
 
 
 def _add_batch_kardex(db: Session, batch: TransferBatch, user: User, status: str, notes: str | None = None) -> None:
@@ -642,26 +665,39 @@ def create_batch(payload: BatchCreate, request: Request, user: User = Depends(re
         origin_archive = _require_archive_access(db, user, payload.origin_archive_id, {"operate", "admin"})
     if payload.destination_archive_id:
         destination_archive = _require_archive_access(db, user, payload.destination_archive_id)
-    origin_location = payload.origin_location or _location_from_archive(origin_archive, user.location_id)
-    destination_location = payload.destination_location or _location_from_archive(destination_archive, user.location_id)
-    if not db.get(Location, origin_location) or not db.get(Location, destination_location):
-        raise HTTPException(status_code=422, detail="Invalid location")
     if not origin_archive and not destination_archive and (payload.origin_location is None or payload.destination_location is None):
-        raise HTTPException(status_code=422, detail="Batch requires archives or legacy locations")
-    batch_code = supplied_or_generated(db, payload.batch_code, TransferBatch, "batch_code", "TRF")
-    batch = TransferBatch(
-        batch_code=batch_code,
-        origin_location=origin_location,
-        destination_location=destination_location,
-        ps930OriginArchiveId=origin_archive.idArchive if origin_archive else None,
-        ps930DestinationArchiveId=destination_archive.idArchive if destination_archive else None,
-        status="pending",
-    )
-    db.add(batch)
-    db.flush()
-    _add_batch_kardex(db, batch, user, "pending", "Lote documental creado")
-    write_audit(db, action="transfer_batch_created", module="transfers", user_id=user.identification, entity="transfer_batch", entity_id=batch.idBatch, new_values=payload.model_dump() | {"batch_code": batch_code}, request=request)
-    db.commit()
+        raise HTTPException(status_code=422, detail="La transferencia requiere archivos o ubicaciones de origen y destino.")
+    if origin_archive and destination_archive and origin_archive.idArchive == destination_archive.idArchive:
+        raise HTTPException(status_code=409, detail="El archivo destino debe ser diferente al archivo origen.")
+    origin_location = _resolve_transfer_location(db, user, origin_archive, payload.origin_location, "origen")
+    destination_location = _resolve_transfer_location(db, user, destination_archive, payload.destination_location, "destino")
+    try:
+        batch_code = supplied_or_generated(db, payload.batch_code, TransferBatch, "batch_code", "TRF")
+        batch = TransferBatch(
+            batch_code=batch_code,
+            origin_location=origin_location,
+            destination_location=destination_location,
+            ps930OriginArchiveId=origin_archive.idArchive if origin_archive else None,
+            ps930DestinationArchiveId=destination_archive.idArchive if destination_archive else None,
+            status="pending",
+        )
+        db.add(batch)
+        db.flush()
+        _add_batch_kardex(db, batch, user, "pending", "Lote documental creado")
+        write_audit(db, action="transfer_batch_created", module="transfers", user_id=user.identification, entity="transfer_batch", entity_id=batch.idBatch, new_values=payload.model_dump() | {"batch_code": batch_code}, request=request)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="No fue posible crear la transferencia por datos duplicados o una referencia invalida de archivo/ubicacion.") from exc
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="No fue posible crear la transferencia por una inconsistencia de datos. Revisa archivos, ubicaciones y permisos.") from exc
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="No fue posible crear la transferencia. Revisa la unidad documental, archivos, ubicaciones y permisos antes de confirmar.") from exc
     publish_event("transfer_batch.created", {"batch_id": batch.idBatch})
     db.refresh(batch)
     return _batch_to_dict(db, batch)

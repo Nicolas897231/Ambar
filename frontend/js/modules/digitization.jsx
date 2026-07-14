@@ -60,6 +60,7 @@ function DigitizationPage({ user }) {
         <div><div className="ss-n">{total}</div><div className="ss-l">Trabajos totales</div></div>
       </div>
       <Tabs value={tab} onChange={setTab} tabs={[{ key: "queue", label: "Cola de digitalizacion", icon: "list-checks" }, { key: "scan", label: "Nuevo OCR", icon: "scan-line" }]} />
+      <div className="info-callout" style={{ marginBottom: "var(--s4)" }}><Icon name="info" size={16} /><p>La cola muestra trabajos OCR reales por estado. Un trabajo OCR toma un documento registrado, extrae texto si hay archivo escaneado y deja el resultado listo para busqueda y validacion.</p></div>
       {tab === "queue" && (loading ? <Skeleton lines={8} /> : (
         <div className="kanban an-rise">
           {DG_COLS.map(col => {
@@ -96,9 +97,13 @@ function DigitizationPage({ user }) {
             <Field label="Motor OCR">
               <select value={ocrPayload.engine} onChange={e => setOcrPayload(p => ({ ...p, engine: e.target.value }))}>
                 <option value="tesseract-compatible">Tesseract compatible</option>
-                <option value="metadata-index">Índice por metadatos</option>
+                <option value="metadata-index">Indice por metadatos</option>
               </select>
             </Field>
+          </div>
+          <div className="grid cols-2" style={{ marginTop: "var(--s4)" }}>
+            <Card pad="sm" style={{ background: "var(--panel-2)" }}><CardHead title="Tesseract compatible" sub="Para PDF escaneado o imagen. Intenta leer texto desde el archivo digital y calcula confianza OCR." icon="scan-text" /></Card>
+            <Card pad="sm" style={{ background: "var(--panel-2)" }}><CardHead title="Indice por metadatos" sub="Para documentos sin OCR real. Indexa nombre, tipologia y metadatos para que aparezcan en busqueda." icon="tags" /></Card>
           </div>
           <div className="page-actions" style={{ marginTop: "var(--s5)" }}>
             <Button variant="ghost" onClick={() => setTab("queue")}>Cancelar</Button>

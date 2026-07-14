@@ -6,6 +6,7 @@ from app.domains.audit.router import router as audit_router
 from app.domains.archives.router import router as archives_router
 from app.domains.auth.router import router as auth_router
 from app.domains.bi.router import router as bi_router
+from app.domains.correspondence.router import router as correspondence_router
 from app.domains.documents.router import router as documents_router
 from app.domains.hr.router import router as hr_router
 from app.domains.integrations.router import router as integrations_router
@@ -46,3 +47,4 @@ api_router.include_router(signatures_router)
 api_router.include_router(integrations_router)
 api_router.include_router(webhooks_router)
 api_router.include_router(bi_router)
+api_router.include_router(correspondence_router)

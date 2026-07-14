@@ -103,7 +103,7 @@ function CreateSeriesModal({ onClose, onCreated }) {
     <Modal title="Nueva serie documental" sub="La serie queda gobernada por una dependencia TRD." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear serie</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
-        <Field label="Código" hint="AMBAR genera este código automáticamente al guardar la serie."><AutoCodeInput /></Field>
+        <Field label="Codigo" hint="AMBAR genera este codigo automaticamente al guardar la serie."><AutoCodeInput /></Field>
         <Field label="Nombre" required><input maxLength={160} value={payload.name} onChange={e => setField("name", e.target.value)} placeholder="Historias laborales" /></Field>
         <Field label="Dependencia"><select value={payload.dependency_id} onChange={e => setField("dependency_id", e.target.value)}><option value="">Usar dependencia por defecto</option>{dependencies.map(d => <option key={d.idDependency || d.id} value={d.idDependency || d.id}>{d.name || d.code}</option>)}</select></Field>
         <Field label="Estado"><select value={payload.status} onChange={e => setField("status", e.target.value)}><option value="active">Activa</option><option value="inactive">Inactiva</option></select></Field>
@@ -164,7 +164,7 @@ function CreateDependencyModal({ onClose, onCreated }) {
 
   const submit = async () => {
     if (!payload.name.trim()) {
-      toast("El nombre es obligatorio. El código lo puede generar AMBAR.", { tone: "danger", title: "Dependencia incompleta" });
+      toast("El nombre es obligatorio. El codigo lo puede generar AMBAR.", { tone: "danger", title: "Dependencia incompleta" });
       return;
     }
     try {
@@ -181,7 +181,7 @@ function CreateDependencyModal({ onClose, onCreated }) {
     <Modal title="Nueva dependencia" sub="Toda serie debe pertenecer a una dependencia funcional." onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear dependencia</Button></>}>
       <div className="grid cols-2">
-        <Field label="Código" hint="AMBAR genera este código automáticamente al guardar la dependencia."><AutoCodeInput /></Field>
+        <Field label="Codigo" hint="AMBAR genera este codigo automaticamente al guardar la dependencia."><AutoCodeInput /></Field>
         <Field label="Nombre" required><input value={payload.name} maxLength={160} onChange={e => setField("name", e.target.value)} placeholder="Talento Humano" /></Field>
         <Field label="Estado"><select value={payload.status} onChange={e => setField("status", e.target.value)}><option value="active">Activa</option><option value="inactive">Inactiva</option></select></Field>
         <div style={{ gridColumn: "1 / -1" }}><Field label="Descripcion"><textarea value={payload.description} maxLength={500} onChange={e => setField("description", e.target.value)} placeholder="Funcion documental de la dependencia" /></Field></div>
@@ -360,7 +360,7 @@ function CreateDocumentTypeModal({ onClose, onCreated }) {
     if (!payload.name.trim()) missing.push("nombre");
     if (!payload.subseries_id) missing.push("subserie");
     if (missing.length) {
-      toast(`Falta: ${missing.join(", ")}.`, { tone: "danger", title: "Tipología incompleta" });
+      toast(`Falta: ${missing.join(", ")}.`, { tone: "danger", title: "Tipologia incompleta" });
       return;
     }
     try {
@@ -376,19 +376,19 @@ function CreateDocumentTypeModal({ onClose, onCreated }) {
         optional_metadata: lines(payload.optional_metadata),
         validation_schema: {},
       });
-      toast("Tipología documental creada.", { tone: "ok", title: "TRD actualizada" });
+      toast("Tipologia documental creada.", { tone: "ok", title: "TRD actualizada" });
       onCreated(created);
       onClose();
     } catch (err) {
-      toast(err.message || "No fue posible crear la tipología.", { tone: "danger", title: "Error" });
+      toast(err.message || "No fue posible crear la tipologia.", { tone: "danger", title: "Error" });
     }
   };
 
   return (
-    <Modal lg title="Nueva tipología documental" sub="La tipología define qué documento se exige y qué metadatos captura AMBAR." onClose={onClose}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear tipología</Button></>}>
+    <Modal lg title="Nueva tipologia documental" sub="La tipologia define que documento se exige y que metadatos captura AMBAR." onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Crear tipologia</Button></>}>
       <div className="grid cols-2" style={{ gap: "var(--s4)" }}>
-        <Field label="Código" hint="AMBAR genera este código automáticamente al guardar la tipología."><AutoCodeInput /></Field>
+        <Field label="Codigo" hint="AMBAR genera este codigo automaticamente al guardar la tipologia."><AutoCodeInput /></Field>
         <Field label="Nombre" required><input maxLength={140} value={payload.name} onChange={e => setField("name", e.target.value)} placeholder="Contrato laboral" /></Field>
         <Field label="Serie documental">
           <select value={payload.series_id} onChange={e => setField("series_id", e.target.value)}>
@@ -404,9 +404,9 @@ function CreateDocumentTypeModal({ onClose, onCreated }) {
         </Field>
         <Field label="Sector"><input maxLength={80} value={payload.sector} onChange={e => setField("sector", e.target.value)} placeholder="RRHH, Transporte, Juridica" /></Field>
         <Field label="Obligatoriedad"><select value={payload.required_in_expedient ? "yes" : "no"} onChange={e => setField("required_in_expedient", e.target.value === "yes")}><option value="yes">Obligatoria en expediente</option><option value="no">Opcional</option></select></Field>
-        <div style={{ gridColumn: "1 / -1" }}><Field label="Descripción"><textarea maxLength={500} value={payload.description} onChange={e => setField("description", e.target.value)} placeholder="Uso documental de esta tipología" /></Field></div>
-        <Field label="Metadatos requeridos" hint="Uno por línea o separados por coma. Ejemplo: fecha inicio, salario, cargo"><textarea value={payload.required_metadata} onChange={e => setField("required_metadata", e.target.value)} /></Field>
-        <Field label="Metadatos opcionales" hint="Campos que ayudan, pero no bloquean la creación."><textarea value={payload.optional_metadata} onChange={e => setField("optional_metadata", e.target.value)} /></Field>
+        <div style={{ gridColumn: "1 / -1" }}><Field label="Descripcion"><textarea maxLength={500} value={payload.description} onChange={e => setField("description", e.target.value)} placeholder="Uso documental de esta tipologia" /></Field></div>
+        <Field label="Metadatos requeridos" hint="Uno por linea o separados por coma. Ejemplo: fecha inicio, salario, cargo"><textarea value={payload.required_metadata} onChange={e => setField("required_metadata", e.target.value)} /></Field>
+        <Field label="Metadatos opcionales" hint="Campos que ayudan, pero no bloquean la creacion."><textarea value={payload.optional_metadata} onChange={e => setField("optional_metadata", e.target.value)} /></Field>
       </div>
     </Modal>
   );
@@ -448,7 +448,7 @@ function TRDPage({ user }) {
           <Button variant="ghost" icon="download" onClick={() => AmbarAPI.download("/trd/export?format=csv", "TRD_AMBAR.csv")}>Exportar TRD</Button>
           {can(user, ["trd.manage"]) && <Button variant="ghost" icon="building" onClick={() => setCreatingDep(true)}>Nueva dependencia</Button>}
           {can(user, ["trd.manage"]) && <Button variant="ghost" icon="layers" onClick={() => setCreatingSub(true)}>Nueva subserie</Button>}
-          {can(user, ["trd.manage"]) && <Button variant="ghost" icon="file-plus" onClick={() => setCreatingType(true)}>Nueva tipología</Button>}
+          {can(user, ["trd.manage"]) && <Button variant="ghost" icon="file-plus" onClick={() => setCreatingType(true)}>Nueva tipologia</Button>}
           {can(user, ["trd.manage"]) && <Button icon="plus" onClick={() => setCreating(true)}>Nueva serie</Button>}
         </div>
       </div>
@@ -459,7 +459,7 @@ function TRDPage({ user }) {
           <p>Es el instrumento que organiza dependencias, series, subseries y tipologias. AMBAR la usa como motor para clasificar documentos, calcular retencion y preparar transferencias.</p>
         </div>
       </div>
-      <Tabs value={tab} onChange={setTab} tabs={[{ key: "dependencies", label: "Dependencias", icon: "building" }, { key: "series", label: "Series y subseries", icon: "table" }, { key: "types", label: "Tipologías", icon: "file-plus" }, { key: "retention", label: "Retencion", icon: "clock" }, { key: "disposition", label: "Disposicion final", icon: "package-check" }]} />
+      <Tabs value={tab} onChange={setTab} tabs={[{ key: "dependencies", label: "Dependencias", icon: "building" }, { key: "series", label: "Series y subseries", icon: "table" }, { key: "types", label: "Tipologias", icon: "file-plus" }, { key: "retention", label: "Retencion", icon: "clock" }, { key: "disposition", label: "Disposicion final", icon: "package-check" }]} />
 
       {tab === "dependencies" && (
         <Card flush className="an-rise">
@@ -483,7 +483,7 @@ function TRDPage({ user }) {
         <Card flush className="an-rise">
           <div className="table-scroll">
             <table className="tbl">
-              <thead><tr><th>Codigo</th><th>Serie documental</th><th>Subseries</th><th>Tipologías</th><th>Disposicion final</th><th>Acciones</th></tr></thead>
+              <thead><tr><th>Codigo</th><th>Serie documental</th><th>Subseries</th><th>Tipologias</th><th>Disposicion final</th><th>Acciones</th></tr></thead>
               <tbody>
                 {series.map(s => (
                   <tr key={s.code}>
@@ -505,15 +505,15 @@ function TRDPage({ user }) {
         <Card flush className="an-rise">
           <div className="toolbar-card">
             <div>
-              <b>Tipologías documentales</b>
+              <b>Tipologias documentales</b>
               <p className="muted" style={{ marginTop: 4 }}>Son los tipos reales de documentos que puede exigir una subserie: contrato, hoja de vida, remesa, manifiesto, demanda, factura.</p>
             </div>
-            {can(user, ["trd.manage"]) && <Button icon="plus" onClick={() => setCreatingType(true)}>Nueva tipología</Button>}
+            {can(user, ["trd.manage"]) && <Button icon="plus" onClick={() => setCreatingType(true)}>Nueva tipologia</Button>}
           </div>
-          {liveTypes.loading ? <div style={{ padding: "var(--s5)" }}><Skeleton rows={6} /></div> : documentTypes.length === 0 ? <Empty icon="file-plus" title="Sin tipologías">Crea tipologías para que documentos y cargos no usen textos libres.</Empty> : (
+          {liveTypes.loading ? <div style={{ padding: "var(--s5)" }}><Skeleton rows={6} /></div> : documentTypes.length === 0 ? <Empty icon="file-plus" title="Sin tipologias">Crea tipologias para que documentos y cargos no usen textos libres.</Empty> : (
             <div className="table-scroll">
               <table className="tbl">
-                <thead><tr><th>Código</th><th>Tipología</th><th>Sector</th><th>Obligatoria</th><th>Metadatos</th><th>Estado</th></tr></thead>
+                <thead><tr><th>Codigo</th><th>Tipologia</th><th>Sector</th><th>Obligatoria</th><th>Metadatos</th><th>Estado</th></tr></thead>
                 <tbody>{documentTypes.map(type => {
                   const required = (type.required_metadata && (type.required_metadata.fields || type.required_metadata.items)) || [];
                   const optional = (type.optional_metadata && (type.optional_metadata.fields || type.optional_metadata.items)) || [];
@@ -539,7 +539,7 @@ function TRDPage({ user }) {
               <b>Definir retencion documental</b>
               <p className="muted" style={{ marginTop: 4 }}>La retencion se configura por subserie: archivo de gestion, archivo central y disposicion final.</p>
             </div>
-            {can(user, ["trd.manage"]) && <Button icon="plus" onClick={() => setCreatingSub(true)}>Nueva subserie</Button>}
+            {can(user, ["trd.manage"]) && <Button icon="plus" onClick={() => setCreatingSub(true)}>Nueva retencion</Button>}
           </div>
           {retentionRows.length === 0 ? <Empty icon="clock" title="Sin subseries">Crea una subserie para configurar tiempos de retencion y disposicion final.</Empty> : (
             <div className="table-scroll">
@@ -566,10 +566,10 @@ function TRDPage({ user }) {
 
       {tab === "disposition" && (
         <div className="grid cols-3 stagger">
-          {[["Conservacion total", "success", "shield-check", "Documentos con valor historico que se conservan permanentemente."], ["Seleccion", "warning", "filter", "Se conserva una muestra representativa; el resto se elimina."], ["Eliminacion", "danger", "trash", "Documentos sin valor secundario, eliminables tras su retencion legal."]].map(([t, tn, ic, d], i) => (
+          {[["Conservacion total", "success", "shield-check", "Documentos con valor historico que se conservan permanentemente."], ["Seleccion", "warning", "filter", "Se conserva una muestra representativa; el resto se elimina."], ["Eliminacion", "danger", "trash", "Documentos sin valor secundario, eliminables tras su retencion legal."], ["Medio tecnologico", "info", "hard-drive", "Documentos que se reproducen o conservan en soporte tecnologico autorizado."]].map(([t, tn, ic, d], i) => (
             <Card key={t} style={{ "--i": i }}>
               <div className="row gap2" style={{ marginBottom: "var(--s2)" }}>
-                <span className="m-icon" style={{ background: `var(--${tn === "success" ? "ok" : tn === "warning" ? "warn" : "danger"}-bg)`, color: `var(--${tn === "success" ? "ok" : tn === "warning" ? "warn" : "danger"})` }}><Icon name={ic} size={18} /></span>
+                <span className="m-icon" style={{ background: `var(--${tn === "success" ? "ok" : tn === "warning" ? "warn" : tn === "info" ? "info" : "danger"}-bg)`, color: `var(--${tn === "success" ? "ok" : tn === "warning" ? "warn" : tn === "info" ? "info" : "danger"})` }}><Icon name={ic} size={18} /></span>
                 <h3 style={{ fontSize: "var(--fs-md)" }}>{t}</h3>
               </div>
               <p className="muted" style={{ fontSize: "var(--fs-sm)" }}>{d}</p>

@@ -1,5 +1,5 @@
 /* ============================================================
-   AMBAR - Gestión Documental: Repositorio
+   AMBAR - Gestion Documental: Repositorio
    ============================================================ */
 
 function formatBytes(value) {
@@ -13,11 +13,18 @@ function formatBytes(value) {
 function RepositoryPage({ user, navigate }) {
   const toast = useToast();
   const [q, setQ] = useState("");
+  const [page, setPage] = useState(0);
+  const pageSize = 10;
   const liveRepo = useLiveData(() => AmbarAPI.endpoints.repository(), [], []);
   const rows = AmbarAPI.listFrom(liveRepo.data).filter(row => {
     const text = `${row.document_name || ""} ${row.archive_id || ""} ${row.expedient_id || ""} ${row.folder_id || ""}`.toLowerCase();
     return !q || text.includes(q.toLowerCase());
   });
+  const fileRows = rows.flatMap(row => {
+    const files = row.files?.length ? row.files : [null];
+    return files.map((file, index) => ({ row, file, index }));
+  });
+  const pageRows = fileRows.slice(page * pageSize, page * pageSize + pageSize);
   const totalFiles = rows.reduce((acc, row) => acc + (row.files || []).length, 0);
   const totalSize = rows.reduce((acc, row) => acc + (row.files || []).reduce((a, f) => a + Number(f.size_bytes || 0), 0), 0);
 
@@ -34,9 +41,9 @@ function RepositoryPage({ user, navigate }) {
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">Gestión Documental</div>
+          <div className="eyebrow">Gestion Documental</div>
           <h1>Repositorio documental</h1>
-          <p className="lead">Archivos digitales reales almacenados por documento. Las descargas pasan por permisos, auditoría y URL segura.</p>
+          <p className="lead">Archivos digitales reales almacenados por documento. Las descargas pasan por permisos, auditoria y URL segura.</p>
         </div>
         <div className="page-actions">
           {can(user, ["document.create"]) && <Button icon="plus" onClick={() => navigate("documents")}>Registrar documento</Button>}
@@ -46,12 +53,12 @@ function RepositoryPage({ user, navigate }) {
       <div className="grid cols-3">
         <Metric label="Documentos con contexto" value={rows.length} icon="file-text" tone="brand" accent />
         <Metric label="Archivos digitales" value={totalFiles} icon="database" tone="info" accent />
-        <Metric label="Tamaño registrado" value={formatBytes(totalSize)} icon="archive" tone="ok" accent />
+        <Metric label="Tamano registrado" value={formatBytes(totalSize)} icon="archive" tone="ok" accent />
       </div>
 
       <Card flush className="an-rise">
         <div className="row between wrap" style={{ padding: "var(--s4)", gap: "var(--s3)", borderBottom: "1px solid var(--line)" }}>
-          <div className="search-box"><Icon name="search" size={16} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por documento, archivo, expediente o carpeta..." /></div>
+          <div className="search-box"><Icon name="search" size={16} /><input value={q} onChange={e => { setQ(e.target.value); setPage(0); }} placeholder="Buscar por documento, archivo, expediente o carpeta..." /></div>
           <Badge tone="outline">{totalFiles} archivos</Badge>
         </div>
         {liveRepo.loading ? <div style={{ padding: "var(--s5)" }}><Skeleton rows={8} /></div> : rows.length === 0 ? (
@@ -59,10 +66,8 @@ function RepositoryPage({ user, navigate }) {
         ) : (
           <div className="table-scroll">
             <table className="tbl">
-              <thead><tr><th>Documento</th><th>Archivo</th><th>Expediente</th><th>Carpeta</th><th>Archivo digital</th><th>Tamaño</th><th>Acción</th></tr></thead>
-              <tbody>{rows.flatMap(row => {
-                const files = row.files?.length ? row.files : [null];
-                return files.map((file, index) => (
+              <thead><tr><th>Documento</th><th>Archivo</th><th>Expediente</th><th>Carpeta</th><th>Archivo digital</th><th>Tamano</th><th>Accion</th></tr></thead>
+              <tbody>{pageRows.map(({ row, file, index }) => (
                   <tr key={`${row.idDocument}-${file?.idFile || index}`}>
                     <td className="cell-strong">{row.document_name}</td>
                     <td className="cell-mono">{row.archive_id || "-"}</td>
@@ -72,11 +77,11 @@ function RepositoryPage({ user, navigate }) {
                     <td>{file ? formatBytes(file.size_bytes) : "-"}</td>
                     <td>{file ? <Button variant="ghost" size="sm" icon="download" onClick={() => downloadFile(file)}>Descargar</Button> : <Button variant="subtle" size="sm" icon="upload" disabled>Sin archivo</Button>}</td>
                   </tr>
-                ));
-              })}</tbody>
+                ))}</tbody>
             </table>
           </div>
         )}
+        {fileRows.length > pageSize && <Pager page={page} pageSize={pageSize} total={fileRows.length} label="registros" onPage={setPage} />}
       </Card>
     </>
   );

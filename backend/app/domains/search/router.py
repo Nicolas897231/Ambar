@@ -65,6 +65,16 @@ def _matches_text(column, term: str):
     return column.ilike(f"%{term}%")
 
 
+def _opensearch_total(response: dict | None) -> int:
+    if not response:
+        return 0
+    hits = response.get("hits", {})
+    total = hits.get("total", 0)
+    if isinstance(total, dict):
+        return int(total.get("value") or 0)
+    return int(total or 0)
+
+
 @router.post("/documents")
 def document_search(
     payload: SearchRequest,
@@ -77,7 +87,7 @@ def document_search(
         "company_id": user.company_id,
         "document_type": payload.document_type,
         "status": payload.status,
-        "location_id": payload.location_id or user.location_id,
+        "location_id": payload.location_id,
         "archive_id": payload.archive_id,
     }
     opensearch_response = search_documents(payload.q, filters, payload.page, payload.size)
@@ -90,7 +100,7 @@ def document_search(
         request=request,
     )
     db.commit()
-    if opensearch_response is not None:
+    if opensearch_response is not None and _opensearch_total(opensearch_response) > 0:
         return {"engine": "opensearch", "raw": opensearch_response}
 
     if not archive_ids:
