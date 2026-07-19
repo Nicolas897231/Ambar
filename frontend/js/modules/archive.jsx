@@ -303,10 +303,117 @@ function AssignFolderBoxModal({ folder, onClose, onDone }) {
   );
 }
 
+function AssignExpedientBoxModal({ expedient, onClose, onDone }) {
+  const toast = useToast();
+  const [boxId, setBoxId] = arS("");
+  const [folderName, setFolderName] = arS("Carpeta principal");
+  const [observation, setObservation] = arS("");
+  const archiveId = expedient.archive_id || expedient.ps930IdArchive;
+  const { data: boxesRaw, loading } = useLiveData(() => archiveId ? AmbarAPI.get(`/archives/boxes?archive_id=${encodeURIComponent(archiveId)}`) : AmbarAPI.endpoints.boxes(), [], [archiveId]);
+  const boxes = AmbarAPI.listFrom(boxesRaw);
+  const submit = async () => {
+    if (!boxId) {
+      toast("Selecciona la caja donde quedara el expediente.", { tone: "danger", title: "Falta caja" });
+      return;
+    }
+    try {
+      await AmbarAPI.post(`/archives/expedients/${expedient.idExpedient || expedient.expedient_id || expedient.id}/assign-location`, {
+        box_id: Number(boxId),
+        folder_name: folderName || "Carpeta principal",
+        create_folder_if_empty: true,
+        observation: observation || "Asignacion desde expedientes sin ubicacion.",
+      });
+      toast("Expediente ubicado. Sus carpetas y documentos heredaron la ruta.", { tone: "ok", title: "Ubicacion asignada" });
+      onDone && onDone();
+      onClose();
+    } catch (err) {
+      toast(err.message || "No fue posible ubicar el expediente.", { tone: "danger", title: "Asignacion bloqueada" });
+    }
+  };
+  return (
+    <Modal title="Ubicar expediente" sub={expedient.expedient_code || "Expediente sin ubicacion"} onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Guardar ubicacion</Button></>}>
+      {loading ? <Skeleton rows={3} /> : <div className="col gap4">
+        <Card pad="sm" style={{ background: "var(--panel-2)" }}>
+          <CardHead title="Ubicacion heredada" sub="AMBAR asigna la caja a las carpetas del expediente. Si el expediente no tiene carpetas, crea una carpeta principal." icon="info" />
+        </Card>
+        <Field label="Caja destino" required>
+          <select value={boxId} onChange={e => setBoxId(e.target.value)}>
+            <option value="">Seleccionar caja</option>
+            {boxes.map(box => <option key={box.idBox || box.id} value={box.idBox || box.id}>{box.box_code || box.code} / {box.location_path || "Sin ruta topografica"}</option>)}
+          </select>
+        </Field>
+        <Field label="Nombre si debe crear carpeta"><input value={folderName} onChange={e => setFolderName(e.target.value)} placeholder="Carpeta principal" /></Field>
+        <Field label="Observacion"><textarea value={observation} onChange={e => setObservation(e.target.value)} placeholder="Motivo o referencia de asignacion" /></Field>
+      </div>}
+    </Modal>
+  );
+}
+
+function AssignDocumentLocationModal({ document, onClose, onDone }) {
+  const toast = useToast();
+  const [folderId, setFolderId] = arS(document.folder_id || document.ps952IdFolder || "");
+  const [boxId, setBoxId] = arS("");
+  const [observation, setObservation] = arS("");
+  const archiveId = document.archive_id || document.ps930IdArchive;
+  const { data: foldersRaw, loading: foldersLoading } = useLiveData(() => archiveId ? AmbarAPI.get("/archives/folders") : AmbarAPI.endpoints.folders(), [], [archiveId]);
+  const { data: boxesRaw, loading: boxesLoading } = useLiveData(() => archiveId ? AmbarAPI.get(`/archives/boxes?archive_id=${encodeURIComponent(archiveId)}`) : AmbarAPI.endpoints.boxes(), [], [archiveId]);
+  const folders = AmbarAPI.listFrom(foldersRaw).filter(folder => !archiveId || Number(folder.archive_id || folder.ps930IdArchive) === Number(archiveId));
+  const boxes = AmbarAPI.listFrom(boxesRaw);
+  const submit = async () => {
+    if (!folderId) {
+      toast("Selecciona la carpeta documental del documento.", { tone: "danger", title: "Falta carpeta" });
+      return;
+    }
+    if (!boxId) {
+      toast("Selecciona la caja que dara la ubicacion fisica.", { tone: "danger", title: "Falta caja" });
+      return;
+    }
+    try {
+      await AmbarAPI.post(`/archives/documents/${document.idDocument || document.document_id || document.id}/assign-location`, {
+        folder_id: Number(folderId),
+        box_id: Number(boxId),
+        observation: observation || "Asignacion desde documentos sin ubicacion.",
+      });
+      toast("Documento ubicado por herencia de carpeta y caja.", { tone: "ok", title: "Ubicacion asignada" });
+      onDone && onDone();
+      onClose();
+    } catch (err) {
+      toast(err.message || "No fue posible ubicar el documento.", { tone: "danger", title: "Asignacion bloqueada" });
+    }
+  };
+  return (
+    <Modal title="Ubicar documento" sub={document.document_name || "Documento sin ubicacion"} onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Guardar ubicacion</Button></>}>
+      {(foldersLoading || boxesLoading) ? <Skeleton rows={4} /> : <div className="col gap4">
+        <Card pad="sm" style={{ background: "var(--panel-2)" }}>
+          <CardHead title="Sin escritura manual" sub="Selecciona carpeta y caja. El documento toma automaticamente la ruta fisica completa." icon="shield-check" />
+        </Card>
+        <Field label="Carpeta documental" required>
+          <select value={folderId} onChange={e => setFolderId(e.target.value)}>
+            <option value="">Seleccionar carpeta</option>
+            {folders.map(folder => <option key={folder.idFolder || folder.id} value={folder.idFolder || folder.id}>{folder.folder_code || folder.code} / {folder.folder_name || "Carpeta"}</option>)}
+          </select>
+        </Field>
+        <Field label="Caja destino" required>
+          <select value={boxId} onChange={e => setBoxId(e.target.value)}>
+            <option value="">Seleccionar caja</option>
+            {boxes.map(box => <option key={box.idBox || box.id} value={box.idBox || box.id}>{box.box_code || box.code} / {box.location_path || "Sin ruta topografica"}</option>)}
+          </select>
+        </Field>
+        <Field label="Observacion"><textarea value={observation} onChange={e => setObservation(e.target.value)} placeholder="Motivo o referencia de asignacion" /></Field>
+      </div>}
+    </Modal>
+  );
+}
+
 function UnassignedView() {
   const [reloadKey, setReloadKey] = arS(0);
   const [assignBox, setAssignBox] = arS(null);
   const [assignFolder, setAssignFolder] = arS(null);
+  const [assignExpedient, setAssignExpedient] = arS(null);
+  const [assignDocument, setAssignDocument] = arS(null);
+  const [groupPages, setGroupPages] = arS({});
   const { data, loading } = useLiveData(() => AmbarAPI.endpoints.locationsUnassigned(), {}, [reloadKey]);
   const groups = [
     ["Cajas sin estanteria", data.boxes_without_shelf || [], "boxes"],
@@ -314,32 +421,48 @@ function UnassignedView() {
     ["Expedientes sin ubicacion", data.expedients_without_location || [], "folder-kanban"],
     ["Documentos sin ubicacion", data.documents_without_location || [], "file-text"],
   ];
+  const pageSize = 5;
   if (loading) return <Skeleton rows={8} />;
   return (
     <>
     <div className="grid cols-2">
-      {groups.map(([title, rows, icon], groupIndex) => (
-        <Card key={title}>
-          <CardHead title={title} icon={icon} action={<Badge tone={rows.length ? "warning" : "success"}>{rows.length}</Badge>} />
-          {rows.length === 0 ? <Empty icon="check-circle" title="Todo al dia">No hay pendientes en este grupo.</Empty> : (
-            <div className="mini-list">
-              {rows.slice(0, 10).map((row, i) => {
-                const folderTarget = groupIndex === 1 ? row : groupIndex === 3 && row.folder_id ? { ...row, idFolder: row.folder_id, folder_code: row.folder_code || row.document_name } : null;
-                return (
+      {groups.map(([title, rows, icon], groupIndex) => {
+        const page = Math.min(groupPages[groupIndex] || 0, Math.max(0, Math.ceil(rows.length / pageSize) - 1));
+        const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+        const pagedRows = rows.slice(page * pageSize, page * pageSize + pageSize);
+        const setPage = (next) => setGroupPages((state) => ({ ...state, [groupIndex]: Math.max(0, Math.min(totalPages - 1, next)) }));
+        return (
+          <Card key={title}>
+            <CardHead title={title} icon={icon} action={<Badge tone={rows.length ? "warning" : "success"}>{rows.length}</Badge>} />
+            {rows.length === 0 ? <Empty icon="check-circle" title="Todo al dia">No hay pendientes en este grupo.</Empty> : (
+              <>
+              <div className="mini-list">
+                {pagedRows.map((row, i) => (
                   <div key={row.idBox || row.idFolder || row.idExpedient || row.idDocument || i} className="mini-row">
                     <Icon name={icon} size={15} />
                     <span className="grow">{row.box_code || row.folder_code || row.expedient_code || row.document_name}</span>
-                    {groupIndex === 0 ? <Button variant="subtle" size="sm" icon="map-pin" onClick={() => setAssignBox(row)}>Mover caja</Button> : folderTarget ? <Button variant="subtle" size="sm" icon="archive" onClick={() => setAssignFolder(folderTarget)}>Asignar caja</Button> : groupIndex === 2 ? <Badge tone="warning">Ubicar carpetas</Badge> : <Badge tone="warning">pendiente</Badge>}
+                    {groupIndex === 0 ? <Button variant="subtle" size="sm" icon="map-pin" onClick={() => setAssignBox(row)}>Mover caja</Button> : groupIndex === 1 ? <Button variant="subtle" size="sm" icon="archive" onClick={() => setAssignFolder(row)}>Asignar caja</Button> : groupIndex === 2 ? <Button variant="subtle" size="sm" icon="folder" onClick={() => setAssignExpedient(row)}>Ubicar expediente</Button> : <Button variant="subtle" size="sm" icon="archive" onClick={() => setAssignDocument(row)}>Ubicar documento</Button>}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-      ))}
+                ))}
+              </div>
+              {rows.length > pageSize && (
+                <div className="pagination compact">
+                  <span>{page * pageSize + 1}-{Math.min(rows.length, (page + 1) * pageSize)} de {rows.length}</span>
+                  <Button variant="ghost" size="sm" icon="chevron-left" disabled={page === 0} onClick={() => setPage(page - 1)}>Anterior</Button>
+                  <Badge tone="outline">{page + 1}/{totalPages}</Badge>
+                  <Button variant="ghost" size="sm" iconRight="chevron-right" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>Siguiente</Button>
+                </div>
+              )}
+              </>
+            )}
+          </Card>
+        );
+      })}
     </div>
     {assignBox && <AssignBoxShelfModal box={assignBox} onClose={() => setAssignBox(null)} onDone={() => setReloadKey(k => k + 1)} />}
     {assignFolder && <AssignFolderBoxModal folder={assignFolder} onClose={() => setAssignFolder(null)} onDone={() => setReloadKey(k => k + 1)} />}
+    {assignExpedient && <AssignExpedientBoxModal expedient={assignExpedient} onClose={() => setAssignExpedient(null)} onDone={() => setReloadKey(k => k + 1)} />}
+    {assignDocument && <AssignDocumentLocationModal document={assignDocument} onClose={() => setAssignDocument(null)} onDone={() => setReloadKey(k => k + 1)} />}
     </>
   );
 }

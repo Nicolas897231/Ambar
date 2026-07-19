@@ -298,12 +298,34 @@
   border-radius: var(--r-sm);
   background: var(--panel-2);
 }
+.pagination.compact {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s2);
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.pagination.compact > span:first-child {
+  margin-right: auto;
+}
 
 @media (max-width: 920px) {
   .topography-hero-grid { grid-template-columns: 1fr; }
   .topography-search { flex-direction: column; align-items: stretch; }
   .tree-row { grid-template-columns: 18px auto 1fr; }
   .tree-row .meter { grid-column: 1 / -1; }
+  .pagination.compact {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+  .pagination.compact > span:first-child {
+    width: 100%;
+    margin-right: 0;
+  }
 }
 
 @media (max-width: 980px) {

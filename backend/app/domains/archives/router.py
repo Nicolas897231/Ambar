@@ -198,6 +198,19 @@ class FolderLocationPayload(BaseModel):
     observation: str | None = None
 
 
+class ExpedientLocationPayload(BaseModel):
+    box_id: int
+    folder_name: str | None = Field(default=None, max_length=220)
+    create_folder_if_empty: bool = True
+    observation: str | None = None
+
+
+class DocumentLocationPayload(BaseModel):
+    box_id: int
+    folder_id: int | None = None
+    observation: str | None = None
+
+
 class FoliationCreate(BaseModel):
     document_id: int
     expedient_id: int
@@ -2245,18 +2258,11 @@ def assign_folder_location(folder_id: int, payload: FolderLocationPayload, reque
     return move_folder_location(folder_id, payload, request, user, db)
 
 
-@router.post("/folders/{folder_id}/move-location")
-def move_folder_location(folder_id: int, payload: FolderLocationPayload, request: Request, user: User = Depends(require_permission("archive.manage")), db: Session = Depends(get_db)):
-    folder = db.get(Folder, folder_id)
-    box = db.get(PhysicalBox, payload.box_id)
-    if not folder:
-        raise HTTPException(status_code=404, detail="Folder not found")
-    if not box:
-        raise HTTPException(status_code=404, detail="Box not found")
+def _move_folder_to_box(db: Session, request: Request, user: User, folder: Folder, box: PhysicalBox, observation: str | None = None) -> dict:
     _require_archive_access(db, user, folder.ps930IdArchive, {"admin", "operate"})
     _require_archive_access(db, user, box.ps930IdArchive, {"admin", "operate"})
     if box.ps930IdArchive != folder.ps930IdArchive:
-        raise HTTPException(status_code=422, detail="Physical movement cannot change archive. Create a document transfer instead.")
+        raise HTTPException(status_code=422, detail="La caja pertenece a otro archivo. Usa una transferencia documental para cambiar de archivo.")
     previous_box = folder.ps936IdBox
     previous_path = _physical_location_path(db, "folder", folder.idFolder)
     folder.ps936IdBox = box.idBox
@@ -2270,7 +2276,18 @@ def move_folder_location(folder_id: int, payload: FolderLocationPayload, request
     db.flush()
     _sync_inherited_locations(db, folder)
     current_path = _physical_location_path(db, "folder", folder.idFolder)
-    movement = _location_movement(db, request, user, movement_type="folder.moved" if previous_box else "location.assigned", entity_type="folder", entity_id=folder.idFolder, archive_id=folder.ps930IdArchive, previous=previous_path, current=current_path, observation=payload.observation)
+    movement = _location_movement(
+        db,
+        request,
+        user,
+        movement_type="folder.moved" if previous_box else "location.assigned",
+        entity_type="folder",
+        entity_id=folder.idFolder,
+        archive_id=folder.ps930IdArchive,
+        previous=previous_path,
+        current=current_path,
+        observation=observation,
+    )
     archive = db.get(Archive, folder.ps930IdArchive)
     _record_custody(
         db,
@@ -2283,10 +2300,133 @@ def move_folder_location(folder_id: int, payload: FolderLocationPayload, request
         related_movement_id=movement.idMovement,
         metadata={"event": movement.movement_type, "previous_location": previous_path, "current_location": current_path},
     )
-    write_audit(db, action="folder_location_changed", module="archives", user_id=user.identification, entity="folder", entity_id=folder.idFolder, old_values={"box_id": previous_box, "location_path": previous_path}, new_values={"box_id": box.idBox, "location_path": current_path}, request=request)
+    write_audit(
+        db,
+        action="folder_location_changed",
+        module="archives",
+        user_id=user.identification,
+        entity="folder",
+        entity_id=folder.idFolder,
+        old_values={"box_id": previous_box, "location_path": previous_path},
+        new_values={"box_id": box.idBox, "location_path": current_path},
+        request=request,
+    )
+    return {"folder_id": folder.idFolder, "box_id": folder.ps936IdBox, "location_path": current_path, "movement_id": movement.idMovement}
+
+
+@router.post("/folders/{folder_id}/move-location")
+def move_folder_location(folder_id: int, payload: FolderLocationPayload, request: Request, user: User = Depends(require_permission("archive.manage")), db: Session = Depends(get_db)):
+    folder = db.get(Folder, folder_id)
+    box = db.get(PhysicalBox, payload.box_id)
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    if not box:
+        raise HTTPException(status_code=404, detail="Box not found")
+    result = _move_folder_to_box(db, request, user, folder, box, payload.observation)
     db.commit()
     db.refresh(folder)
-    return {"folder_id": folder.idFolder, "box_id": folder.ps936IdBox, "location_path": current_path}
+    return result
+
+
+@router.post("/expedients/{expedient_id}/assign-location")
+def assign_expedient_location(expedient_id: int, payload: ExpedientLocationPayload, request: Request, user: User = Depends(require_permission("archive.manage")), db: Session = Depends(get_db)):
+    expedient = db.get(Expedient, expedient_id)
+    box = db.get(PhysicalBox, payload.box_id)
+    if not expedient:
+        raise HTTPException(status_code=404, detail="Expedient not found")
+    if not box:
+        raise HTTPException(status_code=404, detail="Box not found")
+    _require_archive_access(db, user, expedient.ps930IdArchive, {"admin", "operate"})
+    _require_archive_access(db, user, box.ps930IdArchive, {"admin", "operate"})
+    if box.ps930IdArchive != expedient.ps930IdArchive:
+        raise HTTPException(status_code=422, detail="La caja pertenece a otro archivo. Usa una transferencia documental para cambiar de archivo.")
+    folders = db.query(Folder).filter(Folder.ps950IdExpedient == expedient.idExpedient).order_by(Folder.folder_code.asc()).all()
+    if not folders and payload.create_folder_if_empty:
+        folder = Folder(
+            folder_code=supplied_or_generated(db, None, Folder, "folder_code", "CAR", scope_filters=[Folder.ps950IdExpedient == expedient.idExpedient]),
+            folder_name=payload.folder_name or "Carpeta principal",
+            ps950IdExpedient=expedient.idExpedient,
+            ps930IdArchive=expedient.ps930IdArchive,
+            ps936IdBox=None,
+            metadata_json={},
+        )
+        db.add(folder)
+        db.flush()
+        folders = [folder]
+    if not folders:
+        raise HTTPException(status_code=422, detail="El expediente no tiene carpetas. Crea una carpeta o habilita la creacion automatica.")
+    assigned = []
+    for folder in folders:
+        if folder.ps936IdBox == box.idBox:
+            continue
+        assigned.append(_move_folder_to_box(db, request, user, folder, box, payload.observation or "Ubicacion asignada desde expediente sin ubicacion."))
+    expedient.physical_location = _physical_location_path(db, "expedient", expedient.idExpedient)
+    db.flush()
+    movement = _location_movement(
+        db,
+        request,
+        user,
+        movement_type="expedient.location_synced",
+        entity_type="expedient",
+        entity_id=expedient.idExpedient,
+        archive_id=expedient.ps930IdArchive,
+        previous=None,
+        current=expedient.physical_location,
+        observation=payload.observation or "Expediente sincronizado con ubicacion heredada de sus carpetas.",
+    )
+    write_audit(db, action="expedient_location_assigned", module="archives", user_id=user.identification, entity="expedient", entity_id=expedient.idExpedient, new_values={"box_id": box.idBox, "location_path": expedient.physical_location, "folders": len(assigned)}, request=request)
+    db.commit()
+    db.refresh(expedient)
+    return {"expedient_id": expedient.idExpedient, "box_id": box.idBox, "assigned_folders": len(assigned), "location_path": expedient.physical_location, "movement_id": movement.idMovement}
+
+
+@router.post("/documents/{document_id}/assign-location")
+def assign_document_location(document_id: int, payload: DocumentLocationPayload, request: Request, user: User = Depends(require_permission("archive.manage")), db: Session = Depends(get_db)):
+    document = db.get(Document, document_id)
+    box = db.get(PhysicalBox, payload.box_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not box:
+        raise HTTPException(status_code=404, detail="Box not found")
+    if document.ps930IdArchive:
+        _require_archive_access(db, user, document.ps930IdArchive, {"admin", "operate"})
+    _require_archive_access(db, user, box.ps930IdArchive, {"admin", "operate"})
+    if document.ps930IdArchive and box.ps930IdArchive != document.ps930IdArchive:
+        raise HTTPException(status_code=422, detail="La caja pertenece a otro archivo. Usa transferencia documental para cambiar de archivo.")
+    folder = db.get(Folder, payload.folder_id) if payload.folder_id else db.get(Folder, document.ps952IdFolder) if document.ps952IdFolder else None
+    if not folder:
+        raise HTTPException(status_code=422, detail="El documento no tiene carpeta. Selecciona una carpeta del mismo archivo antes de asignar caja.")
+    _require_archive_access(db, user, folder.ps930IdArchive, {"admin", "operate"})
+    if folder.ps930IdArchive != box.ps930IdArchive:
+        raise HTTPException(status_code=422, detail="La carpeta y la caja deben pertenecer al mismo archivo.")
+    previous_path = _physical_location_path(db, "document", document.idDocument)
+    previous_folder = document.ps952IdFolder
+    if document.ps952IdFolder != folder.idFolder:
+        old_folder = db.get(Folder, document.ps952IdFolder) if document.ps952IdFolder else None
+        if old_folder and old_folder.document_count > 0:
+            old_folder.document_count -= 1
+        folder.document_count += 1
+        document.ps952IdFolder = folder.idFolder
+        document.ps950IdExpedient = folder.ps950IdExpedient
+        document.ps930IdArchive = folder.ps930IdArchive
+    folder_result = _move_folder_to_box(db, request, user, folder, box, payload.observation or "Ubicacion asignada desde documento sin ubicacion.")
+    document.physical_location = _physical_location_path(db, "document", document.idDocument)
+    movement = _location_movement(
+        db,
+        request,
+        user,
+        movement_type="document.moved" if previous_folder != document.ps952IdFolder else "document.location_synced",
+        entity_type="document",
+        entity_id=document.idDocument,
+        archive_id=document.ps930IdArchive,
+        previous=previous_path,
+        current=document.physical_location,
+        observation=payload.observation or "Documento sincronizado con ubicacion heredada de carpeta/caja.",
+    )
+    write_audit(db, action="document_location_assigned", module="archives", user_id=user.identification, entity="document", entity_id=document.idDocument, old_values={"folder_id": previous_folder, "location_path": previous_path}, new_values={"folder_id": document.ps952IdFolder, "box_id": box.idBox, "location_path": document.physical_location}, request=request)
+    db.commit()
+    db.refresh(document)
+    return {"document_id": document.idDocument, "folder_id": document.ps952IdFolder, "box_id": box.idBox, "location_path": document.physical_location, "movement_id": movement.idMovement, "folder_location": folder_result}
 
 
 @router.get("/entities/{entity_type}/{entity_id}/physical-location")
@@ -2305,7 +2445,7 @@ def entity_location_history(entity_type: str, entity_id: int, user: User = Depen
     rows = db.query(KardexMovement).filter(
         KardexMovement.entity_type == entity_type,
         KardexMovement.entity_id == entity_id,
-        KardexMovement.movement_type.in_(["location.assigned", "location.changed", "location.removed", "box.moved", "folder.moved", "document.moved", "box.created", "box.closed", "box.reopened", "shelf.created", "shelf.updated", "box.updated"]),
+        KardexMovement.movement_type.in_(["location.assigned", "location.changed", "location.removed", "box.moved", "folder.moved", "document.moved", "document.location_synced", "expedient.location_synced", "box.created", "box.closed", "box.reopened", "shelf.created", "shelf.updated", "box.updated"]),
     ).order_by(KardexMovement.created_at.desc()).all()
     return rows
 
@@ -2330,7 +2470,7 @@ def locations_summary(archive_id: int | None = None, user: User = Depends(requir
             "occupancy_percent": round((len(archive_boxes) / archive.capacity_units) * 100, 2) if archive.capacity_units else 0,
             "folders_without_box": db.query(Folder).filter(Folder.ps930IdArchive == archive.idArchive, Folder.ps936IdBox.is_(None)).count(),
         })
-    physical_events = ["location.assigned", "location.changed", "location.removed", "box.moved", "folder.moved", "document.moved", "box.created", "box.closed", "box.reopened", "shelf.created", "shelf.updated", "box.updated"]
+    physical_events = ["location.assigned", "location.changed", "location.removed", "box.moved", "folder.moved", "document.moved", "document.location_synced", "expedient.location_synced", "box.created", "box.closed", "box.reopened", "shelf.created", "shelf.updated", "box.updated"]
     return {
         "archives": len(ids),
         "shelves": db.query(Shelf).filter(Shelf.ps930IdArchive.in_(ids)).count(),
@@ -2397,7 +2537,7 @@ def locations_movements(
     if archive_id:
         _require_archive_access(db, user, archive_id)
         ids = [archive_id]
-    physical_events = ["location.assigned", "location.changed", "location.removed", "box.moved", "folder.moved", "document.moved", "box.created", "box.closed", "box.reopened", "shelf.created", "shelf.updated", "box.updated"]
+    physical_events = ["location.assigned", "location.changed", "location.removed", "box.moved", "folder.moved", "document.moved", "document.location_synced", "expedient.location_synced", "box.created", "box.closed", "box.reopened", "shelf.created", "shelf.updated", "box.updated"]
     query = db.query(KardexMovement).filter(or_(KardexMovement.ps930OriginArchiveId.in_(ids), KardexMovement.ps930DestinationArchiveId.in_(ids)), KardexMovement.movement_type.in_(physical_events))
     if movement_type:
         if movement_type not in physical_events:
