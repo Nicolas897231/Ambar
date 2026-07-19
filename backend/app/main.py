@@ -177,6 +177,18 @@ def ensure_document_core_columns() -> None:
                 connection.execute(text(f"ALTER TABLE ps522_document_files ADD COLUMN {name} {definition}"))
 
 
+def ensure_user_security_columns() -> None:
+    inspector = inspect(engine)
+    if "ps405_users" not in inspector.get_table_names():
+        return
+    existing = {item["name"] for item in inspector.get_columns("ps405_users")}
+    if "password_change_required" in existing:
+        return
+    definition = "BOOLEAN NOT NULL DEFAULT 0" if engine.dialect.name == "sqlite" else "TINYINT(1) NOT NULL DEFAULT 0"
+    with engine.begin() as connection:
+        connection.execute(text(f"ALTER TABLE ps405_users ADD COLUMN password_change_required {definition}"))
+
+
 def ensure_trd_lifecycle_columns() -> None:
     inspector = inspect(engine)
     with engine.begin() as connection:
@@ -303,6 +315,7 @@ async def lifespan(app: FastAPI):
         ensure_audit_enhanced_columns()
         ensure_operational_notification_columns()
         ensure_document_core_columns()
+        ensure_user_security_columns()
         ensure_trd_lifecycle_columns()
         ensure_phase3_custody_columns()
         ensure_hr_company_isolation()

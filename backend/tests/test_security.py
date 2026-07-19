@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -100,3 +101,64 @@ def test_session_status_is_silent_without_cookie_and_reports_authenticated_user(
         body = session.json()
         assert body["authenticated"] is True
         assert body["user"]["email"] == "admin@ambar.co"
+
+
+def test_password_change_required_and_forgot_password_cycle():
+    suffix = uuid4().hex[:8]
+    identification = str(uuid4().int)[:10]
+    email = f"pwd-cycle-{suffix}@ambar.co"
+    new_password = f"AmbarVault{suffix.upper()}!7"
+
+    with TestClient(app) as client:
+        headers = _headers(client)
+        created = client.post(
+            "/api/v1/users",
+            json={
+                "identification": identification,
+                "name": "Usuario Cambio Clave",
+                "email": email,
+                "role_names": ["viewer"],
+                "company_id": "default",
+                "location_id": 1,
+            },
+            headers=headers,
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["password_change_required"] is True
+
+        first_login = client.post("/api/v1/auth/login", json={"email": email, "password": identification})
+        assert first_login.status_code == 200, first_login.text
+        user_headers = {"Authorization": f"Bearer {first_login.json()['access_token']}"}
+        session = client.get("/api/v1/auth/session", headers=user_headers)
+        assert session.status_code == 200, session.text
+        assert session.json()["user"]["password_change_required"] is True
+
+        changed = client.post(
+            "/api/v1/auth/password/change",
+            json={
+                "current_password": identification,
+                "new_password": new_password,
+                "confirm_password": new_password,
+            },
+            headers=user_headers,
+        )
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["ok"] is True
+
+        after_change = client.get("/api/v1/auth/session", headers=user_headers)
+        assert after_change.status_code == 200, after_change.text
+        assert after_change.json()["user"]["password_change_required"] is False
+
+        new_login = client.post("/api/v1/auth/login", json={"email": email, "password": new_password})
+        assert new_login.status_code == 200, new_login.text
+
+        forgot = client.post("/api/v1/auth/password/forgot", json={"email": email})
+        assert forgot.status_code == 200, forgot.text
+        assert forgot.json()["ok"] is True
+
+        reset_login = client.post("/api/v1/auth/login", json={"email": email, "password": identification})
+        assert reset_login.status_code == 200, reset_login.text
+        reset_headers = {"Authorization": f"Bearer {reset_login.json()['access_token']}"}
+        reset_session = client.get("/api/v1/auth/session", headers=reset_headers)
+        assert reset_session.status_code == 200, reset_session.text
+        assert reset_session.json()["user"]["password_change_required"] is True

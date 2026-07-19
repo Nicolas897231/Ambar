@@ -6,7 +6,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import require_permission
-from app.core.security import enforce_password_policy, generate_totp_secret, hash_password, totp_uri
+from app.core.security import generate_totp_secret, hash_password, totp_uri
 from app.db.models import Permission, RefreshSession, Role, RolePermission, User, UserRole
 from app.db.session import get_db
 from app.services.audit import write_audit
@@ -97,6 +97,7 @@ class UserOut(BaseModel):
     position_name: str | None = None
     department_name: str | None = None
     auth_method: str = "temporary_password"
+    password_change_required: bool = False
     mfa_enabled: bool = False
     mfa_configured: bool = False
     mechanical_signature_enabled: bool = False
@@ -149,6 +150,7 @@ def _out(user: User, db: Session) -> UserOut:
         position_name=user.position_name,
         department_name=user.department_name,
         auth_method=user.auth_method or "temporary_password",
+        password_change_required=bool(user.password_change_required),
         mfa_enabled=bool(user.mfa_enabled),
         mfa_configured=bool(user.mfa_secret),
         mechanical_signature_enabled=bool(user.mechanical_signature_enabled),
@@ -301,12 +303,12 @@ def create_user(
 ) -> UserOut:
     if db.get(User, payload.identification) or db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=409, detail="User already exists")
-    try:
-        initial_password = payload.password or payload.identification
-        if initial_password != payload.identification:
-            enforce_password_policy(initial_password)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if payload.password and payload.password != payload.identification:
+        raise HTTPException(
+            status_code=422,
+            detail="La clave inicial se genera con la identificacion. El usuario debe cambiarla al ingresar.",
+        )
+    initial_password = payload.identification
     roles = db.query(Role).filter(Role.role_name.in_(payload.role_names)).all()
     if len(roles) != len(set(payload.role_names)):
         raise HTTPException(status_code=422, detail="Unknown role")
@@ -321,6 +323,7 @@ def create_user(
         position_name=payload.position_name,
         department_name=payload.department_name,
         auth_method=payload.auth_method,
+        password_change_required=True,
         mfa_enabled=payload.mfa_enabled,
         mfa_secret=generate_totp_secret() if payload.mfa_enabled else None,
         mechanical_signature_enabled=payload.mechanical_signature_enabled,
@@ -346,6 +349,7 @@ def create_user(
             "position_name": user.position_name,
             "department_name": user.department_name,
             "auth_method": user.auth_method,
+            "password_change_required": user.password_change_required,
             "mfa_enabled": user.mfa_enabled,
             "mechanical_signature_enabled": user.mechanical_signature_enabled,
             "digital_signature_ready": user.digital_signature_ready,

@@ -6,13 +6,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.deps import get_current_user, user_permissions
-from app.core.security import create_token, decode_token, verify_password_timing_safe, verify_totp
+from app.core.security import create_token, decode_token, enforce_password_policy, hash_password, verify_password_timing_safe, verify_totp
 from app.db.models import RefreshSession, User
 from app.db.session import get_db
 from app.services.audit import write_audit
 from app.services.cache import (
     blacklist_token,
     clear_failed_logins,
+    increment_window,
     is_account_locked,
     mark_totp_used,
     record_failed_login,
@@ -25,6 +26,16 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
     mfa_code: str | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+    confirm_password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
 
 
 class RefreshRequest(BaseModel):
@@ -44,6 +55,7 @@ class MeResponse(BaseModel):
     email: str
     roles: list[str]
     permissions: list[str]
+    password_change_required: bool = False
 
 
 class SessionStatusResponse(BaseModel):
@@ -53,6 +65,17 @@ class SessionStatusResponse(BaseModel):
 
 def _role_names(user: User) -> list[str]:
     return [item.role.role_name for item in user.roles]
+
+
+def _me_response(user: User, db: Session) -> MeResponse:
+    return MeResponse(
+        identification=user.identification,
+        name=user.name,
+        email=user.email,
+        roles=_role_names(user),
+        permissions=sorted(user_permissions(db, user)),
+        password_change_required=bool(user.password_change_required),
+    )
 
 
 def _is_expired(value: datetime) -> bool:
@@ -224,6 +247,116 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     )
 
 
+@router.post("/password/change")
+def change_password(
+    payload: ChangePasswordRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    if payload.new_password != payload.confirm_password:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Las claves no coinciden")
+    if not verify_password_timing_safe(payload.current_password, user.password_hash):
+        write_audit(
+            db,
+            action="password_change_failed",
+            event="permission_change",
+            module="auth",
+            user_id=user.identification,
+            auditable_type="User",
+            auditable_id=user.identification,
+            result="failed",
+            severity="warning",
+            tags=["authentication", "password"],
+            request=request,
+        )
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="La clave actual no es correcta")
+    try:
+        enforce_password_policy(payload.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    if verify_password_timing_safe(payload.new_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="La nueva clave debe ser diferente")
+
+    old_values = {"password_change_required": bool(user.password_change_required)}
+    user.password_hash = hash_password(payload.new_password)
+    user.password_change_required = False
+    write_audit(
+        db,
+        action="password_changed",
+        event="permission_change",
+        module="auth",
+        user_id=user.identification,
+        auditable_type="User",
+        auditable_id=user.identification,
+        old_values=old_values,
+        new_values={"password_change_required": False},
+        severity="critical",
+        tags=["authentication", "password"],
+        request=request,
+    )
+    db.commit()
+    return {"ok": True, "message": "Clave actualizada. Ya puedes continuar en AMBAR."}
+
+
+@router.post("/password/forgot")
+def forgot_password(payload: ForgotPasswordRequest, request: Request, db: Session = Depends(get_db)) -> dict:
+    ip = request.client.host if request.client else "unknown"
+    reset_window_seconds = 900
+    email_attempts = increment_window(f"password_reset_email:{payload.email}", reset_window_seconds)
+    ip_attempts = increment_window(f"password_reset_ip:{ip}", reset_window_seconds)
+    if (email_attempts and email_attempts > 3) or (ip_attempts and ip_attempts > 20):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos. Intenta nuevamente en unos minutos.",
+            headers={"Retry-After": str(reset_window_seconds)},
+        )
+
+    user = db.query(User).filter(User.email == payload.email).one_or_none()
+    if user and user.status == "active":
+        user.password_hash = hash_password(user.identification)
+        user.password_change_required = True
+        db.query(RefreshSession).filter(
+            RefreshSession.ps405Identification == user.identification,
+            RefreshSession.revoked.is_(False),
+        ).update({"revoked": True})
+        clear_failed_logins(payload.email)
+        clear_failed_logins(user.identification)
+        write_audit(
+            db,
+            action="password_reset_requested",
+            event="permission_change",
+            module="auth",
+            user_id=user.identification,
+            auditable_type="User",
+            auditable_id=user.identification,
+            new_values={"password_change_required": True},
+            severity="critical",
+            tags=["authentication", "password"],
+            request=request,
+        )
+        db.commit()
+    elif user:
+        write_audit(
+            db,
+            action="password_reset_inactive_user",
+            event="failed_login",
+            module="auth",
+            user_id=user.identification,
+            result="denied",
+            severity="warning",
+            tags=["authentication", "password"],
+            request=request,
+        )
+        db.commit()
+
+    return {
+        "ok": True,
+        "message": "Si la cuenta existe y esta activa, la clave fue restablecida a la identificacion y debera cambiarse al ingresar.",
+    }
+
+
 @router.post("/refresh", response_model=TokenResponse)
 def refresh(payload: RefreshRequest, request: Request, response: Response, db: Session = Depends(get_db)) -> TokenResponse:
     refresh_token = payload.refresh_token or request.cookies.get("ambar_refresh_token")
@@ -315,13 +448,7 @@ def logout(payload: RefreshRequest, request: Request, response: Response, db: Se
 
 @router.get("/me", response_model=MeResponse)
 def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> MeResponse:
-    return MeResponse(
-        identification=user.identification,
-        name=user.name,
-        email=user.email,
-        roles=_role_names(user),
-        permissions=sorted(user_permissions(db, user)),
-    )
+    return _me_response(user, db)
 
 
 @router.get("/session", response_model=SessionStatusResponse)
@@ -331,11 +458,5 @@ def session_status(request: Request, db: Session = Depends(get_db)) -> SessionSt
         return SessionStatusResponse(authenticated=False)
     return SessionStatusResponse(
         authenticated=True,
-        user=MeResponse(
-            identification=user.identification,
-            name=user.name,
-            email=user.email,
-            roles=_role_names(user),
-            permissions=sorted(user_permissions(db, user)),
-        ),
+        user=_me_response(user, db),
     )

@@ -102,6 +102,7 @@
       role,
       roles,
       permissions: me?.permissions || [],
+      password_change_required: !!me?.password_change_required,
       initials: (name || "AM").split(" ").slice(0, 2).map((p) => p[0]).join("").toUpperCase(),
       color: "var(--viz-violet)",
       archive: "AMBAR",
@@ -118,6 +119,12 @@
         throw new Error("No fue posible confirmar la sesion. Revisa que el gateway conserve las cookies de autenticacion.");
       }
       return me;
+    },
+    changePassword(payload) {
+      return request("/auth/password/change", { method: "POST", body: JSON.stringify(payload || {}) });
+    },
+    forgotPassword(email) {
+      return request("/auth/password/forgot", { method: "POST", body: JSON.stringify({ email }) });
     },
     async me(force = false) {
       void force;
@@ -152,6 +159,11 @@
     endpoints: {
       dashboard: () => request("/analytics/dashboard"),
       dashboardAdvanced: () => request("/analytics/advanced"),
+      dashboardWidgets: (layoutName = "operational") => request(`/analytics/widgets?layout_name=${encodeURIComponent(layoutName)}`),
+      dashboardLayout: (layoutName = "operational") => request(`/analytics/layout?layout_name=${encodeURIComponent(layoutName)}`),
+      dashboardLayouts: () => request("/analytics/layouts"),
+      dashboardTemplates: () => request("/analytics/templates"),
+      saveDashboardLayout: (payload) => request("/analytics/layout", { method: "PUT", body: JSON.stringify(payload || {}) }),
       documents: () => request("/documents?limit=100"),
       documentTypes: () => request("/documents/types"),
       documentFiles: (documentId) => request(`/documents/${documentId}/files`),

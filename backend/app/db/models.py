@@ -25,6 +25,7 @@ class User(Base, TimestampMixin):
     position_name: Mapped[str | None] = mapped_column(String(120))
     department_name: Mapped[str | None] = mapped_column(String(120))
     auth_method: Mapped[str] = mapped_column(String(40), default="temporary_password")
+    password_change_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     mfa_secret: Mapped[str | None] = mapped_column(String(64))
     mechanical_signature_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -88,6 +89,23 @@ class RefreshSession(Base):
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserDashboardLayout(Base, TimestampMixin):
+    __tablename__ = "ps418_user_dashboard_layouts"
+    __table_args__ = (
+        UniqueConstraint("ps405Identification", "layout_name"),
+        Index("ix_dashboard_layout_company_user", "company_id", "ps405Identification"),
+    )
+
+    idLayout: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ps405Identification: Mapped[str] = mapped_column(ForeignKey("ps405_users.identification"), nullable=False)
+    company_id: Mapped[str] = mapped_column(String(40), default="default", index=True)
+    layout_name: Mapped[str] = mapped_column(String(80), default="operational")
+    widgets: Mapped[list] = mapped_column(JSON, default=list)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    user: Mapped[User] = relationship()
 
 
 class Document(Base, TimestampMixin):

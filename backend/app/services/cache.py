@@ -53,7 +53,7 @@ def set_json(key: str, value: dict | list, ttl: int | None = None) -> None:
     if not client:
         return
     try:
-        client.setex(key, ttl or get_settings().cache_default_ttl_seconds, json.dumps(value, default=str))
+        client.set(key, json.dumps(value, default=str), ex=ttl or get_settings().cache_default_ttl_seconds)
     except Exception:
         return
 
@@ -123,7 +123,7 @@ def record_failed_login(identifier: str) -> int:
         attempts = int(attempts)
         if attempts >= LOGIN_MAX_ATTEMPTS:
             lockout_key = f"{_LOGIN_LOCKOUT_PREFIX}{identifier}"
-            client.setex(lockout_key, LOGIN_LOCKOUT_SECONDS, "1")
+            client.set(lockout_key, "1", ex=LOGIN_LOCKOUT_SECONDS)
         return attempts
     except Exception:
         return 0
@@ -149,7 +149,7 @@ def blacklist_token(jti: str, ttl_seconds: int) -> None:
     if not client:
         return
     try:
-        client.setex(f"{_TOKEN_BLACKLIST_PREFIX}{jti}", ttl_seconds, "1")
+        client.set(f"{_TOKEN_BLACKLIST_PREFIX}{jti}", "1", ex=ttl_seconds)
     except Exception:
         return
 

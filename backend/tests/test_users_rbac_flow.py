@@ -67,6 +67,7 @@ def test_users_roles_permissions_and_soft_deactivation_flow():
         assert created_user.status_code == 201, created_user.text
         user = created_user.json()
         assert user["status"] == "active"
+        assert user["password_change_required"] is True
         assert user["roles"] == [role_name]
         assert "task.manage" in user["permissions"]
         assert "users.manage" not in user["permissions"]
@@ -77,6 +78,7 @@ def test_users_roles_permissions_and_soft_deactivation_flow():
         me = client.get("/api/v1/auth/me", headers=user_headers)
         assert me.status_code == 200, me.text
         assert me.json()["roles"] == [role_name]
+        assert me.json()["password_change_required"] is True
         assert set(me.json()["permissions"]) == {"document.read", "document.transfer", "notification.read", "task.manage"}
 
         mfa_setup = client.post(f"/api/v1/users/{identification}/mfa/setup", headers=headers)
@@ -131,7 +133,7 @@ def test_enterprise_admin_trd_hr_and_password_feedback():
             headers=headers,
         )
         assert weak_user.status_code == 422
-        assert "at least 12" in weak_user.json()["detail"]
+        assert "clave inicial" in weak_user.json()["detail"]
 
         series = client.post(
             "/api/v1/trd/series",

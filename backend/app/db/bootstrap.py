@@ -153,12 +153,14 @@ def seed_database(db: Session) -> None:
     if admin:
         admin.email = "admin@ambar.co"
         admin.status = "active"
+        admin.password_change_required = False
     else:
         admin = User(
             identification="1000000000",
             name="Administrador Ambar",
             email="admin@ambar.co",
             password_hash=hash_password("ChangeMe123!"),
+            password_change_required=False,
             status="active",
             company_id="default",
             location_id=1,

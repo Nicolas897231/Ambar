@@ -92,6 +92,9 @@ function Root() {
   }
 
   if (!user) return <LoginScreen onAuth={onAuth} />;
+  if (user.password_change_required) {
+    return <PasswordChangeScreen user={user} onChanged={(freshUser) => { setSession(freshUser); setUser(freshUser); navigate("dashboard"); }} onLogout={onLogout} />;
+  }
 
   const PAGES = {
     dashboard: window.DashboardPage, expedients: window.ExpedientsPage, documents: window.DocumentsPage,
