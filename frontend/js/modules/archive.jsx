@@ -271,8 +271,10 @@ function AssignFolderBoxModal({ folder, onClose, onDone }) {
   const [boxId, setBoxId] = arS("");
   const [observation, setObservation] = arS("");
   const archiveId = folder.archive_id || folder.ps930IdArchive;
-  const { data: boxesRaw, loading } = useLiveData(() => archiveId ? AmbarAPI.get(`/archives/boxes?archive_id=${encodeURIComponent(archiveId)}`) : AmbarAPI.endpoints.boxes(), [], [archiveId]);
+  const { data: boxesRaw, loading, error } = useLiveData(() => archiveId ? AmbarAPI.get(`/archives/boxes?archive_id=${encodeURIComponent(archiveId)}`) : AmbarAPI.endpoints.boxes(), [], [archiveId]);
+  const { data: allBoxesRaw } = useLiveData(() => AmbarAPI.endpoints.boxes(), [], []);
   const boxes = AmbarAPI.listFrom(boxesRaw);
+  const allBoxes = AmbarAPI.listFrom(allBoxesRaw);
   const submit = async () => {
     if (!boxId) {
       toast("Selecciona una caja para ubicar la carpeta.", { tone: "danger", title: "Falta caja" });
@@ -291,8 +293,18 @@ function AssignFolderBoxModal({ folder, onClose, onDone }) {
     <Modal title="Asignar caja" sub={folder.folder_code || folder.document_name || "Unidad sin ubicacion"} onClose={onClose}
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button icon="check" onClick={submit}>Guardar ubicacion</Button></>}>
       {loading ? <Skeleton rows={3} /> : <div className="col gap4">
+        {error && <Card pad="sm" style={{ background: "var(--danger-bg)" }}><CardHead title="No fue posible cargar cajas" sub={error} icon="alert-triangle" /></Card>}
+        {!error && boxes.length === 0 && (
+          <Card pad="sm" style={{ background: "var(--panel-2)" }}>
+            <CardHead
+              title="No hay cajas disponibles para este archivo"
+              sub={allBoxes.length ? "Existen cajas en otros archivos, pero no se pueden usar aqui porque la carpeta debe quedar en una caja del mismo archivo. Crea una caja en este archivo o mueve la unidad mediante transferencia documental." : "Primero crea una caja en Archivo Fisico para poder ubicar esta carpeta."}
+              icon="info"
+            />
+          </Card>
+        )}
         <Field label="Caja" required>
-          <select value={boxId} onChange={e => setBoxId(e.target.value)}>
+          <select value={boxId} onChange={e => setBoxId(e.target.value)} disabled={boxes.length === 0}>
             <option value="">Seleccionar caja</option>
             {boxes.map(box => <option key={box.idBox || box.id} value={box.idBox || box.id}>{box.box_code || box.code} / {box.location_path || "Sin ruta topografica"}</option>)}
           </select>
@@ -309,8 +321,10 @@ function AssignExpedientBoxModal({ expedient, onClose, onDone }) {
   const [folderName, setFolderName] = arS("Carpeta principal");
   const [observation, setObservation] = arS("");
   const archiveId = expedient.archive_id || expedient.ps930IdArchive;
-  const { data: boxesRaw, loading } = useLiveData(() => archiveId ? AmbarAPI.get(`/archives/boxes?archive_id=${encodeURIComponent(archiveId)}`) : AmbarAPI.endpoints.boxes(), [], [archiveId]);
+  const { data: boxesRaw, loading, error } = useLiveData(() => archiveId ? AmbarAPI.get(`/archives/boxes?archive_id=${encodeURIComponent(archiveId)}`) : AmbarAPI.endpoints.boxes(), [], [archiveId]);
+  const { data: allBoxesRaw } = useLiveData(() => AmbarAPI.endpoints.boxes(), [], []);
   const boxes = AmbarAPI.listFrom(boxesRaw);
+  const allBoxes = AmbarAPI.listFrom(allBoxesRaw);
   const submit = async () => {
     if (!boxId) {
       toast("Selecciona la caja donde quedara el expediente.", { tone: "danger", title: "Falta caja" });
@@ -337,8 +351,18 @@ function AssignExpedientBoxModal({ expedient, onClose, onDone }) {
         <Card pad="sm" style={{ background: "var(--panel-2)" }}>
           <CardHead title="Ubicacion heredada" sub="AMBAR asigna la caja a las carpetas del expediente. Si el expediente no tiene carpetas, crea una carpeta principal." icon="info" />
         </Card>
+        {error && <Card pad="sm" style={{ background: "var(--danger-bg)" }}><CardHead title="No fue posible cargar cajas" sub={error} icon="alert-triangle" /></Card>}
+        {!error && boxes.length === 0 && (
+          <Card pad="sm" style={{ background: "var(--panel-2)" }}>
+            <CardHead
+              title="No hay cajas disponibles para este archivo"
+              sub={allBoxes.length ? "Hay cajas autorizadas en otros archivos, pero este expediente solo puede ubicarse en una caja de su mismo archivo." : "Primero crea una caja en Archivo Fisico para poder ubicar este expediente."}
+              icon="info"
+            />
+          </Card>
+        )}
         <Field label="Caja destino" required>
-          <select value={boxId} onChange={e => setBoxId(e.target.value)}>
+          <select value={boxId} onChange={e => setBoxId(e.target.value)} disabled={boxes.length === 0}>
             <option value="">Seleccionar caja</option>
             {boxes.map(box => <option key={box.idBox || box.id} value={box.idBox || box.id}>{box.box_code || box.code} / {box.location_path || "Sin ruta topografica"}</option>)}
           </select>
@@ -357,9 +381,11 @@ function AssignDocumentLocationModal({ document, onClose, onDone }) {
   const [observation, setObservation] = arS("");
   const archiveId = document.archive_id || document.ps930IdArchive;
   const { data: foldersRaw, loading: foldersLoading } = useLiveData(() => archiveId ? AmbarAPI.get("/archives/folders") : AmbarAPI.endpoints.folders(), [], [archiveId]);
-  const { data: boxesRaw, loading: boxesLoading } = useLiveData(() => archiveId ? AmbarAPI.get(`/archives/boxes?archive_id=${encodeURIComponent(archiveId)}`) : AmbarAPI.endpoints.boxes(), [], [archiveId]);
+  const { data: boxesRaw, loading: boxesLoading, error: boxesError } = useLiveData(() => archiveId ? AmbarAPI.get(`/archives/boxes?archive_id=${encodeURIComponent(archiveId)}`) : AmbarAPI.endpoints.boxes(), [], [archiveId]);
+  const { data: allBoxesRaw } = useLiveData(() => AmbarAPI.endpoints.boxes(), [], []);
   const folders = AmbarAPI.listFrom(foldersRaw).filter(folder => !archiveId || Number(folder.archive_id || folder.ps930IdArchive) === Number(archiveId));
   const boxes = AmbarAPI.listFrom(boxesRaw);
+  const allBoxes = AmbarAPI.listFrom(allBoxesRaw);
   const submit = async () => {
     if (!folderId) {
       toast("Selecciona la carpeta documental del documento.", { tone: "danger", title: "Falta carpeta" });
@@ -389,6 +415,16 @@ function AssignDocumentLocationModal({ document, onClose, onDone }) {
         <Card pad="sm" style={{ background: "var(--panel-2)" }}>
           <CardHead title="Sin escritura manual" sub="Selecciona carpeta y caja. El documento toma automaticamente la ruta fisica completa." icon="shield-check" />
         </Card>
+        {boxesError && <Card pad="sm" style={{ background: "var(--danger-bg)" }}><CardHead title="No fue posible cargar cajas" sub={boxesError} icon="alert-triangle" /></Card>}
+        {!boxesError && boxes.length === 0 && (
+          <Card pad="sm" style={{ background: "var(--panel-2)" }}>
+            <CardHead
+              title="No hay cajas disponibles para este archivo"
+              sub={allBoxes.length ? "Hay cajas en otros archivos, pero el documento debe heredar ubicacion desde una carpeta y caja del mismo archivo." : "Primero crea una caja en Archivo Fisico para poder ubicar este documento."}
+              icon="info"
+            />
+          </Card>
+        )}
         <Field label="Carpeta documental" required>
           <select value={folderId} onChange={e => setFolderId(e.target.value)}>
             <option value="">Seleccionar carpeta</option>
@@ -396,7 +432,7 @@ function AssignDocumentLocationModal({ document, onClose, onDone }) {
           </select>
         </Field>
         <Field label="Caja destino" required>
-          <select value={boxId} onChange={e => setBoxId(e.target.value)}>
+          <select value={boxId} onChange={e => setBoxId(e.target.value)} disabled={boxes.length === 0}>
             <option value="">Seleccionar caja</option>
             {boxes.map(box => <option key={box.idBox || box.id} value={box.idBox || box.id}>{box.box_code || box.code} / {box.location_path || "Sin ruta topografica"}</option>)}
           </select>
