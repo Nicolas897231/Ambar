@@ -20,15 +20,18 @@ function normalizeOcrJob(j, i) {
   };
 }
 
-function DigitizationPage({ user }) {
+function DigitizationPage({ user, routeParams = {} }) {
   const toast = useToast();
-  const [tab, setTab] = dgS("queue");
+  const [tab, setTab] = dgS(routeParams.tab || "queue");
   const [ocrPayload, setOcrPayload] = dgS({ document_id: "", engine: "tesseract-compatible" });
   const jobsLive = useLiveData(() => AmbarAPI.endpoints.ocrJobs(), [], []);
   const { data: rawJobs, loading } = jobsLive;
   const { data: docsRaw } = useLiveData(() => AmbarAPI.endpoints.documents(), [], []);
   const jobs = AmbarAPI.listFrom(rawJobs).map(normalizeOcrJob);
   const documents = AmbarAPI.listFrom(docsRaw);
+  React.useEffect(() => {
+    if (routeParams.tab && routeParams.tab !== tab) setTab(routeParams.tab);
+  }, [routeParams.tab]);
   const total = jobs.length;
   const today = jobs.filter(j => j.created_at && String(j.created_at).startsWith(new Date().toISOString().slice(0, 10))).length;
   const avg = total ? Math.round(jobs.reduce((a, b) => a + (b.confidence || 0), 0) / total) : 0;

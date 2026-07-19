@@ -155,11 +155,16 @@ function TransferDetail({ transfer, onClose }) {
   );
 }
 
-function TransfersPage({ user }) {
+function TransfersPage({ user, routeParams = {} }) {
   const [wiz, setWiz] = trS(false);
   const [detail, setDetail] = trS(null);
   const liveBatches = window.useLiveData(() => window.AmbarAPI.endpoints.transfers().then(mapTransfers), [], []);
   const batches = liveBatches.data;
+  React.useEffect(() => {
+    if (!routeParams.batch || !Array.isArray(batches) || batches.length === 0) return;
+    const match = batches.find((batch) => String(batch.idBatch) === String(routeParams.batch) || String(batch.id) === String(routeParams.batch));
+    if (match) setDetail(match);
+  }, [routeParams.batch, batches]);
   const lower = value => String(value || "").toLowerCase();
   const activeCount = batches.filter(b => !["aceptada", "received", "closed", "cerrada"].includes(lower(b.state))).length;
   const transitCount = batches.filter(b => lower(b.state).includes("trans")).length;

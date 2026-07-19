@@ -1,6 +1,6 @@
-function greeting() {
+﻿function greeting() {
   const hour = new Date().getHours();
-  if (hour < 12) return "Buenos días";
+  if (hour < 12) return "Buenos dÃ­as";
   if (hour < 19) return "Buenas tardes";
   return "Buenas noches";
 }
@@ -36,7 +36,7 @@ function metricRows(widget) {
     incomplete_documents: "Incompletos",
     active_users: "Usuarios",
     archived_boxes: "Cajas",
-    active_loans: "Préstamos",
+    active_loans: "PrÃ©stamos",
     overdue_loans: "Vencidos",
     pending_transfers: "Transferencias",
     risk_level: "Riesgo",
@@ -46,7 +46,7 @@ function metricRows(widget) {
     pending_receptions: "Recepciones",
     overdue_tasks: "Vencidas",
     activity_daily: "Eventos",
-    action_required: "Acción requerida",
+    action_required: "AcciÃ³n requerida",
   };
   return Object.entries(data).map(([key, value]) => ({
     label: labels[key] || key.replace(/_/g, " "),
@@ -55,6 +55,14 @@ function metricRows(widget) {
 }
 
 function dashboardQueue(dashboard, advanced, notifications, tasks, user) {
+  const transferAlert = notifications.find((item) => {
+    const type = String(item.type || "").toLowerCase();
+    const module = String(item.module || "").toLowerCase();
+    const entity = String(item.related_entity_type || "").toLowerCase();
+    return entity === "transfer_batch" || module === "transfers" || type.includes("transfer") || type.includes("reception");
+  });
+  const loanAlert = notifications.find((item) => String(item.type || "").toLowerCase().includes("loan"));
+  const taskAlert = tasks.find((item) => item.action_url || item.related_entity_type || item.module);
   const queue = [
     {
       key: "digitalize",
@@ -62,6 +70,7 @@ function dashboardQueue(dashboard, advanced, notifications, tasks, user) {
       detail: `${dashboard.incomplete_documents || 0} registros sin archivo digital`,
       value: dashboard.incomplete_documents || 0,
       route: "digitization",
+      action_url: "digitization?tab=queue",
       icon: "scan-line",
       tone: "warn",
       perms: ["ocr.manage", "analytics.view"],
@@ -72,16 +81,18 @@ function dashboardQueue(dashboard, advanced, notifications, tasks, user) {
       detail: `${dashboard.pending_transfers || 0} transferencias en proceso`,
       value: dashboard.pending_transfers || 0,
       route: "transfers",
+      action_url: transferAlert?.action_url || "transfers",
       icon: "route",
       tone: "brand",
       perms: ["transfer.manage", "transfer.batch_manage", "analytics.view"],
     },
     {
       key: "loan",
-      title: "Gestionar préstamos vencidos",
-      detail: `${dashboard.overdue_loans || 0} préstamos requieren devolución`,
+      title: "Gestionar prÃ©stamos vencidos",
+      detail: `${dashboard.overdue_loans || 0} prÃ©stamos requieren devoluciÃ³n`,
       value: dashboard.overdue_loans || 0,
       route: "loans",
+      action_url: loanAlert?.action_url || "loans",
       icon: "package-check",
       tone: "danger",
       perms: ["document.transfer", "transfer.manage", "analytics.view"],
@@ -92,6 +103,7 @@ function dashboardQueue(dashboard, advanced, notifications, tasks, user) {
       detail: `${advanced.pending_tasks || 0} tareas pendientes, ${advanced.overdue_tasks || 0} vencidas`,
       value: advanced.pending_tasks || 0,
       route: "dashboard",
+      action_url: taskAlert?.action_url || "dashboard",
       icon: "list-checks",
       tone: "info",
       perms: ["notification.read", "analytics.view"],
@@ -102,6 +114,7 @@ function dashboardQueue(dashboard, advanced, notifications, tasks, user) {
       detail: `${notifications.length || 0} notificaciones visibles para tu usuario`,
       value: notifications.length || 0,
       route: "dashboard",
+      action_url: notifications[0]?.action_url || "dashboard",
       icon: "bell",
       tone: "brand",
       perms: ["notification.read", "analytics.view"],
@@ -178,7 +191,7 @@ function renderWidgetBody(widget, navigate) {
         {widget.data?.length ? (
           <Donut centerValue={formatCount(widget.center_value || 0)} centerLabel={widget.center_label || "items"} data={widget.data} />
         ) : (
-          <Empty icon={widget.icon || "pie-chart"} title="Sin distribución">No hay suficientes datos para calcular esta gráfica.</Empty>
+          <Empty icon={widget.icon || "pie-chart"} title="Sin distribuciÃ³n">No hay suficientes datos para calcular esta grÃ¡fica.</Empty>
         )}
       </Card>
     );
@@ -193,17 +206,23 @@ function renderWidgetBody(widget, navigate) {
         ) : (
           <div className="timeline">
             {widget.data.slice(0, 8).map((item, index) => (
-              <div key={item.id || index} className="tl-item brand">
+              <button
+                type="button"
+                key={item.id || index}
+                className="tl-item brand"
+                style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left", cursor: item.action_url || item.route ? "pointer" : "default" }}
+                onClick={() => navigate(item.action_url || item.route || item.module || "dashboard")}
+              >
                 <div className="tl-dot"><Icon name="bell" size={14} /></div>
                 <div className="tl-body">
                   <div className="tl-title">
-                    <b>{item.title || "Notificación"}</b> {item.message || item.description || ""}
+                    <b>{item.title || "NotificaciÃ³n"}</b> {item.message || item.description || ""}
                   </div>
                   <div className="tl-meta">
                     {item.created_at ? new Date(item.created_at).toLocaleString("es-CO") : item.module || "general"}
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -219,7 +238,7 @@ function renderWidgetBody(widget, navigate) {
       ) : (
         <div className="col" style={{ gap: "var(--s2)" }}>
           {widget.data.slice(0, 8).map((item, index) => (
-            <button key={item.id || item.key || index} className="list-row" style={{ width: "100%", textAlign: "left", cursor: "pointer" }} onClick={() => navigate(item.route || item.module || "dashboard")}>
+            <button key={item.id || item.key || index} className="list-row" style={{ width: "100%", textAlign: "left", cursor: "pointer" }} onClick={() => navigate(item.action_url || item.route || item.module || "dashboard")}>
               <span className="comp-check no" style={{ borderColor: "var(--line-strong)" }} />
               <span className="grow" style={{ fontSize: "var(--fs-sm)" }}>{item.title || item.label || item.description || "Elemento operativo"}</span>
               {item.status && <Badge tone={item.status === "overdue" ? "danger" : item.status === "completed" ? "success" : "outline"}>{item.status}</Badge>}
@@ -298,12 +317,12 @@ function DashboardPage({ user, navigate }) {
   }, [widgetState, availableWidgets, selectedLayoutName]);
 
   const metrics = React.useMemo(() => ([
-    { key: "documents", label: "Documentos registrados", value: dashboard.total_documents || 0, icon: "file-text", tone: "brand", foot: "según base documental", perms: ["document.read", "analytics.view"] },
+    { key: "documents", label: "Documentos registrados", value: dashboard.total_documents || 0, icon: "file-text", tone: "brand", foot: "segÃºn base documental", perms: ["document.read", "analytics.view"] },
     { key: "digitalized", label: "Documentos digitalizados", value: dashboard.digitalized_documents || 0, icon: "scan-line", tone: "info", foot: `${dashboard.digitization_percent || 0}% del total`, perms: ["ocr.manage", "analytics.view"] },
     { key: "pending_digital", label: "Pendientes de digitalizar", value: dashboard.incomplete_documents || 0, icon: "clock", tone: "warn", foot: "sin archivo digital", perms: ["ocr.manage", "analytics.view"] },
     { key: "users", label: "Usuarios activos", value: dashboard.active_users || 0, icon: "users", tone: "brand", foot: "cuentas habilitadas", perms: ["users.manage", "analytics.view"] },
     { key: "boxes", label: "Cajas archivadas", value: dashboard.archived_boxes || 0, icon: "boxes", tone: "info", foot: "en archivos autorizados", perms: ["archive.manage", "analytics.view"] },
-    { key: "loans", label: "Préstamos activos", value: dashboard.active_loans || 0, icon: "package-check", tone: "warn", foot: `${dashboard.overdue_loans || 0} vencidos`, perms: ["document.transfer", "analytics.view"] },
+    { key: "loans", label: "PrÃ©stamos activos", value: dashboard.active_loans || 0, icon: "package-check", tone: "warn", foot: `${dashboard.overdue_loans || 0} vencidos`, perms: ["document.transfer", "analytics.view"] },
     { key: "tasks", label: "Tareas pendientes", value: advanced.pending_tasks || 0, icon: "list-checks", tone: "danger", foot: `${advanced.overdue_tasks || 0} vencidas`, perms: ["notification.read", "analytics.view"] },
     { key: "transfers", label: "Transferencias pendientes", value: dashboard.pending_transfers || 0, icon: "route", tone: "brand", foot: "en proceso", perms: ["transfer.manage", "analytics.view"] },
   ]), [dashboard, advanced]);
@@ -354,7 +373,7 @@ function DashboardPage({ user, navigate }) {
       setLayoutNameDraft(response?.layout_name || layout_name);
       setWidgetState((prev) => ({ ...prev, layout_name: response?.layout_name || layout_name, layout: responseWidgets, widgets: responseWidgets }));
       setLayoutRevision((value) => value + 1);
-      toast("El tablero quedó guardado para tu usuario.", { tone: "ok", title: "Dashboard actualizado" });
+      toast("El tablero quedÃ³ guardado para tu usuario.", { tone: "ok", title: "Dashboard actualizado" });
       setCustomizeOpen(false);
     } catch (error) {
       toast(error.message || "No fue posible guardar el tablero.", { tone: "danger", title: "Error" });
@@ -464,10 +483,10 @@ function DashboardPage({ user, navigate }) {
             title="Trabajo para hoy"
             sub="Acciones reales calculadas con datos del backend"
             icon="list-checks"
-            action={<Badge tone={queue.length ? "warning" : "success"}>{queue.length ? "Requiere acción" : "Al día"}</Badge>}
+            action={<Badge tone={queue.length ? "warning" : "success"}>{queue.length ? "Requiere acciÃ³n" : "Al dÃ­a"}</Badge>}
           />
           {queue.length === 0 ? (
-            <Empty icon="check-circle" title="Sin pendientes críticos">No hay vencimientos, transferencias ni tareas urgentes para tu usuario.</Empty>
+            <Empty icon="check-circle" title="Sin pendientes crÃ­ticos">No hay vencimientos, transferencias ni tareas urgentes para tu usuario.</Empty>
           ) : (
             <div className="action-board">
               {queue.slice(0, 6).map((item) => (
@@ -485,7 +504,7 @@ function DashboardPage({ user, navigate }) {
         </Card>
 
         <Card className="an-rise">
-          <CardHead title="Accesos rápidos" sub="Rutas frecuentes según permisos" icon="sparkles" />
+          <CardHead title="Accesos rÃ¡pidos" sub="Rutas frecuentes segÃºn permisos" icon="sparkles" />
           <div className="quick-actions">
             {quick.map((item) => (
               <button key={item.route} className="quick-action" onClick={() => navigate(item.route)}>
@@ -513,18 +532,23 @@ function DashboardPage({ user, navigate }) {
           ) : (
             <div className="timeline">
               {notifications.slice(0, 8).map((item, index) => (
-                <div key={item.id || index} className="tl-item brand">
+                <button
+                  type="button"
+                  key={item.id || index}
+                  className="tl-item brand"
+                  style={{ width: "100%", border: 0, background: "transparent", padding: 0, textAlign: "left", cursor: item.action_url || item.route ? "pointer" : "default" }}
+                  onClick={() => navigate(item.action_url || item.route || item.module || "dashboard")}
+                >
                   <div className="tl-dot"><Icon name="bell" size={14} /></div>
                   <div className="tl-body">
-                    <div className="tl-title"><b>{item.title || "Notificación"}</b> {item.message || ""}</div>
+                    <div className="tl-title"><b>{item.title || "NotificaciÃ³n"}</b> {item.message || ""}</div>
                     <div className="tl-meta">{item.created_at ? new Date(item.created_at).toLocaleString("es-CO") : item.module || "general"}</div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
         </Card>
-
         <Card className="an-rise">
           <CardHead title="Tareas pendientes" sub="Asignadas a ti" icon="list-checks" />
           {tasks.length === 0 ? (
@@ -532,7 +556,7 @@ function DashboardPage({ user, navigate }) {
           ) : (
             <div className="col" style={{ gap: "var(--s2)" }}>
               {tasks.slice(0, 8).map((task, index) => (
-                <button key={task.id || index} className="list-row" style={{ width: "100%", textAlign: "left", cursor: "pointer" }} onClick={() => navigate(task.module || "dashboard")}>
+                <button key={task.id || index} className="list-row" style={{ width: "100%", textAlign: "left", cursor: "pointer" }} onClick={() => navigate(task.action_url || task.route || task.module || "dashboard")}>
                   <span className="comp-check no" style={{ borderColor: "var(--line-strong)" }} />
                   <span className="grow" style={{ fontSize: "var(--fs-sm)" }}>{task.title || task.description || "Tarea operativa"}</span>
                   <Badge tone={task.status === "overdue" ? "danger" : "outline"}>{task.status || "pendiente"}</Badge>
@@ -546,7 +570,7 @@ function DashboardPage({ user, navigate }) {
       {customizeOpen && (
         <Drawer
           title="Personalizar tablero"
-          sub="Elige qué widgets ver, ocultar o reordenar. También puedes guardar un tablero nuevo."
+          sub="Elige quÃ© widgets ver, ocultar o reordenar. TambiÃ©n puedes guardar un tablero nuevo."
           onClose={() => setCustomizeOpen(false)}
           wide
           headExtra={
@@ -558,10 +582,10 @@ function DashboardPage({ user, navigate }) {
           <div className="col" style={{ gap: "var(--s4)" }}>
             <Card pad="sm">
               <div className="grid cols-2" style={{ gap: "var(--s3)" }}>
-                <Field label="Nombre del tablero" help="Si cambias el nombre, AMBAR guardará un tablero nuevo para tu usuario.">
+                <Field label="Nombre del tablero" help="Si cambias el nombre, AMBAR guardarÃ¡ un tablero nuevo para tu usuario.">
                   <input value={layoutNameDraft} onChange={(e) => setLayoutNameDraft(e.target.value)} placeholder="operational, gerencia, archivo, rrhh..." />
                 </Field>
-                <Field label="Tablero predeterminado" help="Activa esta opción si quieres que este sea el tablero que cargue por defecto.">
+                <Field label="Tablero predeterminado" help="Activa esta opciÃ³n si quieres que este sea el tablero que cargue por defecto.">
                   <div className="row" style={{ paddingTop: 8 }}>
                     <Switch checked={makeDefault} onChange={setMakeDefault} />
                     <span style={{ marginLeft: 12 }}>Usar como tablero principal</span>
@@ -571,11 +595,11 @@ function DashboardPage({ user, navigate }) {
             </Card>
 
             <Empty icon="layout-grid" title="Tablero configurable">
-              Usa una selección segura de widgets reales. AMBAR no permite métricas libres ni consultas riesgosas.
+              Usa una selecciÃ³n segura de widgets reales. AMBAR no permite mÃ©tricas libres ni consultas riesgosas.
             </Empty>
 
             <Card pad="sm">
-              <CardHead title="Plantillas sugeridas" sub="Empieza desde un tablero pensado para el rol o área del usuario." icon="sparkles" />
+              <CardHead title="Plantillas sugeridas" sub="Empieza desde un tablero pensado para el rol o Ã¡rea del usuario." icon="sparkles" />
               {dashboardTemplates.length === 0 ? (
                 <Empty icon="layout-grid" title="Sin plantillas sugeridas">Este usuario no tiene una plantilla sugerida distinta al tablero operativo.</Empty>
               ) : (

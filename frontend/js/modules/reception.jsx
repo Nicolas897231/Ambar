@@ -106,12 +106,17 @@ function ReceptionDetail({ batch, onClose, onRefresh }) {
   );
 }
 
-function ReceptionPage() {
+function ReceptionPage({ routeParams = {} }) {
   const [selected, setSelected] = recS(null);
   const [refreshKey, setRefreshKey] = recS(0);
   const [filter, setFilter] = recS("pending");
   const { data: rawBatches, loading } = useLiveData(() => AmbarAPI.endpoints.transfers(), [], [refreshKey]);
   const all = AmbarAPI.listFrom(rawBatches);
+  React.useEffect(() => {
+    if (!routeParams.batch || !Array.isArray(all) || all.length === 0) return;
+    const match = all.find((batch) => String(batch.idBatch) === String(routeParams.batch) || String(batch.id) === String(routeParams.batch));
+    if (match) setSelected(match);
+  }, [routeParams.batch, all]);
   const rows = all.filter((batch) => {
     if (filter === "all") return true;
     if (filter === "pending") return RECEPTION_STATUSES.includes(String(batch.status || "").toLowerCase()) && !["received", "closed"].includes(String(batch.status || "").toLowerCase());

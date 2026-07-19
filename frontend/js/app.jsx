@@ -12,18 +12,33 @@ function ComingSoon({ route }) {
   );
 }
 
+function parseRouteState() {
+  const rawHash = (location.hash || "").replace(/^#\/?/, "");
+  const rawPath = location.pathname.replace(/^\/+|\/+$/g, "");
+  const raw = rawHash || (rawPath && rawPath !== "index.html" && rawPath !== "login" ? rawPath : "dashboard");
+  const [route, queryString] = String(raw).split("?");
+  const params = {};
+  const search = new URLSearchParams(queryString || "");
+  for (const [key, value] of search.entries()) params[key] = value;
+  const aliases = {
+    "transfer-batches": "transfers",
+    transfer_batches: "transfers",
+    ocr: "digitization",
+    "ocr-jobs": "digitization",
+    tasks: "dashboard",
+  };
+  const normalizedRoute = aliases[String(route || "dashboard").replace(/^\/+/, "")] || String(route || "dashboard").replace(/^\/+/, "");
+  return { route: normalizedRoute || "dashboard", params };
+}
+
 function getRoute() {
-  const h = (location.hash || "").replace(/^#\/?/, "");
-  if (h) return h;
-  const path = location.pathname.replace(/^\/+|\/+$/g, "");
-  if (path && path !== "index.html" && path !== "login") return path;
-  return "dashboard";
+  return parseRouteState().route;
 }
 
 function Root() {
   const [user, setUser] = useState(() => getSession());
   const [checkingSession, setCheckingSession] = useState(true);
-  const [route, setRoute] = useState(getRoute());
+  const [routeState, setRouteState] = useState(() => parseRouteState());
   const [theme, setThemeState] = useState(getTheme());
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
@@ -51,7 +66,7 @@ function Root() {
     return () => { alive = false; };
   }, []);
   useEffect(() => {
-    const onHash = () => setRoute(getRoute());
+    const onHash = () => setRouteState(parseRouteState());
     const onExpired = () => {
       clearSession();
       setUser(null);
@@ -65,7 +80,30 @@ function Root() {
     };
   }, []);
 
-  const navigate = useCallback((key) => { location.hash = "/" + key; setRoute(key); window.scrollTo(0, 0); }, []);
+  const route = routeState.route;
+  const routeParams = routeState.params || {};
+
+  const navigate = useCallback((target, params = {}) => {
+    const rawTarget = typeof target === "object" && target ? target : { route: target, params };
+    const aliases = {
+      "transfer-batches": "transfers",
+      transfer_batches: "transfers",
+      ocr: "digitization",
+      "ocr-jobs": "digitization",
+      tasks: "dashboard",
+    };
+    const rawRoute = String(rawTarget.route || "dashboard").replace(/^\/+/, "");
+    const [routeBase, queryString] = rawRoute.split("?");
+    const routeName = aliases[routeBase] || routeBase || "dashboard";
+    const mergedParams = Object.assign({}, queryString ? Object.fromEntries(new URLSearchParams(queryString).entries()) : {}, rawTarget.params || params || {});
+    const query = new URLSearchParams();
+    Object.entries(mergedParams).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") query.set(key, String(value));
+    });
+    location.hash = `/${routeName}${query.toString() ? `?${query.toString()}` : ""}`;
+    setRouteState(parseRouteState());
+    window.scrollTo(0, 0);
+  }, []);
   const toggleTheme = () => { const t = theme === "light" ? "dark" : "light"; setThemeState(t); setTheme(t); };
 
   const onAuth = (u) => { setSession(u); setUser(u); navigate("dashboard"); };
@@ -113,7 +151,7 @@ function Root() {
     <AppShell user={user} route={route} onNavigate={navigate} onLogout={onLogout} theme={theme} toggleTheme={toggleTheme}>
       {!allowed
         ? <Card><Empty icon="lock" title="Sin acceso a este modulo" action={<Button icon="arrow-left" onClick={() => navigate("dashboard")}>Ir al Dashboard</Button>}>Tu rol ({roleMeta(user).name}) no tiene permisos para ver esta seccion. Habla con tu administrador si crees que es un error.</Empty></Card>
-        : (Page ? <ErrorBoundary key={route}><Page user={user} navigate={navigate} /></ErrorBoundary> : <ComingSoon route={route} />)}
+        : (Page ? <ErrorBoundary key={route}><Page user={user} navigate={navigate} routeParams={routeParams} /></ErrorBoundary> : <ComingSoon route={route} />)}
     </AppShell>
   );
 }
